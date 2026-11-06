@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+app/orcamentos.sqlite*
+dados/*.sqlite
+artefato/saida/
+final/
