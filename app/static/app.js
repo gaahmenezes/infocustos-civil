@@ -43,9 +43,11 @@ async function carregarReferencia() {
   }
   estado.ref = ref; estado.mes = ref.id;
   const n = (t, b) => (ref.totais.find((x) => x.tipo === t && x.base === b) || {}).n || 0;
-  $('#referencia').innerHTML = `<span class="meses-rotulo" id="meses-rotulo">Mês de referência</span>
-    <div class="meses" role="tablist" aria-labelledby="meses-rotulo">${ref.referencias.map((r) =>
-      `<button type="button" role="tab" data-mes="${esc(r.id)}" aria-selected="${r.id === ref.id}">${esc(r.descricao.replace(/-1$/, ''))}</button>`).join('')}</div>
+  // mais recente primeiro, que é o mês mais usado
+  const opcoes = [...ref.referencias].reverse().map((r) =>
+    `<option value="${esc(r.id)}"${r.id === ref.id ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}${r.id === ref.atual ? ' (mais recente)' : ''}</option>`).join('');
+  $('#referencia').innerHTML = `<label class="meses-rotulo" for="mes-ref">Mês de referência</label>
+    <select id="mes-ref" class="meses-lista">${opcoes}</select>
     <span class="meses-total">${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} serviços · ${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</span>`;
 }
 
@@ -58,7 +60,10 @@ async function trocarMes(id) {
   avisar && avisar(`Mostrando os preços de ${esc(nomeRef(id))}.`);
 }
 document.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-mes]'); if (b) trocarMes(b.dataset.mes);
+  const b = e.target.closest('[data-mes]'); if (b) trocarMes(b.dataset.mes);  // botões "Ver em <mês>"
+});
+document.addEventListener('change', (e) => {
+  if (e.target.id === 'mes-ref') trocarMes(e.target.value);
 });
 
 // ---------- referências e histórico ----------

@@ -387,3 +387,7 @@ body[data-aba="orcamentos"] .referencia, body[data-aba="comparativo"] .referenci
   .abas { margin-left: 0; width: 100%; gap: 2px 4px; }
   .abas a { padding: 4px 8px; }
 }
+
+.meses-lista { font: inherit; font-size: 15px; font-weight: 600; color: var(--tinta); background: var(--papel);
+  border: 1.5px solid var(--sinal); border-radius: var(--raio); padding: 6px 30px 6px 12px; min-width: 210px; cursor: pointer; }
+.meses-lista:focus { outline: none; box-shadow: 0 0 0 3px var(--sinal-fundo); }
