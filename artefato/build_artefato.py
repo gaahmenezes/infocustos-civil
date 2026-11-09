@@ -35,6 +35,9 @@ app = trocar(app, [
      '<button type="button" class="botao" data-copiar>Copiar para o Excel</button>'),
     ('} catch (e) { alert(e.message); }', '} catch (e) { avisar(esc(e.message)); }'),
     ('href="#/composicao/${esc(u.base)}/${esc(u.codigo)}"', 'href="#c-${esc(u.base)}-${esc(u.codigo)}"'),
+    ("const emVar = /^#\\/variacao/.test(location.hash);", "const emVar = /^#variacao/.test(location.hash);"),
+    ("<td class=\"cod\"><a href=\"#/${i.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(i.base)}/${esc(i.codigo)}\">",
+     "<td class=\"cod\"><a href=\"#${i.tipo === 'servico' ? 'c' : 'i'}-${esc(i.base)}-${esc(i.codigo)}\">"),
 ], 'app.js')
 
 orc = (STATIC / 'orcamento.js').read_text(encoding='utf-8')
@@ -74,6 +77,7 @@ corpo = re.search(r'<body>(.*?)<script src=', html, re.S).group(1)
 corpo = trocar(corpo, [
     ('<a href="#/" data-aba="consulta">', '<a href="#inicio" data-aba="consulta">'),
     ('<a href="#/orcamentos" data-aba="orcamentos">', '<a href="#orcamentos" data-aba="orcamentos">'),
+    ('<a href="#/variacao" data-aba="variacao">', '<a href="#variacao" data-aba="variacao">'),
     ('<a id="exportar-busca" class="link-acao" href="#" download>Exportar resultado</a>',
      '<button type="button" id="exportar-busca" class="link-acao" data-copiar-lista>Copiar para o Excel</button>'),
     ('e pode ser exportada para Excel.', 'e pode ser copiada para o Excel.'),

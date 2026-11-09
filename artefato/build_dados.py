@@ -29,6 +29,8 @@ def dump(nome, obj):
 c = sqlite3.connect(DB)
 c.row_factory = sqlite3.Row
 ref = dict(c.execute('SELECT * FROM referencia ORDER BY id DESC LIMIT 1').fetchone())
+REF = ref['id']
+referencias = [dict(r) for r in c.execute('SELECT id, descricao FROM referencia ORDER BY id')]
 
 # ---- itens (busca) ----
 itens = []
@@ -40,18 +42,18 @@ for r in c.execute('''SELECT i.*, COALESCE(s.subgrupo, n.subgrupo) AS subgrupo, 
     t = 0 if r['tipo'] == 'servico' else 1
     itens.append([t, BASES.index(r['base']), r['codigo'], r['descricao'] or '', r['unidade'] or '',
                   r['preco'], r['grupo'] or '', r['subgrupo'] or '', r['categoria'] or '', r['usos'] or 0,
-                  r['tem_composicao'] or 0, r['marcador'] or ''])
+                  r['tem_composicao'] or 0, r['marcador'] or '', r['preco_anterior'], r['novo'] or 0])
     (desc_srv if t == 0 else desc_ins)[(r['base'], r['codigo'])] = r['descricao'] or ''
 
 # ---- composições ----
 usada_em = defaultdict(set)
-for r in c.execute('SELECT DISTINCT composicao_base, composicao, base, codigo FROM composicao_item WHERE eh_servico = 1'):
+for r in c.execute('SELECT DISTINCT composicao_base, composicao, base, codigo FROM composicao_item WHERE eh_servico = 1 AND referencia = ?', (REF,)):
     usada_em[(r['base'], r['codigo'])].add((r['composicao_base'], r['composicao']))
 
-comps = [dict(r) for r in c.execute('SELECT * FROM composicao')]
+comps = [dict(r) for r in c.execute('SELECT * FROM composicao WHERE referencia = ?', (REF,))]
 info = {(x['base'], x['codigo']): x for x in comps}
 itens_comp = defaultdict(list)
-for r in c.execute('SELECT * FROM composicao_item ORDER BY composicao_base, composicao, ordem'):
+for r in c.execute('SELECT * FROM composicao_item WHERE referencia = ? ORDER BY composicao_base, composicao, ordem', (REF,)):
     tab = desc_srv if r['eh_servico'] else desc_ins
     d = r['descricao'] or ''
     itens_comp[(r['composicao_base'], r['composicao'])].append([
@@ -84,7 +86,7 @@ for k, lst in usos.items():
     lst.sort(key=lambda x: -(x[3] / x[4]) if x[4] else 0)
     ushards[shard(*k)][k[0] + '|' + k[1]] = [n, [[x[0], x[1], round(x[2], 8), round(x[3], 4), x[4]] for x in lst[:80]]]
 
-tam = {'itens.json': dump('itens.json', {'ref': ref, 'n_shards': N_SHARDS, 'itens': itens})}
+tam = {'itens.json': dump('itens.json', {'ref': ref, 'referencias': referencias, 'n_shards': N_SHARDS, 'itens': itens})}
 for i in range(N_SHARDS):
     tam[f'comp_{i:02d}.json'] = dump(f'comp_{i:02d}.json', shards[i])
     tam[f'usos_{i:02d}.json'] = dump(f'usos_{i:02d}.json', ushards[i])

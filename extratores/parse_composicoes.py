@@ -2,7 +2,7 @@ import sys, re, json, collections
 BASE = sys.argv[3] if len(sys.argv) > 3 else 'ORSE'
 N = r'-?[\d.]*,\d+'
 def num(s): return float(s.replace('.', '').replace(',', '.'))
-RE_COMP = re.compile(r'^\s*(\d{3,7})\s*/\s*' + BASE + r'\s*(?:(' + N + r')\s+)?(\S+)?\s*$')
+RE_COMP = re.compile(r'^\s*(\d{3,7})\s+/\s+' + BASE + r'\s*(?:(' + N + r')\s+)?(\S+)?\s*$')
 RE_ITEM = re.compile(r'^\s*(\d{3,7})\s*/\s*([A-Z]+)(?:\s+(.*?))?\s+(\S+(?:\s+' + N + r')?)\s+(' + N + r')\s+(' + N + r')\s*$')
 RE_ITEM2 = re.compile(r'^\s*(\d{3,7})\s*/\s*([A-Z]+)(?:\s+(.*?))?\s+(' + N + r')\s+([^\d\s]\S*)\s+(' + N + r')\s+(' + N + r')\s*$')
 RE_GLUE = re.compile(r'^\s*(\d{3,7})\s*/\s*([A-Z]+)(?:\s+(.*?))?\s+([^\d\s]\S*)\s+(\d+,\d+?)(\d{1,3}(?:\.\d{3})*,\d{2})\s+(' + N + r')\s*$')

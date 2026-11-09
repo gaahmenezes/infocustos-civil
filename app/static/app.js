@@ -36,10 +36,45 @@ async function carregarReferencia() {
     const ref = await api('/api/referencia');
     estado.ref = ref;
     const n = (t, b) => (ref.totais.find((x) => x.tipo === t && x.base === b) || {}).n || 0;
+    const ant = (ref.referencias || []).length > 1 ? ref.referencias[ref.referencias.length - 2] : null;
     $('#referencia').innerHTML = `<strong>Referência ${esc(ref.descricao.replace('-1', ''))}</strong>` +
+      (ant ? `<span class="ref-ant">comparando com ${esc(ant.descricao.replace('-1', ''))}</span>` : '') +
       `${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} serviços · ` +
       `${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos`;
   } catch (e) { $('#referencia').textContent = 'Base indisponível'; }
+}
+
+// ---------- referências e histórico ----------
+const nomeRef = (id) => {
+  const r = estado.ref && (estado.ref.referencias || []).find((x) => x.id === id);
+  return r ? r.descricao.replace(/-1$/, '') : (id || '');
+};
+const refAnterior = () => { const l = (estado.ref && estado.ref.referencias) || []; return l.length > 1 ? l[l.length - 2] : null; };
+
+function seloVariacao(preco, anterior, novo) {
+  if (novo) return `<span class="var var-novo" title="Não existia em ${esc(nomeRef(refAnterior() && refAnterior().id))}">novo</span>`;
+  if (preco == null || !anterior) return '';
+  const v = preco / anterior - 1;
+  if (Math.abs(v) < 0.00005) return `<span class="var var-igual" title="Mesmo preço de ${esc(nomeRef(refAnterior().id))}">=</span>`;
+  return `<span class="var ${v > 0 ? 'var-alta' : 'var-baixa'}" title="Em ${esc(nomeRef(refAnterior().id))}: ${brl.format(anterior)}">${v > 0 ? '+' : '−'}${pct.format(Math.abs(v))}</span>`;
+}
+
+function blocoHistorico(h, unidade) {
+  if (!h || h.length < 2) return '';
+  const vals = h.map((x) => x.preco).filter((v) => v != null);
+  const max = Math.max(...vals, 0.01);
+  const cols = h.map((x) => `<div class="hist-col${x.preco == null ? ' hist-vazio' : ''}">
+      <span class="hist-barra"><i style="height:${x.preco == null ? 0 : Math.max(4, (x.preco / max) * 100)}%"></i></span>
+      <b>${x.preco == null ? '—' : brl.format(x.preco)}</b>
+      <span class="hist-ref">${esc(x.descricao.replace(/-1$/, ''))}</span>
+      ${x.variacao == null ? (x.preco == null ? '<span class="hist-nota">fora da base</span>' : '') : `<span class="var ${x.variacao > 0.00005 ? 'var-alta' : x.variacao < -0.00005 ? 'var-baixa' : 'var-igual'}">${x.variacao > 0 ? '+' : x.variacao < 0 ? '−' : ''}${pct.format(Math.abs(x.variacao))}</span>`}
+    </div>`).join('');
+  return `<section class="historico" aria-label="Histórico de preço"><h3>Histórico de preço <span class="sub">por ${esc(unidade || '')}, em cada referência carregada</span></h3><div class="hist">${cols}</div></section>`;
+}
+
+function avisoReferencia(x) {
+  if (x.referencia_atual !== false) return '';
+  return `<p class="aviso-ref">Este item não está na referência ${esc(nomeRef(estado.ref.id))}. Os valores abaixo são de ${esc(nomeRef(x.referencia))}, a última em que ele aparece.</p>`;
 }
 
 // ---------- busca ----------
@@ -84,7 +119,7 @@ function desenharLista(r) {
     const meta = [it.unidade, it.grupo || (it.tipo === 'insumo' ? it.categoria : ''),
       it.tipo === 'insumo' && it.usos ? `em ${it.usos.toLocaleString('pt-BR')} composições` : ''].filter(Boolean);
     b.querySelector('.res-meta').textContent = meta.join(' · ');
-    b.querySelector('.res-preco').textContent = it.preco == null ? 'sem preço' : brl.format(it.preco);
+    b.querySelector('.res-preco').innerHTML = (it.preco == null ? 'sem preço' : brl.format(it.preco)) + seloVariacao(it.preco, it.preco_anterior, it.novo);
     if (estado.atual && estado.atual.base === it.base && estado.atual.codigo === it.codigo && estado.atual.tipo === it.tipo) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => abrir(it.tipo, it.base, it.codigo));
     lista.appendChild(li);
@@ -108,9 +143,12 @@ function abrir(tipo, base, codigo) {
 
 async function rota() {
   const emOrc = /^#\/orcamento/.test(location.hash);
-  document.body.classList.toggle('modo-orc', emOrc);
-  document.querySelectorAll('.abas a').forEach((a) => a.setAttribute('aria-current', String((a.dataset.aba === 'orcamentos') === emOrc)));
+  const emVar = /^#\/variacao/.test(location.hash);
+  document.body.classList.toggle('modo-orc', emOrc || emVar);
+  const aba = emOrc ? 'orcamentos' : emVar ? 'variacao' : 'consulta';
+  document.querySelectorAll('.abas a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
+  if (emVar) { desenharVariacao(); return; }
   const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI)\/(\w+)/);
   if (!m) {
     document.body.classList.remove('ver-detalhe');
@@ -207,12 +245,13 @@ function desenharComposicao(c) {
     ${botaoVoltar()}
     <div class="ficha-cod">${esc(c.codigo)}/${esc(c.base)} <span class="selo">${dnit ? 'Composição padrão DNIT' : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
     <h2>${esc(c.descricao || 'Composição sem descrição na base')}</h2>
+    ${avisoReferencia(c)}
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${brl.format(total)}</span><span class="por">por ${esc(c.unidade)}${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>
       <div class="fatos">
         <div>Itens<b>${c.itens.length}</b></div>
         ${c.usada_em ? `<div>Usada em<b>${c.usada_em} composições</b></div>` : ''}
-        <div>Data-base<b>${esc(ref)}</b></div>
+        <div>Data-base<b>${esc(nomeRef(c.referencia) || ref)}</b></div>
       </div>
       <div class="acoes">
         <button type="button" class="botao primario" data-adicionar="servico" data-base="${esc(c.base)}" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}">Adicionar ao orçamento</button>
@@ -221,6 +260,7 @@ function desenharComposicao(c) {
       </div>
     </div>
     ${barraCusto(c)}
+    ${blocoHistorico(c.historico, c.unidade)}
     <table class="arvore">
       <thead><tr><th>Código</th><th>Descrição</th><th class="col-unit">Un.</th><th class="num col-coef">${dnit ? 'Qtd.' : 'Coeficiente'}</th><th class="num">${dnit ? 'Custo prod.' : 'Custo unit.'}</th><th class="num">Custo total</th></tr></thead>
       ${corpo}
@@ -278,15 +318,17 @@ function desenharInsumo(i) {
     ${botaoVoltar()}
     <div class="ficha-cod">${esc(i.codigo)}/${esc(i.base)} <span class="selo">Insumo</span><span>${esc(i.tipo)} › ${esc(i.grupo)}${i.subgrupo ? ' › ' + esc(i.subgrupo) : ''}</span></div>
     <h2>${esc(i.descricao || 'Insumo sem descrição na base')}</h2>
+    ${avisoReferencia(i)}
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : brl.format(i.preco)}</span><span class="por">por ${esc(i.unidade)}${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>
       <div class="fatos">
         ${mo ? `<div>Com encargo social de ${num2.format(estado.ref.encargo_social_horista)}%<b>${brl.format(comEnc)} por ${esc(i.unidade)}</b></div>` : ''}
         <div>Usado em<b>${i.usado_em.toLocaleString('pt-BR')} composições</b></div>
-        <div>Data-base<b>${esc(ref)}</b></div>
+        <div>Data-base<b>${esc(nomeRef(i.referencia) || ref)}</b></div>
       </div>
       ${i.preco == null ? '' : `<div class="acoes"><button type="button" class="botao primario" data-adicionar="insumo" data-base="${esc(i.base)}" data-cod="${esc(i.codigo)}" data-desc="${esc(i.descricao)}" data-un="${esc(i.unidade)}">Adicionar ao orçamento</button></div>`}
     </div>
+    ${blocoHistorico(i.historico, i.unidade)}
     ${i.usado_em ? `<h3>Onde este insumo pesa mais</h3>
     <p class="sub">Composições ordenadas pela participação do insumo no custo${i.usado_em > i.usos.length ? `; mostrando ${i.usos.length} de ${i.usado_em.toLocaleString('pt-BR')}` : ''}.</p>
     <table class="uso"><thead><tr><th>Composição</th><th>Descrição</th><th class="num">Coeficiente</th><th class="num">Custo no serviço</th><th class="num">Participação</th></tr></thead><tbody>${linhas}</tbody></table>`
@@ -337,3 +379,41 @@ document.addEventListener('click', (e) => {
 });
 const inicioHTML = $('#detalhe').innerHTML;
 carregarReferencia().then(() => { buscar(); rota(); });
+
+
+// ---------- o que mudou entre referências ----------
+const VAR = { tipo: 'servico', base: 'todas', sentido: 'alta' };
+async function desenharVariacao() {
+  const d = $('#detalhe');
+  if (!d.querySelector('.variacao')) d.innerHTML = '<p class="carregando">Comparando referências…</p>';
+  let r;
+  try { r = await api(`/api/variacao?${new URLSearchParams({ ...VAR, limite: 150 })}`); }
+  catch (e) { d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  if (!r.de) { d.innerHTML = '<div class="vazio"><h1>Só há uma referência carregada.</h1><p>Quando a próxima base mensal entrar, esta página mostra o que mudou.</p></div>'; return; }
+  const rs = r.resumo, de = r.de.descricao.replace(/-1$/, ''), para = r.para.descricao.replace(/-1$/, '');
+  const seg = (campo, opcoes) => `<div class="segmentos" role="radiogroup" data-var="${campo}">${opcoes.map(([v, n]) =>
+    `<button type="button" role="radio" data-v="${v}" aria-checked="${VAR[campo] === v}">${n}</button>`).join('')}</div>`;
+  const linhas = r.itens.map((i) => `<tr>
+      <td class="cod"><a href="#/${i.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(i.base)}/${esc(i.codigo)}">${esc(i.codigo)}</a>/${esc(i.base)}</td>
+      <td class="desc">${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
+      <td class="num">${money(i.preco_anterior)}</td><td class="num"><b>${money(i.preco)}</b></td>
+      <td class="num">${seloVariacao(i.preco, i.preco_anterior, 0)}</td>
+      ${VAR.tipo === 'insumo' ? `<td class="num">${(i.usos || 0).toLocaleString('pt-BR')}</td>` : ''}</tr>`).join('');
+  d.innerHTML = `<article class="ficha orc variacao">
+    <div class="orc-topo"><h2>O que mudou de ${esc(de)} para ${esc(para)}</h2>
+      <p class="sub">Comparação dos preços de ${VAR.tipo === 'servico' ? 'serviços' : 'insumos'} entre as duas últimas referências carregadas.</p></div>
+    <div class="var-filtros">${seg('tipo', [['servico', 'Serviços'], ['insumo', 'Insumos']])}${seg('base', [['todas', 'Todas'], ['ORSE', 'ORSE'], ['SINAPI', 'SINAPI']])}${seg('sentido', [['alta', 'Maiores altas'], ['baixa', 'Maiores quedas']])}</div>
+    <div class="legenda var-resumo">
+      <div style="--cor:var(--alta)">Subiram<b>${(rs.subiram || 0).toLocaleString('pt-BR')}</b><span class="pct">${pct.format(rs.comparados ? rs.subiram / rs.comparados : 0)} dos comparados</span></div>
+      <div style="--cor:var(--baixa)">Desceram<b>${(rs.desceram || 0).toLocaleString('pt-BR')}</b><span class="pct">${pct.format(rs.comparados ? rs.desceram / rs.comparados : 0)}</span></div>
+      <div style="--cor:var(--linha-forte)">Iguais<b>${(rs.iguais || 0).toLocaleString('pt-BR')}</b><span class="pct">${pct.format(rs.comparados ? rs.iguais / rs.comparados : 0)}</span></div>
+      <div style="--cor:var(--planta)">Novos em ${esc(para)}<b>${(rs.novos || 0).toLocaleString('pt-BR')}</b><span class="pct">sem preço anterior</span></div>
+    </div>
+    <table class="planilha"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">${esc(de)}</th><th class="num">${esc(para)}</th><th class="num">Variação</th>${VAR.tipo === 'insumo' ? '<th class="num">Usado em</th>' : ''}</tr></thead>
+    <tbody>${linhas}</tbody></table>
+    <p class="fonte">Mostrando as ${r.itens.length} maiores ${VAR.sentido === 'alta' ? 'altas' : 'quedas'}.${VAR.tipo === 'insumo' ? ' "Usado em" conta em quantas composições o insumo aparece.' : ''}</p>
+  </article>`;
+  d.querySelectorAll('[data-var]').forEach((g) => g.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return; VAR[g.dataset.var] = b.dataset.v; desenharVariacao();
+  }));
+}

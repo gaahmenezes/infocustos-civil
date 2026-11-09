@@ -41,6 +41,7 @@ async function listarOrcamentos() {
   const lista = await req('/api/orcamentos');
   const linhas = lista.map((o) => `<tr>
       <td><a href="#/orcamento/${o.id}"><b>${esc(o.nome)}</b></a><span class="sub-linha">${esc([o.cliente, o.local].filter(Boolean).join(' · '))}</span></td>
+      <td>${esc(nomeRef(o.referencia))}${o.desatualizado ? ' <span class="ref-item">desatualizado</span>' : ''}</td>
       <td class="num">${o.qtd_itens}</td><td class="num">${num2.format(o.bdi)}%</td>
       <td class="num"><b>${brl.format(o.total)}</b></td><td class="num">${dataFmt(o.atualizado_em)}</td></tr>`).join('');
   $('#detalhe').innerHTML = `<article class="ficha orc">
@@ -52,7 +53,7 @@ async function listarOrcamentos() {
       <label class="curto">BDI (%)<input name="bdi" inputmode="decimal" value="25,00" required></label>
       <button class="botao primario" type="submit">Criar orçamento</button>
     </form>
-    ${lista.length ? `<table class="uso lista-orc"><thead><tr><th>Orçamento</th><th class="num">Itens</th><th class="num">BDI</th><th class="num">Total</th><th class="num">Alterado</th></tr></thead><tbody>${linhas}</tbody></table>`
+    ${lista.length ? `<table class="uso lista-orc"><thead><tr><th>Orçamento</th><th>Data-base</th><th class="num">Itens</th><th class="num">BDI</th><th class="num">Total</th><th class="num">Alterado</th></tr></thead><tbody>${linhas}</tbody></table>`
       : '<p class="sub" style="margin-top:24px">Nenhum orçamento ainda. Preencha o nome acima para criar o primeiro.</p>'}
   </article>`;
   $('#form-novo').addEventListener('submit', async (e) => {
@@ -80,11 +81,17 @@ async function abrirOrcamento(id, dados) {
           <label>Cliente<input id="orc-cliente" value="${esc(o.cliente)}" placeholder="—"></label>
           <label>Local<input id="orc-local" value="${esc(o.local)}" placeholder="—"></label>
           <label class="curto">BDI (%)<input id="orc-bdi" inputmode="decimal" value="${num2.format(o.bdi)}"></label>
-          <span class="orc-ref">Data-base ${esc(estado.ref ? estado.ref.descricao.replace('-1', '') : o.referencia)}</span>
+          <span class="orc-ref">Data-base ${esc((o.referencia_descricao || o.referencia).replace(/-1$/, ''))}</span>
         </div>
       </div>
       <div class="orc-totais" id="orc-totais"></div>
     </div>
+    ${o.desatualizado ? `<div class="desatualizado" id="orc-desatualizado">
+      <p><b>Há preços de ${esc(o.referencias_itens.filter((r) => r < o.referencia_atual.id).map((r) => nomeRef(r)).join(', ') || nomeRef(o.referencia))} neste orçamento.</b>
+        A referência atual é ${esc(o.referencia_atual.descricao.replace(/-1$/, ''))}.</p>
+      <div class="acoes"><button type="button" class="botao" id="orc-ver-impacto">Ver o impacto da atualização</button></div>
+      <div class="impacto" id="orc-impacto" hidden></div>
+    </div>` : ''}
     <div class="orc-barra">
       <nav class="abas-orc" aria-label="Visões do orçamento">${abas.map(([k, n]) => `<a href="#/orcamento/${o.id}/${k}" aria-current="${ORC.aba === k}">${n}</a>`).join('')}</nav>
       <div class="acoes">
@@ -97,6 +104,7 @@ async function abrirOrcamento(id, dados) {
   </article>`;
   desenharTotais(o);
   ligarCabecalho(o);
+  if (o.desatualizado) ligarAtualizacao(o);
   if (ORC.aba === 'planilha') desenharPlanilha(o);
   else await desenharABC(o, ORC.aba === 'abc-servicos' ? 'servicos' : 'insumos');
 }
@@ -146,7 +154,7 @@ function desenharPlanilha(o) {
       ${e.itens.map((i, m) => `<tr class="item" data-item="${i.id}">
         <td class="n">${i.numero}</td>
         <td class="cod"><a href="#/${i.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(i.base)}/${esc(i.codigo)}">${esc(i.codigo)}</a>/${esc(i.base)}</td>
-        <td class="desc">${esc(i.descricao)}</td>
+        <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia < o.referencia_atual.id ? `<span class="ref-item" title="Preço da referência ${esc(nomeRef(i.referencia))}">${esc(nomeRef(i.referencia))}</span>` : ''}</td>
         <td>${esc(i.unidade)}</td>
         <td class="num"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
         <td class="num">${money(i.custo_unit)}</td>
@@ -339,3 +347,52 @@ $('#form-adicionar').addEventListener('submit', async (e) => {
     avisar(`Adicionado a <b>${esc(n.nome)}</b> · total ${brl.format(n.total)} · <a href="#/orcamento/${n.id}">Abrir orçamento</a>`, 6000);
   } catch (err) { $('#dlg-erro').textContent = err.message; }
 });
+
+
+// ---------- atualizar a data-base do orçamento ----------
+function ligarAtualizacao(o) {
+  const bt = $('#orc-ver-impacto'), caixa = $('#orc-impacto');
+  bt.addEventListener('click', async () => {
+    if (!caixa.hidden) { caixa.hidden = true; bt.textContent = 'Ver o impacto da atualização'; return; }
+    bt.disabled = true; caixa.hidden = false; caixa.innerHTML = '<p class="carregando">Calculando…</p>';
+    try {
+      const r = await req(`/api/orcamentos/${o.id}/atualizacao`);
+      const para = nomeRef(r.referencia);
+      const linhas = r.itens.slice(0, 12).map((l) => `<tr><td class="n">${l.numero}</td>
+          <td class="cod">${esc(l.codigo)}/${esc(l.base)}</td><td class="desc">${esc(l.descricao)}</td>
+          <td class="num">${money(l.custo_unit_antes)}</td><td class="num"><b>${money(l.custo_unit_depois)}</b></td>
+          <td class="num">${seloVariacao(l.custo_unit_depois, l.custo_unit_antes, 0)}</td>
+          <td class="num">${money(l.total_depois - l.total_antes)}</td></tr>`).join('');
+      const sem = r.sem_preco.map((x) => `<li><b>${x.numero}</b> ${esc(x.codigo)}/${esc(x.base)} · ${esc(x.descricao)} <span class="sub">(${esc(x.motivo)}; fica com o preço atual)</span></li>`).join('');
+      caixa.innerHTML = `
+        <div class="totais-imp">
+          <div>Total hoje<b>${brl.format(r.total_antes)}</b></div>
+          <div>Total em ${esc(para)}<b>${brl.format(r.total_depois)}</b></div>
+          <div>Diferença<b>${brl.format(r.total_depois - r.total_antes)} ${r.variacao == null ? '' : seloVariacao(r.total_depois, r.total_antes, 0)}</b></div>
+          <div>Itens com preço novo<b>${r.itens.length}</b></div>
+        </div>
+        ${r.itens.length ? `<table class="planilha"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th class="num">Custo antes</th><th class="num">Custo em ${esc(para)}</th><th class="num">Variação</th><th class="num">Efeito no total</th></tr></thead><tbody>${linhas}</tbody></table>
+          ${r.itens.length > 12 ? `<p class="fonte">Mostrando os 12 itens que mais mudam o total, de ${r.itens.length}.</p>` : ''}` : ''}
+        ${sem ? `<p style="margin-top:12px"><b>${r.sem_preco.length} ${r.sem_preco.length === 1 ? 'item não pode ser atualizado' : 'itens não podem ser atualizados'}:</b></p><ul class="sem-preco">${sem}</ul>
+          <p class="sub">Substitua esses itens por um serviço equivalente da referência atual, se for o caso.</p>` : ''}
+        <div class="acoes" style="margin-top:12px">
+          <button type="button" class="botao primario" id="orc-atualizar">Atualizar preços para ${esc(para)}</button>
+          <button type="button" class="botao" id="orc-duplicar-atualizar">Duplicar e atualizar a cópia</button>
+        </div>`;
+      $('#orc-atualizar').addEventListener('click', async () => {
+        const n = await req(`/api/orcamentos/${o.id}/atualizar`, 'POST');
+        await abrirOrcamento(n.id, n);
+        avisar(`Preços atualizados para ${esc(para)}: ${n.atualizacao.itens_atualizados} itens. Novo total ${brl.format(n.total)}.`, 6000);
+      });
+      $('#orc-duplicar-atualizar').addEventListener('click', async () => {
+        const copia = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST');
+        const n = await req(`/api/orcamentos/${copia.id}/atualizar`, 'POST');
+        await req(`/api/orcamentos/${n.id}`, 'PATCH', { nome: `${o.nome} (${para})` });
+        location.hash = `#/orcamento/${n.id}`;
+        avisar(`Cópia criada com preços de ${esc(para)}. O orçamento original não mudou.`, 6000);
+      });
+      bt.textContent = 'Fechar';
+    } catch (e) { caixa.innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
+    bt.disabled = false;
+  });
+}

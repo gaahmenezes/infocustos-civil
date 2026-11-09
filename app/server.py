@@ -1,7 +1,7 @@
 """Servidor do protótipo de consulta ORSE/SINAPI.
 
 Rodar:  uvicorn server:app --port 8000   (dentro da pasta app/)
-Banco:  variável ORSE_DB ou ../dados/orse_sinapi_2026-05.sqlite
+Banco:  variável ORSE_DB ou ../dados/orse_sinapi.sqlite (todas as referências)
 """
 import io
 import os
@@ -18,7 +18,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 AQUI = Path(__file__).parent
-DB = os.environ.get('ORSE_DB', str(AQUI.parent / 'dados' / 'orse_sinapi_2026-05.sqlite'))
+DB = os.environ.get('ORSE_DB', str(AQUI.parent / 'dados' / 'orse_sinapi.sqlite'))
 BASES = {'ORSE', 'SINAPI'}
 SECOES = {
     'MAO_DE_OBRA': 'Mão de obra', 'MATERIAL': 'Material', 'EQUIPAMENTO': 'Equipamento',
@@ -37,6 +37,25 @@ def conn():
 def referencia_atual(c):
     r = c.execute('SELECT id, descricao, encargo_social_horista FROM referencia ORDER BY id DESC LIMIT 1').fetchone()
     return dict(r)
+
+
+def referencias(c):
+    return [dict(r) for r in c.execute('SELECT id, descricao FROM referencia ORDER BY id')]
+
+
+def historico(c, tipo, base, codigo):
+    """Preço do item em cada referência carregada, da mais antiga para a mais recente."""
+    rows = c.execute('''SELECT r.id AS referencia, r.descricao, h.preco FROM referencia r
+        LEFT JOIN historico h ON h.referencia = r.id AND h.tipo = ? AND h.base = ? AND h.codigo = ?
+        ORDER BY r.id''', (tipo, base, codigo)).fetchall()
+    out, anterior = [], None
+    for r in rows:
+        d = dict(r)
+        d['variacao'] = (d['preco'] / anterior - 1) if (d['preco'] is not None and anterior) else None
+        if d['preco'] is not None:
+            anterior = d['preco']
+        out.append(d)
+    return out
 
 
 def checar_base(base):
@@ -80,6 +99,7 @@ def api_referencia():
         ref = referencia_atual(c)
         tot = c.execute('SELECT tipo, base, COUNT(*) n FROM item_busca GROUP BY 1, 2').fetchall()
         ref['totais'] = [dict(t) for t in tot]
+        ref['referencias'] = referencias(c)
         return ref
 
 
@@ -143,7 +163,9 @@ def api_composicao(base: str, codigo: str):
         if not d:
             raise HTTPException(404, f'A composição {codigo}/{base} não existe nesta referência.')
         d['usada_em'] = c.execute('''SELECT COUNT(DISTINCT composicao_base || composicao) FROM composicao_item
-            WHERE base = ? AND codigo = ? AND eh_servico = 1''', (base, d['codigo'])).fetchone()[0]
+            WHERE base = ? AND codigo = ? AND eh_servico = 1 AND referencia = ?''', (base, d['codigo'], d['referencia'])).fetchone()[0]
+        d['historico'] = historico(c, 'servico', base, d['codigo'])
+        d['referencia_atual'] = d['referencia'] == referencia_atual(c)['id']
         return d
 
 
@@ -155,8 +177,9 @@ def api_insumo(base: str, codigo: str, limite: int = Query(100, le=2000)):
                         (base, codigo)).fetchone()
         if not ins:
             raise HTTPException(404, f'O insumo {codigo}/{base} não existe nesta referência.')
+        ref = ins['referencia']
         total = c.execute('''SELECT COUNT(DISTINCT composicao_base || composicao) FROM composicao_item
-            WHERE base = ? AND codigo = ? AND eh_servico = 0''', (base, codigo)).fetchone()[0]
+            WHERE base = ? AND codigo = ? AND eh_servico = 0 AND referencia = ?''', (base, codigo, ref)).fetchone()[0]
         # No modelo DNIT, equipamento e mão de obra são custo horário da equipe: divide pela produção.
         usos = c.execute('''SELECT i.composicao_base AS base, i.composicao AS codigo, s.descricao, s.unidade,
                 CASE WHEN c.modelo = 'DNIT' AND i.secao IN ('EQUIPAMENTO', 'MAO_DE_OBRA') AND c.prod_equipe > 0
@@ -167,9 +190,34 @@ def api_insumo(base: str, codigo: str, limite: int = Query(100, le=2000)):
             FROM composicao_item i
             JOIN composicao c ON c.base = i.composicao_base AND c.codigo = i.composicao AND c.referencia = i.referencia
             LEFT JOIN servico s ON s.base = c.base AND s.codigo = c.codigo AND s.referencia = c.referencia
-            WHERE i.base = ? AND i.codigo = ? AND i.eh_servico = 0
-            ORDER BY (custo_item / NULLIF(c.custo_total, 0)) DESC LIMIT ?''', (base, codigo, limite)).fetchall()
-        return dict(ins) | {'usado_em': total, 'usos': [dict(u) | {'custo_total': u['custo_item']} for u in usos]}
+            WHERE i.base = ? AND i.codigo = ? AND i.eh_servico = 0 AND i.referencia = ?
+            ORDER BY (custo_item / NULLIF(c.custo_total, 0)) DESC LIMIT ?''', (base, codigo, ref, limite)).fetchall()
+        return dict(ins) | {'usado_em': total, 'usos': [dict(u) | {'custo_total': u['custo_item']} for u in usos],
+                            'historico': historico(c, 'insumo', base, codigo),
+                            'referencia_atual': ref == referencia_atual(c)['id']}
+
+
+@app.get('/api/variacao')
+def api_variacao(base: str = 'todas', tipo: str = 'servico', sentido: str = 'alta', limite: int = Query(100, le=1000)):
+    """Maiores variações de preço entre a referência anterior e a atual."""
+    filtros, args = ['i.tipo = ?', 'i.preco_anterior > 0', 'i.preco IS NOT NULL'], [tipo if tipo in ('servico', 'insumo') else 'servico']
+    if base.upper() in BASES:
+        filtros.append('i.base = ?'); args.append(base.upper())
+    ordem = 'DESC' if sentido == 'alta' else 'ASC'
+    with conn() as c:
+        refs = referencias(c)
+        w = ' AND '.join(filtros)
+        rows = c.execute(f'''SELECT i.tipo, i.base, i.codigo, i.descricao, i.unidade, i.preco_anterior, i.preco, i.grupo, i.usos,
+                i.preco / i.preco_anterior - 1 AS variacao
+            FROM item_busca i WHERE {w} ORDER BY variacao {ordem} LIMIT ?''', args + [limite]).fetchall()
+        resumo = c.execute(f'''SELECT COUNT(*) AS comparados,
+                SUM(i.preco > i.preco_anterior + 0.005) AS subiram, SUM(i.preco < i.preco_anterior - 0.005) AS desceram,
+                SUM(abs(i.preco - i.preco_anterior) <= 0.005) AS iguais
+            FROM item_busca i WHERE {w}''', args).fetchone()
+        novos = c.execute(f"SELECT COUNT(*) FROM item_busca i WHERE i.tipo = ? AND i.novo = 1{' AND i.base = ?' if len(args) > 1 else ''}",
+                          args).fetchone()[0]
+        return {'de': refs[-2] if len(refs) > 1 else None, 'para': refs[-1], 'resumo': dict(resumo) | {'novos': novos},
+                'itens': [dict(r) for r in rows]}
 
 
 # ---------- Exportação ----------

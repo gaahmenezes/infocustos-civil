@@ -23,14 +23,15 @@ def orc():
 
 
 def test_criar_vem_com_uma_etapa(orc):
-    assert orc['referencia'] == '2026-05' and len(orc['etapas']) == 1 and orc['total'] == 0
+    assert orc['referencia'] == '2026-08' and len(orc['etapas']) == 1 and orc['total'] == 0
 
 
 def test_item_usa_preco_da_base_e_aplica_bdi(orc):
     o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100}).json()
     i = o['etapas'][0]['itens'][0]
-    assert i['custo_unit'] == 4.90 and i['preco_unit'] == 6.13  # 4,90 × 1,25 = 6,125 → 6,13
-    assert i['total'] == 613.00 and o['custo_total'] == 490.00 and o['valor_bdi'] == 123.00
+    assert i['custo_unit'] == 5.17 and i['preco_unit'] == 6.46  # 5,17 × 1,25 = 6,4625 → 6,46
+    assert i['total'] == 646.00 and o['custo_total'] == 517.00 and o['valor_bdi'] == 129.00
+    assert i['referencia'] == '2026-08' and o['desatualizado'] is False
     assert i['numero'] == '1.1'
 
 
@@ -38,9 +39,9 @@ def test_bdi_e_quantidade_recalculam(orc):
     o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 10}).json()
     iid = o['etapas'][0]['itens'][0]['id']
     o = c.patch(f"/api/itens/{iid}", json={'quantidade': 20}).json()
-    assert o['etapas'][0]['itens'][0]['total'] == 122.60
+    assert o['etapas'][0]['itens'][0]['total'] == 129.20
     o = c.patch(f"/api/orcamentos/{orc['id']}", json={'bdi': 0}).json()
-    assert o['total'] == 98.00
+    assert o['total'] == 103.40
 
 
 def test_codigo_inexistente_e_sem_preco(orc):
@@ -73,7 +74,7 @@ def test_curva_abc_servicos_e_insumos_fecham(orc):
 
 
 def test_exportar_excel_tem_tres_abas_e_formulas(orc):
-    c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'SINAPI', 'codigo': '103335', 'quantidade': 120})
+    c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'SINAPI', 'codigo': '103334', 'quantidade': 120})
     r = c.get(f"/api/orcamentos/{orc['id']}/exportar.xlsx")
     wb = load_workbook(io.BytesIO(r.content))
     assert wb.sheetnames == ['Orçamento', 'Curva ABC serviços', 'Curva ABC insumos']
@@ -86,3 +87,37 @@ def test_duplicar(orc):
     d = c.post(f"/api/orcamentos/{orc['id']}/duplicar").json()
     assert d['nome'].endswith('(cópia)') and d['total'] == c.get(f"/api/orcamentos/{orc['id']}").json()['total']
     c.delete(f"/api/orcamentos/{d['id']}")
+
+
+def _envelhecer(oid, itens):
+    """Simula um orçamento feito em maio: grava itens com preço e referência de 2026-05."""
+    import orcamento
+    with orcamento.orc() as db:
+        eid = db.execute('SELECT id FROM etapa WHERE orcamento_id = ?', (oid,)).fetchone()[0]
+        for n, (tipo, base, cod, q, cu) in enumerate(itens, 1):
+            db.execute("""INSERT INTO item (orcamento_id, etapa_id, ordem, tipo, base, codigo, descricao, unidade, quantidade, custo_unit, referencia)
+                VALUES (?,?,?,?,?,?,?,?,?,?, '2026-05')""", (oid, eid, n, tipo, base, cod, f'item {cod}', 'm2', q, cu))
+        db.execute("UPDATE orcamento SET referencia = '2026-05' WHERE id = ?", (oid,))
+
+
+def test_atualizar_orcamento_de_maio_para_agosto(orc):
+    oid = orc['id']
+    _envelhecer(oid, [('servico', 'ORSE', '00003', 100, 4.90), ('servico', 'SINAPI', '103335', 10, 139.37)])
+    o = c.get(f'/api/orcamentos/{oid}').json()
+    assert o['desatualizado'] is True and o['total'] == 613.00 + 1742.10  # 100 × 6,13 + 10 × 174,21
+    sim = c.get(f'/api/orcamentos/{oid}/atualizacao').json()
+    assert sim['referencia'] == '2026-08' and sim['total_antes'] == o['total']
+    assert [l['codigo'] for l in sim['itens']] == ['00003'] and sim['itens'][0]['custo_unit_depois'] == 5.17
+    assert sim['sem_preco'][0]['codigo'] == '103335' and sim['sem_preco'][0]['motivo'] == 'saiu da base'
+    assert sim['total_depois'] == 646.00 + 1742.10
+    n = c.post(f'/api/orcamentos/{oid}/atualizar').json()
+    itens = {i['codigo']: i for i in n['etapas'][0]['itens']}
+    assert itens['00003']['referencia'] == '2026-08' and itens['00003']['custo_unit'] == 5.17
+    assert itens['103335']['referencia'] == '2026-05' and itens['103335']['custo_unit'] == 139.37  # preço antigo preservado
+    assert n['referencia'] == '2026-08' and n['total'] == sim['total_depois']
+
+
+def test_curva_abc_usa_a_composicao_da_data_base_do_item(orc):
+    _envelhecer(orc['id'], [('servico', 'SINAPI', '103335', 10, 139.37)])
+    ins = c.get(f"/api/orcamentos/{orc['id']}/abc", params={'tipo': 'insumos'}).json()
+    assert ins['linhas'] and ins['total'] == pytest.approx(ins['custo_direto'], rel=0.01)

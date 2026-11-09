@@ -38,8 +38,35 @@ def test_filtros():
 
 def test_composicao_fecha_com_preco_da_tabela():
     d = c.get('/api/composicao/ORSE/00003').json()
-    assert d['custo_total'] == pytest.approx(4.90)
-    assert sum(i['custo_total'] for i in d['itens']) == pytest.approx(4.90, abs=0.02)
+    assert d['referencia'] == '2026-08' and d['custo_total'] == pytest.approx(5.17)
+    assert sum(i['custo_total'] for i in d['itens']) == pytest.approx(5.17, abs=0.02)
+
+
+def test_historico_de_preco_por_referencia():
+    h = c.get('/api/composicao/ORSE/00003').json()['historico']
+    assert [(x['referencia'], x['preco']) for x in h] == [('2026-05', 4.90), ('2026-08', 5.17)]
+    assert h[1]['variacao'] == pytest.approx(5.17 / 4.90 - 1)
+    ins = c.get('/api/insumo/SINAPI/06111').json()
+    assert [x['preco'] for x in ins['historico']] == [7.37, 7.90]
+
+
+def test_busca_traz_preco_anterior_e_marca_novos():
+    i = c.get('/api/busca', params={'q': '00003', 'tipo': 'servico', 'base': 'ORSE'}).json()['itens'][0]
+    assert i['preco'] == 5.17 and i['preco_anterior'] == 4.90 and i['novo'] == 0
+    novo = c.get('/api/busca', params={'q': '14203', 'tipo': 'servico', 'base': 'ORSE'}).json()['itens'][0]
+    assert novo['novo'] == 1 and novo['preco_anterior'] is None
+
+
+def test_variacao_entre_referencias():
+    v = c.get('/api/variacao', params={'tipo': 'servico', 'base': 'ORSE', 'limite': 5}).json()
+    assert v['de']['id'] == '2026-05' and v['para']['id'] == '2026-08'
+    assert v['resumo']['subiram'] > v['resumo']['desceram'] and v['resumo']['novos'] == 31
+    assert v['itens'][0]['variacao'] >= v['itens'][-1]['variacao']
+
+
+def test_item_que_saiu_da_base_ainda_abre_na_referencia_antiga():
+    d = c.get('/api/composicao/SINAPI/103335').json()
+    assert d['referencia'] == '2026-05' and d['referencia_atual'] is False
 
 
 def test_servico_auxiliar_tem_arvore_e_insumo_homonimo_nao():

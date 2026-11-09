@@ -100,9 +100,13 @@ class EdicaoItem(BaseModel):
 
 
 # ---------- leitura da base de preços ----------
-def preco_na_base(tipo, base, codigo):
+def ref_atual(b):
+    return dict(b.execute('SELECT id, descricao FROM referencia ORDER BY id DESC LIMIT 1').fetchone())
+
+
+def preco_na_base(tipo, base, codigo, ref=None):
     with _base_conn() as b:
-        ref = b.execute('SELECT id FROM referencia ORDER BY id DESC LIMIT 1').fetchone()['id']
+        ref = ref or ref_atual(b)['id']
         if tipo == 'servico':
             r = b.execute('''SELECT s.codigo, s.descricao, s.unidade, COALESCE(c.custo_total, s.preco) AS preco
                 FROM servico s LEFT JOIN composicao c ON c.base = s.base AND c.codigo = s.codigo AND c.referencia = s.referencia
@@ -114,10 +118,11 @@ def preco_na_base(tipo, base, codigo):
         return (dict(r) | {'referencia': ref}) if r else None
 
 
-def explodir(b, base, codigo, fator, acc, profundidade=0):
-    """Soma em `acc` os insumos de uma composição multiplicados por `fator` (quantidade do serviço)."""
-    comp = b.execute('SELECT modelo, prod_equipe, referencia FROM composicao WHERE base = ? AND codigo = ? ORDER BY referencia DESC LIMIT 1',
-                     (base, codigo)).fetchone()
+def explodir(b, base, codigo, fator, acc, profundidade=0, ref=None):
+    """Soma em `acc` os insumos de uma composição multiplicados por `fator` (quantidade do serviço).
+    Usa a composição da referência `ref` (a do item no orçamento); sem ela, a mais recente."""
+    comp = b.execute('''SELECT modelo, prod_equipe, referencia FROM composicao WHERE base = ? AND codigo = ?
+        AND (? IS NULL OR referencia <= ?) ORDER BY referencia DESC LIMIT 1''', (base, codigo, ref, ref)).fetchone()
     if not comp or profundidade > 6:
         return False
     itens = b.execute('''SELECT secao, base, codigo, eh_servico, descricao, unidade, qtd, custo_unit, custo_prod, custo_total
@@ -130,7 +135,7 @@ def explodir(b, base, codigo, fator, acc, profundidade=0):
             cu = (i['custo_total'] / i['qtd']) if i['qtd'] else (i['custo_prod'] or 0)
         else:
             cu = i['custo_unit'] if i['custo_unit'] is not None else ((i['custo_total'] / i['qtd']) if i['qtd'] else 0)
-        if i['eh_servico'] and explodir(b, i['base'], i['codigo'], fator * q, acc, profundidade + 1):
+        if i['eh_servico'] and explodir(b, i['base'], i['codigo'], fator * q, acc, profundidade + 1, comp['referencia']):
             continue
         k = (i['base'], i['codigo'], i['secao'])
         a = acc[k]
@@ -169,6 +174,14 @@ def calcular(c, oid):
     o['total'] = r2(total)
     o['valor_bdi'] = r2(total - total_custo)
     o['qtd_itens'] = len(itens)
+    refs_itens = sorted({i['referencia'] for i in itens if i['referencia']})
+    o['referencias_itens'] = refs_itens
+    with _base_conn() as b:
+        atual = ref_atual(b)
+        nomes = {r['id']: r['descricao'] for r in b.execute('SELECT id, descricao FROM referencia')}
+    o['referencia_atual'] = atual
+    o['referencia_descricao'] = nomes.get(o['referencia'], o['referencia'])
+    o['desatualizado'] = any(r < atual['id'] for r in refs_itens) or (not itens and o['referencia'] < atual['id'])
     for e in etapas:
         e['peso'] = (e['total'] / total) if total else 0
     return o
@@ -204,7 +217,7 @@ def abc_insumos(o):
     with _base_conn() as b:
         for e in o['etapas']:
             for i in e['itens']:
-                if i['tipo'] == 'servico' and explodir(b, i['base'], i['codigo'], i['quantidade'], acc):
+                if i['tipo'] == 'servico' and explodir(b, i['base'], i['codigo'], i['quantidade'], acc, ref=i['referencia']):
                     continue
                 if i['tipo'] == 'servico':  # serviço sem composição: entra como ele mesmo
                     k = (i['base'], i['codigo'], 'SERVICO_SEM_COMPOSICAO')
@@ -240,14 +253,14 @@ def listar():
         out = []
         for r in rows:
             o = calcular(c, r['id'])
-            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em')})
+            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em', 'desatualizado')})
         return out
 
 
 @router.post('/orcamentos', status_code=201)
 def criar(d: NovoOrcamento):
     with _base_conn() as b:
-        ref = b.execute('SELECT id FROM referencia ORDER BY id DESC LIMIT 1').fetchone()['id']
+        ref = ref_atual(b)['id']
     with orc() as c:
         cur = c.execute('INSERT INTO orcamento (nome, cliente, local, referencia, bdi, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?)',
                         (d.nome.strip(), d.cliente.strip(), d.local.strip(), ref, d.bdi, agora(), agora()))
@@ -405,6 +418,56 @@ def excluir_item(iid: int):
         c.execute('DELETE FROM item WHERE id = ?', (iid,))
         c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), i['orcamento_id']))
         return calcular(c, i['orcamento_id'])
+
+
+def _simular(c, oid, ref=None):
+    o = calcular(c, oid)
+    with _base_conn() as b:
+        ref = ref or ref_atual(b)['id']
+        if not b.execute('SELECT 1 FROM referencia WHERE id = ?', (ref,)).fetchone():
+            raise HTTPException(404, f'A referência {ref} não está carregada.')
+    fator = 1 + o['bdi'] / 100
+    linhas, sem = [], []
+    novo_total = 0.0
+    for e in o['etapas']:
+        for i in e['itens']:
+            p = preco_na_base(i['tipo'], i['base'], i['codigo'], ref)
+            if not p or p['preco'] is None:
+                sem.append({'id': i['id'], 'numero': i['numero'], 'codigo': i['codigo'], 'base': i['base'], 'descricao': i['descricao'],
+                            'motivo': 'saiu da base' if not p else 'sem preço na nova referência'})
+                novo_total += i['total']
+                continue
+            nt = r2(i['quantidade'] * r2(p['preco'] * fator))
+            novo_total += nt
+            linhas.append({'id': i['id'], 'numero': i['numero'], 'codigo': i['codigo'], 'base': i['base'], 'descricao': i['descricao'],
+                           'unidade': i['unidade'], 'quantidade': i['quantidade'], 'de_referencia': i['referencia'],
+                           'custo_unit_antes': i['custo_unit'], 'custo_unit_depois': p['preco'], 'total_antes': i['total'], 'total_depois': nt,
+                           'variacao': (p['preco'] / i['custo_unit'] - 1) if i['custo_unit'] else None})
+    linhas.sort(key=lambda l: -abs(l['total_depois'] - l['total_antes']))
+    return {'referencia': ref, 'total_antes': o['total'], 'total_depois': r2(novo_total),
+            'variacao': (novo_total / o['total'] - 1) if o['total'] else None, 'itens': linhas, 'sem_preco': sem}
+
+
+@router.get('/orcamentos/{oid}/atualizacao')
+def simular_atualizacao(oid: int, referencia: Optional[str] = None):
+    """Mostra quanto o orçamento muda se os preços forem levados para outra referência (padrão: a mais recente)."""
+    with orc() as c:
+        return _simular(c, oid, referencia)
+
+
+@router.post('/orcamentos/{oid}/atualizar')
+def atualizar(oid: int, referencia: Optional[str] = None):
+    """Leva os custos unitários para a referência escolhida. Itens que saíram da base ficam com o preço antigo."""
+    with orc() as c:
+        sim = _simular(c, oid, referencia)
+        ref = sim['referencia']
+        for l in sim['itens']:
+            c.execute('UPDATE item SET custo_unit = ?, referencia = ? WHERE id = ?', (l['custo_unit_depois'], ref, l['id']))
+        c.execute('UPDATE orcamento SET referencia = ?, atualizado_em = ? WHERE id = ?', (ref, agora(), oid))
+        o = calcular(c, oid)
+        o['atualizacao'] = {'referencia': ref, 'total_antes': sim['total_antes'], 'itens_atualizados': len(sim['itens']),
+                            'sem_preco': sim['sem_preco']}
+        return o
 
 
 @router.get('/orcamentos/{oid}/abc')
