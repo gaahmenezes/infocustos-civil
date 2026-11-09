@@ -116,6 +116,7 @@ def test_exportacoes_abrem_no_excel():
 
 def test_todas_as_composicoes_abrem():
     con = sqlite3.connect(server.DB)
-    amostra = con.execute('SELECT base, codigo FROM composicao ORDER BY random() LIMIT 300').fetchall()
-    for base, cod in amostra:
-        assert c.get(f'/api/composicao/{base}/{cod}').status_code == 200, (base, cod)
+    amostra = con.execute('SELECT base, codigo, referencia FROM composicao ORDER BY random() LIMIT 300').fetchall()
+    for base, cod, ref in amostra:
+        r = c.get(f'/api/composicao/{base}/{cod}', params={'ref': ref})
+        assert r.status_code == 200 and r.json()['referencia'] == ref, (base, cod, ref)
