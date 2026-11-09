@@ -121,3 +121,32 @@ def test_curva_abc_usa_a_composicao_da_data_base_do_item(orc):
     _envelhecer(orc['id'], [('servico', 'SINAPI', '103335', 10, 139.37)])
     ins = c.get(f"/api/orcamentos/{orc['id']}/abc", params={'tipo': 'insumos'}).json()
     assert ins['linhas'] and ins['total'] == pytest.approx(ins['custo_direto'], rel=0.01)
+
+
+def test_orcamento_de_maio_usa_precos_de_maio():
+    o = c.post('/api/orcamentos', json={'nome': 'Obra em maio', 'bdi': 25, 'referencia': '2026-05'}).json()
+    try:
+        assert o['referencia'] == '2026-05'
+        n = c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'SINAPI', 'codigo': '103335', 'quantidade': 10}).json()
+        assert n['etapas'][0]['itens'][0]['custo_unit'] == 139.37
+        n = c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100}).json()
+        assert n['etapas'][0]['itens'][1]['custo_unit'] == 4.90
+    finally:
+        c.delete(f"/api/orcamentos/{o['id']}")
+
+
+def test_item_que_nao_existe_no_mes_do_orcamento(orc):
+    r = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'SINAPI', 'codigo': '103335', 'quantidade': 1})
+    assert r.status_code == 404 and 'agosto/2026' in r.json()['detail']
+
+
+def test_mudar_data_base_do_orcamento():
+    o = c.post('/api/orcamentos', json={'nome': 'Muda mês', 'bdi': 25, 'referencia': '2026-05'}).json()
+    try:
+        c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100})
+        n = c.post(f"/api/orcamentos/{o['id']}/atualizar", params={'referencia': '2026-08'}).json()
+        assert n['referencia'] == '2026-08' and n['etapas'][0]['itens'][0]['custo_unit'] == 5.17 and n['total'] == 646.00
+        n = c.post(f"/api/orcamentos/{o['id']}/atualizar", params={'referencia': '2026-05'}).json()
+        assert n['referencia'] == '2026-05' and n['total'] == 613.00
+    finally:
+        c.delete(f"/api/orcamentos/{o['id']}")

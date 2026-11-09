@@ -71,6 +71,7 @@ class NovoOrcamento(BaseModel):
     cliente: str = ''
     local: str = ''
     bdi: float = Field(25.0, ge=0, le=100)
+    referencia: Optional[str] = None  # mês de referência dos preços; padrão: o mais recente
 
 
 class EdicaoOrcamento(BaseModel):
@@ -122,7 +123,7 @@ def explodir(b, base, codigo, fator, acc, profundidade=0, ref=None):
     """Soma em `acc` os insumos de uma composição multiplicados por `fator` (quantidade do serviço).
     Usa a composição da referência `ref` (a do item no orçamento); sem ela, a mais recente."""
     comp = b.execute('''SELECT modelo, prod_equipe, referencia FROM composicao WHERE base = ? AND codigo = ?
-        AND (? IS NULL OR referencia <= ?) ORDER BY referencia DESC LIMIT 1''', (base, codigo, ref, ref)).fetchone()
+        AND (? IS NULL OR referencia = ?) ORDER BY referencia DESC LIMIT 1''', (base, codigo, ref, ref)).fetchone()
     if not comp or profundidade > 6:
         return False
     itens = b.execute('''SELECT secao, base, codigo, eh_servico, descricao, unidade, qtd, custo_unit, custo_prod, custo_total
@@ -260,7 +261,9 @@ def listar():
 @router.post('/orcamentos', status_code=201)
 def criar(d: NovoOrcamento):
     with _base_conn() as b:
-        ref = ref_atual(b)['id']
+        ref = d.referencia or ref_atual(b)['id']
+        if not b.execute('SELECT 1 FROM referencia WHERE id = ?', (ref,)).fetchone():
+            raise HTTPException(404, f'O mês {ref} não está carregado.')
     with orc() as c:
         cur = c.execute('INSERT INTO orcamento (nome, cliente, local, referencia, bdi, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?)',
                         (d.nome.strip(), d.cliente.strip(), d.local.strip(), ref, d.bdi, agora(), agora()))
@@ -354,11 +357,19 @@ def excluir_etapa(eid: int):
 
 @router.post('/orcamentos/{oid}/itens', status_code=201)
 def novo_item(oid: int, d: NovoItem):
-    p = preco_na_base(d.tipo, d.base, d.codigo)
+    with orc() as c:
+        o = c.execute('SELECT referencia FROM orcamento WHERE id = ?', (oid,)).fetchone()
+        if not o:
+            raise HTTPException(404, 'Orçamento não encontrado.')
+    # o item entra sempre com o preço do mês de referência do orçamento
+    with _base_conn() as b:
+        nome = b.execute('SELECT descricao FROM referencia WHERE id = ?', (o['referencia'],)).fetchone()
+        nome = nome['descricao'].removesuffix('-1') if nome else o['referencia']
+    p = preco_na_base(d.tipo, d.base, d.codigo, o['referencia'])
     if not p:
-        raise HTTPException(404, f'{d.codigo}/{d.base} não existe na base de preços.')
+        raise HTTPException(404, f'{d.codigo}/{d.base} não existe em {nome}, a data-base deste orçamento.')
     if p['preco'] is None:
-        raise HTTPException(422, f'{d.codigo}/{d.base} não tem preço nesta referência e não pode entrar no orçamento.')
+        raise HTTPException(422, f'{d.codigo}/{d.base} não tem preço em {nome} e não pode entrar no orçamento.')
     with orc() as c:
         calcular(c, oid)
         etapa = d.etapa_id
@@ -502,7 +513,7 @@ def exportar(oid: int):
     ws = wb.active; ws.title = 'Orçamento'
     ws['A1'] = o['nome']; ws['A1'].font = Font(bold=True, size=14)
     ws['A2'] = f"Cliente: {o['cliente'] or '-'}    Local: {o['local'] or '-'}"
-    ws['A3'] = f"Data-base: {o['referencia']} (ORSE e SINAPI, CEHOP/SE)"
+    ws['A3'] = f"Data-base: {o['referencia_descricao']} (ORSE e SINAPI, CEHOP/SE)"
     ws['G2'] = 'BDI'; ws['G2'].font = Font(bold=True)
     ws['H2'] = o['bdi'] / 100; ws['H2'].number_format = '0.00%'; ws['H2'].font = Font(bold=True, color=AZUL)
     _cab(ws, 5, ['Item', 'Código', 'Base', 'Descrição', 'Un.', 'Quant.', 'Custo unit. (R$)', 'Preço unit. c/ BDI (R$)', 'Total (R$)'],

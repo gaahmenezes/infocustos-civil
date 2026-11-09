@@ -72,7 +72,7 @@ mark { background: var(--sinal-fundo); color: inherit; border-bottom: 2px solid 
 }
 .segmentos button + button { border-left: 1px solid var(--linha); }
 .segmentos button[aria-checked="true"] { background: var(--planta); color: var(--sobre-planta); }
-.referencia { font-size: 13px; color: var(--tinta-2); text-align: right; padding-top: 6px; white-space: nowrap; }
+.referencia { font-size: 13px; color: var(--tinta-2); text-align: right; padding-top: 2px; display: flex; flex-direction: column; align-items: flex-end; gap: 5px; }
 .referencia strong { display: block; color: var(--tinta); font-size: 15px; }
 
 /* ---------- área ---------- */
@@ -341,3 +341,49 @@ tr.item:hover td { background: color-mix(in srgb, var(--concreto) 60%, var(--pap
 .impacto .totais-imp { display: flex; gap: 26px; flex-wrap: wrap; font-size: 13px; color: var(--tinta-2); margin-bottom: 10px; }
 .impacto .totais-imp b { display: block; color: var(--tinta); font-size: 17px; }
 .ref-item { font-size: 11.5px; color: var(--alta); background: var(--alta-fundo); padding: 0 5px; border-radius: 4px; margin-left: 6px; white-space: nowrap; }
+
+/* ---------- mês de referência (cada mês é uma aba) ---------- */
+.meses-rotulo { font-size: 12.5px; font-weight: 600; color: var(--tinta-2); }
+.meses { display: inline-flex; border: 1px solid var(--linha-forte); border-radius: var(--raio); overflow: hidden; }
+.meses button { border: 0; background: var(--papel); padding: 6px 14px; font-size: 14px; font-weight: 600; cursor: pointer; color: var(--tinta-2); }
+.meses button + button { border-left: 1px solid var(--linha); }
+.meses button[aria-selected="true"] { background: var(--sinal); color: #1b1300; }
+.meses-total { font-size: 12.5px; }
+body[data-aba="orcamentos"] .referencia, body[data-aba="comparativo"] .referencia { visibility: hidden; }
+
+/* comparativo */
+.cmp-meses { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin: 4px 0 12px; }
+.cmp-meses label { display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; font-weight: 600; color: var(--tinta-2); }
+.cmp-meses select { font: inherit; font-size: 15px; padding: 7px 10px; border: 1px solid var(--linha-forte); border-radius: var(--raio); background: var(--papel); color: var(--tinta); min-width: 160px; }
+.cmp-meses span { padding-bottom: 9px; color: var(--tinta-2); }
+.cmp-q { font: inherit; font-size: 14px; padding: 6px 10px; border: 1px solid var(--linha-forte); border-radius: var(--raio); background: var(--papel); color: var(--tinta); flex: 1 1 220px; max-width: 360px; }
+.link-cod { border: 0; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--planta); cursor: pointer; text-decoration: underline; text-decoration-color: transparent; }
+.link-cod:hover { text-decoration-color: currentColor; }
+.cmp-detalhe { background: var(--papel); border: 1px solid var(--linha-forte); border-radius: var(--raio); padding: 12px 14px 4px; margin: 14px 0 0; }
+.cmp-detalhe-cab { display: flex; gap: 8px; align-items: baseline; margin-bottom: 10px; }
+.cmp-detalhe-cab .mini { margin-left: auto; }
+.tabela-rola { overflow-x: auto; }
+
+/* encargos */
+.enc-grade { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; align-items: start; }
+.enc h3 { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 0; }
+.enc-total { font-size: 22px; font-weight: 700; color: var(--planta); font-stretch: 85%; }
+.enc .planilha { margin-top: 10px; }
+.enc-grupo td { background: var(--planta-claro); font-weight: 650; }
+.enc tfoot td { border-top: 2px solid var(--linha-forte); }
+@media (max-width: 900px) {
+  .enc-grade { grid-template-columns: 1fr; }
+  .referencia { align-items: flex-start; }
+}
+
+.mudar-mes { background: var(--papel); border: 1px solid var(--sinal); border-left-width: 4px; border-radius: var(--raio); padding: 12px 14px; margin: 4px 0 16px; }
+.mudar-mes p { margin: 0 0 8px; max-width: 90ch; }
+.mudar-mes .acoes { flex-wrap: wrap; }
+.orc-campos select, .novo-orc select { font: inherit; font-size: 14.5px; color: var(--tinta); background: var(--papel); border: 1px solid var(--linha-forte); border-radius: var(--raio); padding: 7px 10px; font-weight: 400; }
+.novo-orc label.curto:has(select), .orc-campos label.curto:has(select) { flex: 0 0 150px; }
+.abas { flex-wrap: wrap; }
+@media (max-width: 900px) {
+  .marca { flex-wrap: wrap; }
+  .abas { margin-left: 0; width: 100%; gap: 2px 4px; }
+  .abas a { padding: 4px 8px; }
+}

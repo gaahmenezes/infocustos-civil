@@ -30,19 +30,36 @@ async function api(url) {
   return r.json();
 }
 
-// ---------- referência ----------
+// ---------- mês de referência ----------
+// Cada mês é uma "aba" própria: tudo o que aparece na consulta é só daquele mês.
+try { estado.mes = localStorage.getItem('infocustos-mes') || null; } catch (_) { estado.mes = null; }
+const qsMes = () => (estado.mes ? `ref=${encodeURIComponent(estado.mes)}` : '');
+
 async function carregarReferencia() {
-  try {
-    const ref = await api('/api/referencia');
-    estado.ref = ref;
-    const n = (t, b) => (ref.totais.find((x) => x.tipo === t && x.base === b) || {}).n || 0;
-    const ant = (ref.referencias || []).length > 1 ? ref.referencias[ref.referencias.length - 2] : null;
-    $('#referencia').innerHTML = `<strong>Referência ${esc(ref.descricao.replace('-1', ''))}</strong>` +
-      (ant ? `<span class="ref-ant">comparando com ${esc(ant.descricao.replace('-1', ''))}</span>` : '') +
-      `${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} serviços · ` +
-      `${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos`;
-  } catch (e) { $('#referencia').textContent = 'Base indisponível'; }
+  let ref;
+  try { ref = await api(`/api/referencia?${qsMes()}`); }
+  catch (e) {
+    try { estado.mes = null; ref = await api('/api/referencia'); } catch (e2) { $('#referencia').textContent = 'Base indisponível'; return; }
+  }
+  estado.ref = ref; estado.mes = ref.id;
+  const n = (t, b) => (ref.totais.find((x) => x.tipo === t && x.base === b) || {}).n || 0;
+  $('#referencia').innerHTML = `<span class="meses-rotulo" id="meses-rotulo">Mês de referência</span>
+    <div class="meses" role="tablist" aria-labelledby="meses-rotulo">${ref.referencias.map((r) =>
+      `<button type="button" role="tab" data-mes="${esc(r.id)}" aria-selected="${r.id === ref.id}">${esc(r.descricao.replace(/-1$/, ''))}</button>`).join('')}</div>
+    <span class="meses-total">${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} serviços · ${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</span>`;
 }
+
+async function trocarMes(id) {
+  if (id === estado.mes) return;
+  estado.mes = id;
+  try { localStorage.setItem('infocustos-mes', id); } catch (_) { /* sem armazenamento */ }
+  await carregarReferencia();
+  buscar(); rota();
+  avisar && avisar(`Mostrando os preços de ${esc(nomeRef(id))}.`);
+}
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mes]'); if (b) trocarMes(b.dataset.mes);
+});
 
 // ---------- referências e histórico ----------
 const nomeRef = (id) => {
@@ -72,10 +89,6 @@ function blocoHistorico(h, unidade) {
   return `<section class="historico" aria-label="Histórico de preço"><h3>Histórico de preço <span class="sub">por ${esc(unidade || '')}, em cada referência carregada</span></h3><div class="hist">${cols}</div></section>`;
 }
 
-function avisoReferencia(x) {
-  if (x.referencia_atual !== false) return '';
-  return `<p class="aviso-ref">Este item não está na referência ${esc(nomeRef(estado.ref.id))}. Os valores abaixo são de ${esc(nomeRef(x.referencia))}, a última em que ele aparece.</p>`;
-}
 
 // ---------- busca ----------
 let tBusca = 0, seq = 0;
@@ -83,8 +96,8 @@ function agendarBusca() { clearTimeout(tBusca); tBusca = setTimeout(buscar, 140)
 
 async function buscar() {
   const meu = ++seq;
-  const p = new URLSearchParams({ q: estado.q, base: estado.base, tipo: estado.tipo, limite: 80 });
-  $('#exportar-busca').href = `/api/exportar/busca.xlsx?${new URLSearchParams({ q: estado.q, base: estado.base, tipo: estado.tipo })}`;
+  const p = new URLSearchParams({ q: estado.q, base: estado.base, tipo: estado.tipo, limite: 80, ref: estado.mes || '' });
+  $('#exportar-busca').href = `/api/exportar/busca.xlsx?${new URLSearchParams({ q: estado.q, base: estado.base, tipo: estado.tipo, ref: estado.mes || '' })}`;
   document.body.classList.toggle('tem-busca', true);
   try {
     const r = await api(`/api/busca?${p}`);
@@ -119,7 +132,7 @@ function desenharLista(r) {
     const meta = [it.unidade, it.grupo || (it.tipo === 'insumo' ? it.categoria : ''),
       it.tipo === 'insumo' && it.usos ? `em ${it.usos.toLocaleString('pt-BR')} composições` : ''].filter(Boolean);
     b.querySelector('.res-meta').textContent = meta.join(' · ');
-    b.querySelector('.res-preco').innerHTML = (it.preco == null ? 'sem preço' : brl.format(it.preco)) + seloVariacao(it.preco, it.preco_anterior, it.novo);
+    b.querySelector('.res-preco').textContent = it.preco == null ? 'sem preço' : brl.format(it.preco);
     if (estado.atual && estado.atual.base === it.base && estado.atual.codigo === it.codigo && estado.atual.tipo === it.tipo) b.setAttribute('aria-current', 'true');
     b.addEventListener('click', () => abrir(it.tipo, it.base, it.codigo));
     lista.appendChild(li);
@@ -143,12 +156,15 @@ function abrir(tipo, base, codigo) {
 
 async function rota() {
   const emOrc = /^#\/orcamento/.test(location.hash);
-  const emVar = /^#\/variacao/.test(location.hash);
-  document.body.classList.toggle('modo-orc', emOrc || emVar);
-  const aba = emOrc ? 'orcamentos' : emVar ? 'variacao' : 'consulta';
+  const emVar = /^#\/comparativo/.test(location.hash);
+  const emEnc = /^#\/encargos/.test(location.hash);
+  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc);
+  const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : 'consulta';
+  document.body.dataset.aba = aba;
   document.querySelectorAll('.abas a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
-  if (emVar) { desenharVariacao(); return; }
+  if (emVar) { desenharComparativo(); return; }
+  if (emEnc) { desenharEncargos(); return; }
   const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI)\/(\w+)/);
   if (!m) {
     document.body.classList.remove('ver-detalhe');
@@ -162,11 +178,13 @@ async function rota() {
   const d = $('#detalhe');
   d.innerHTML = '<p class="carregando">Abrindo…</p>';
   try {
-    if (tipo === 'composicao') desenharComposicao(await api(`/api/composicao/${base}/${codigo}`));
-    else desenharInsumo(await api(`/api/insumo/${base}/${codigo}`));
+    if (tipo === 'composicao') desenharComposicao(await api(`/api/composicao/${base}/${codigo}?${qsMes()}`));
+    else desenharInsumo(await api(`/api/insumo/${base}/${codigo}?${qsMes()}`));
     d.scrollTop = 0;
   } catch (e) {
-    d.innerHTML = `<div class="erro"><b>Não foi possível abrir ${esc(codigo)}/${esc(base)}.</b><br>${esc(e.message)}</div>`;
+    const outros = ((estado.ref && estado.ref.referencias) || []).filter((r) => r.id !== estado.mes);
+    d.innerHTML = `${botaoVoltar()}<div class="erro"><b>Não foi possível abrir ${esc(codigo)}/${esc(base)}.</b><br>${esc(e.message)}
+      ${outros.length ? `<div class="acoes" style="margin-top:10px">${outros.map((r) => `<button type="button" class="botao" data-mes="${esc(r.id)}">Ver em ${esc(r.descricao.replace(/-1$/, ''))}</button>`).join('')}</div>` : ''}</div>`;
   }
 }
 
@@ -245,7 +263,6 @@ function desenharComposicao(c) {
     ${botaoVoltar()}
     <div class="ficha-cod">${esc(c.codigo)}/${esc(c.base)} <span class="selo">${dnit ? 'Composição padrão DNIT' : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
     <h2>${esc(c.descricao || 'Composição sem descrição na base')}</h2>
-    ${avisoReferencia(c)}
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${brl.format(total)}</span><span class="por">por ${esc(c.unidade)}${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>
       <div class="fatos">
@@ -255,12 +272,11 @@ function desenharComposicao(c) {
       </div>
       <div class="acoes">
         <button type="button" class="botao primario" data-adicionar="servico" data-base="${esc(c.base)}" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}">Adicionar ao orçamento</button>
-        <a class="botao" href="/api/exportar/composicao/${esc(c.base)}/${esc(c.codigo)}.xlsx">Exportar Excel</a>
+        <a class="botao" href="/api/exportar/composicao/${esc(c.base)}/${esc(c.codigo)}.xlsx?ref=${esc(c.referencia)}">Exportar Excel</a>
         <button type="button" class="botao" onclick="window.print()">Imprimir ou PDF</button>
       </div>
     </div>
     ${barraCusto(c)}
-    ${blocoHistorico(c.historico, c.unidade)}
     <table class="arvore">
       <thead><tr><th>Código</th><th>Descrição</th><th class="col-unit">Un.</th><th class="num col-coef">${dnit ? 'Qtd.' : 'Coeficiente'}</th><th class="num">${dnit ? 'Custo prod.' : 'Custo unit.'}</th><th class="num">Custo total</th></tr></thead>
       ${corpo}
@@ -293,7 +309,7 @@ async function expandir(bt) {
   }
   bt.disabled = true;
   try {
-    const sub = await api(`/api/composicao/${bt.dataset.base}/${bt.dataset.cod}`);
+    const sub = await api(`/api/composicao/${bt.dataset.base}/${bt.dataset.cod}?ref=${encodeURIComponent((estado.comp && estado.comp.referencia) || estado.mes || '')}`);
     const nivel = Number(bt.dataset.nivel);
     const cab = `<tr class="filho" style="--nivel:${nivel}"><td class="cod"></td><td class="desc" colspan="5"><span class="rotulo-sub">Composição de ${esc(sub.codigo)}/${esc(sub.base)}, por ${esc(sub.unidade)}: ${brl.format(sub.custo_total)}</span></td></tr>`;
     tr.insertAdjacentHTML('afterend', cab + sub.itens.map((i) => linhaItem(i, sub.custo_total, nivel)).join(''));
@@ -318,7 +334,6 @@ function desenharInsumo(i) {
     ${botaoVoltar()}
     <div class="ficha-cod">${esc(i.codigo)}/${esc(i.base)} <span class="selo">Insumo</span><span>${esc(i.tipo)} › ${esc(i.grupo)}${i.subgrupo ? ' › ' + esc(i.subgrupo) : ''}</span></div>
     <h2>${esc(i.descricao || 'Insumo sem descrição na base')}</h2>
-    ${avisoReferencia(i)}
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : brl.format(i.preco)}</span><span class="por">por ${esc(i.unidade)}${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>
       <div class="fatos">
@@ -328,7 +343,6 @@ function desenharInsumo(i) {
       </div>
       ${i.preco == null ? '' : `<div class="acoes"><button type="button" class="botao primario" data-adicionar="insumo" data-base="${esc(i.base)}" data-cod="${esc(i.codigo)}" data-desc="${esc(i.descricao)}" data-un="${esc(i.unidade)}">Adicionar ao orçamento</button></div>`}
     </div>
-    ${blocoHistorico(i.historico, i.unidade)}
     ${i.usado_em ? `<h3>Onde este insumo pesa mais</h3>
     <p class="sub">Composições ordenadas pela participação do insumo no custo${i.usado_em > i.usos.length ? `; mostrando ${i.usos.length} de ${i.usado_em.toLocaleString('pt-BR')}` : ''}.</p>
     <table class="uso"><thead><tr><th>Composição</th><th>Descrição</th><th class="num">Coeficiente</th><th class="num">Custo no serviço</th><th class="num">Participação</th></tr></thead><tbody>${linhas}</tbody></table>`
@@ -381,39 +395,94 @@ const inicioHTML = $('#detalhe').innerHTML;
 carregarReferencia().then(() => { buscar(); rota(); });
 
 
-// ---------- o que mudou entre referências ----------
-const VAR = { tipo: 'servico', base: 'todas', sentido: 'alta' };
-async function desenharVariacao() {
+// ---------- comparativo entre meses (único lugar onde meses diferentes aparecem juntos) ----------
+const CMP = { de: null, para: null, tipo: 'servico', base: 'todas', sentido: 'alta', q: '' };
+let tCmp = 0;
+async function desenharComparativo() {
   const d = $('#detalhe');
-  if (!d.querySelector('.variacao')) d.innerHTML = '<p class="carregando">Comparando referências…</p>';
+  const meses = (estado.ref && estado.ref.referencias) || [];
+  if (meses.length < 2) { d.innerHTML = '<div class="vazio"><h1>Só há um mês carregado.</h1><p>Quando outro mês de referência for carregado, esta aba compara os preços entre eles.</p></div>'; return; }
+  CMP.de = CMP.de || meses[meses.length - 2].id; CMP.para = CMP.para || meses[meses.length - 1].id;
+  if (!d.querySelector('.comparativo')) d.innerHTML = '<p class="carregando">Comparando os meses…</p>';
   let r;
-  try { r = await api(`/api/variacao?${new URLSearchParams({ ...VAR, limite: 150 })}`); }
+  try { r = await api(`/api/comparativo?${new URLSearchParams({ ...CMP, limite: 150 })}`); }
   catch (e) { d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
-  if (!r.de) { d.innerHTML = '<div class="vazio"><h1>Só há uma referência carregada.</h1><p>Quando a próxima base mensal entrar, esta página mostra o que mudou.</p></div>'; return; }
-  const rs = r.resumo, de = r.de.descricao.replace(/-1$/, ''), para = r.para.descricao.replace(/-1$/, '');
-  const seg = (campo, opcoes) => `<div class="segmentos" role="radiogroup" data-var="${campo}">${opcoes.map(([v, n]) =>
-    `<button type="button" role="radio" data-v="${v}" aria-checked="${VAR[campo] === v}">${n}</button>`).join('')}</div>`;
+  const rs = r.resumo, de = nomeRef(r.de.id), para = nomeRef(r.para.id);
+  const seg = (campo, opcoes) => `<div class="segmentos" role="radiogroup" data-cmp="${campo}">${opcoes.map(([v, n]) =>
+    `<button type="button" role="radio" data-v="${v}" aria-checked="${CMP[campo] === v}">${n}</button>`).join('')}</div>`;
+  const sel = (id, valor) => `<select id="${id}">${meses.map((m) => `<option value="${esc(m.id)}"${m.id === valor ? ' selected' : ''}>${esc(m.descricao.replace(/-1$/, ''))}</option>`).join('')}</select>`;
   const linhas = r.itens.map((i) => `<tr>
-      <td class="cod"><a href="#/${i.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(i.base)}/${esc(i.codigo)}">${esc(i.codigo)}</a>/${esc(i.base)}</td>
+      <td class="cod"><button type="button" class="link-cod" data-hist="${esc(i.tipo)}|${esc(i.base)}|${esc(i.codigo)}">${esc(i.codigo)}</button>/${esc(i.base)}</td>
       <td class="desc">${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
-      <td class="num">${money(i.preco_anterior)}</td><td class="num"><b>${money(i.preco)}</b></td>
-      <td class="num">${seloVariacao(i.preco, i.preco_anterior, 0)}</td>
-      ${VAR.tipo === 'insumo' ? `<td class="num">${(i.usos || 0).toLocaleString('pt-BR')}</td>` : ''}</tr>`).join('');
-  d.innerHTML = `<article class="ficha orc variacao">
-    <div class="orc-topo"><h2>O que mudou de ${esc(de)} para ${esc(para)}</h2>
-      <p class="sub">Comparação dos preços de ${VAR.tipo === 'servico' ? 'serviços' : 'insumos'} entre as duas últimas referências carregadas.</p></div>
-    <div class="var-filtros">${seg('tipo', [['servico', 'Serviços'], ['insumo', 'Insumos']])}${seg('base', [['todas', 'Todas'], ['ORSE', 'ORSE'], ['SINAPI', 'SINAPI']])}${seg('sentido', [['alta', 'Maiores altas'], ['baixa', 'Maiores quedas']])}</div>
+      <td class="num">${money(i.preco_de)}</td><td class="num"><b>${money(i.preco_para)}</b></td>
+      <td class="num">${seloVariacao(i.preco_para, i.preco_de, 0)}</td></tr>`).join('');
+  const foco = document.activeElement && document.activeElement.id;
+  d.innerHTML = `<article class="ficha orc comparativo">
+    <div class="orc-topo"><h2>Comparativo entre meses</h2>
+      <p class="sub">Variação de preço de cada item entre dois meses de referência. Fora desta aba, cada mês aparece sozinho.</p></div>
+    <div class="cmp-meses">
+      <label>De ${sel('cmp-de', CMP.de)}</label><span aria-hidden="true">→</span><label>Para ${sel('cmp-para', CMP.para)}</label>
+    </div>
+    <div class="var-filtros">${seg('tipo', [['servico', 'Serviços'], ['insumo', 'Insumos']])}${seg('base', [['todas', 'Todas'], ['ORSE', 'ORSE'], ['SINAPI', 'SINAPI']])}${seg('sentido', [['alta', 'Maiores altas'], ['baixa', 'Maiores quedas']])}
+      <input id="cmp-q" class="cmp-q" type="search" placeholder="Filtrar por descrição ou código" value="${esc(CMP.q)}" aria-label="Filtrar itens do comparativo"></div>
     <div class="legenda var-resumo">
-      <div style="--cor:var(--alta)">Subiram<b>${(rs.subiram || 0).toLocaleString('pt-BR')}</b><span class="pct">${pct.format(rs.comparados ? rs.subiram / rs.comparados : 0)} dos comparados</span></div>
+      <div style="--cor:var(--alta)">Subiram<b>${(rs.subiram || 0).toLocaleString('pt-BR')}</b><span class="pct">${pct.format(rs.comparados ? rs.subiram / rs.comparados : 0)} dos ${rs.comparados.toLocaleString('pt-BR')} comparados</span></div>
       <div style="--cor:var(--baixa)">Desceram<b>${(rs.desceram || 0).toLocaleString('pt-BR')}</b><span class="pct">${pct.format(rs.comparados ? rs.desceram / rs.comparados : 0)}</span></div>
       <div style="--cor:var(--linha-forte)">Iguais<b>${(rs.iguais || 0).toLocaleString('pt-BR')}</b><span class="pct">${pct.format(rs.comparados ? rs.iguais / rs.comparados : 0)}</span></div>
-      <div style="--cor:var(--planta)">Novos em ${esc(para)}<b>${(rs.novos || 0).toLocaleString('pt-BR')}</b><span class="pct">sem preço anterior</span></div>
+      <div style="--cor:var(--planta)">Só em ${esc(para)}<b>${(rs.novos || 0).toLocaleString('pt-BR')}</b><span class="pct">${(rs.retirados || 0).toLocaleString('pt-BR')} só em ${esc(de)}</span></div>
     </div>
-    <table class="planilha"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">${esc(de)}</th><th class="num">${esc(para)}</th><th class="num">Variação</th>${VAR.tipo === 'insumo' ? '<th class="num">Usado em</th>' : ''}</tr></thead>
-    <tbody>${linhas}</tbody></table>
-    <p class="fonte">Mostrando as ${r.itens.length} maiores ${VAR.sentido === 'alta' ? 'altas' : 'quedas'}.${VAR.tipo === 'insumo' ? ' "Usado em" conta em quantas composições o insumo aparece.' : ''}</p>
+    <div id="cmp-item"></div>
+    <div class="tabela-rola"><table class="planilha"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">${esc(de)}</th><th class="num">${esc(para)}</th><th class="num">Variação</th></tr></thead>
+    <tbody>${linhas || `<tr><td colspan="6" class="sub">Nenhum item com preço nos dois meses${CMP.q ? ' para esse filtro' : ''}.</td></tr>`}</tbody></table></div>
+    <p class="fonte">Mostrando ${r.itens.length} itens, das maiores ${CMP.sentido === 'alta' ? 'altas' : 'quedas'} para as menores. Clique no código para ver o preço do item em todos os meses.</p>
   </article>`;
-  d.querySelectorAll('[data-var]').forEach((g) => g.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return; VAR[g.dataset.var] = b.dataset.v; desenharVariacao();
+  d.querySelectorAll('[data-cmp]').forEach((g) => g.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return; CMP[g.dataset.cmp] = b.dataset.v; desenharComparativo();
   }));
+  $('#cmp-de').addEventListener('change', (e) => { CMP.de = e.target.value; desenharComparativo(); });
+  $('#cmp-para').addEventListener('change', (e) => { CMP.para = e.target.value; desenharComparativo(); });
+  const q = $('#cmp-q');
+  q.addEventListener('input', () => { clearTimeout(tCmp); tCmp = setTimeout(() => { CMP.q = q.value; desenharComparativo(); }, 300); });
+  if (foco === 'cmp-q') { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
+  d.querySelectorAll('[data-hist]').forEach((b) => b.addEventListener('click', () => historicoDoItem(...b.dataset.hist.split('|'))));
+}
+
+async function historicoDoItem(tipo, base, codigo) {
+  const caixa = $('#cmp-item');
+  try {
+    const r = await api(`/api/comparativo/item/${tipo}/${base}/${codigo}`);
+    caixa.innerHTML = `<div class="cmp-detalhe"><div class="cmp-detalhe-cab"><b>${esc(codigo)}/${esc(base)}</b> ${esc(r.descricao)}
+      <button type="button" class="mini" aria-label="Fechar" onclick="this.closest('.cmp-detalhe').remove()">✕</button></div>
+      ${blocoHistorico(r.meses.map((m, k, l) => {
+        const ant = l.slice(0, k).reverse().find((x) => x.preco != null);
+        return { ...m, variacao: m.preco != null && ant ? m.preco / ant.preco - 1 : null };
+      }), r.unidade)}</div>`;
+    caixa.scrollIntoView({ block: 'nearest' });
+  } catch (e) { caixa.innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
+}
+
+// ---------- encargos sociais do mês ----------
+async function desenharEncargos() {
+  const d = $('#detalhe');
+  let r;
+  try { r = await api(`/api/encargos?${qsMes()}`); } catch (e) { d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  const mesNome = nomeRef(r.referencia.id);
+  const quadro = (tipo, titulo) => {
+    const e = r[tipo];
+    if (e.total == null) return `<section class="enc"><h3>${titulo}</h3><p class="sub">O relatório de encargos de ${tipo === 'horista' ? 'horistas' : 'mensalistas'} de ${esc(mesNome)} ainda não foi carregado.</p></section>`;
+    if (!e.linhas.length) return `<section class="enc"><h3>${titulo}<span class="enc-total">${num2.format(e.total)}%</span></h3>
+      <p class="sub">Percentual aplicado nas composições de ${esc(mesNome)}. O detalhamento por item ainda não foi carregado para este mês.</p></section>`;
+    const linhas = e.linhas.map((l) => l.item === l.grupo
+      ? `<tr class="enc-grupo"><td>${esc(l.grupo)}</td><td>${esc(l.descricao)}</td><td class="num">${num2.format(l.valor)}%</td></tr>`
+      : `<tr><td class="cod">${esc(l.item)}</td><td>${esc(l.descricao)}</td><td class="num">${num2.format(l.valor)}%</td></tr>`).join('');
+    return `<section class="enc"><h3>${titulo}<span class="enc-total">${num2.format(e.total)}%</span></h3>
+      <table class="planilha"><thead><tr><th>Item</th><th>Descrição</th><th class="num">Valor</th></tr></thead><tbody>${linhas}</tbody>
+      <tfoot><tr><td></td><td><b>Total do encargo social</b></td><td class="num"><b>${num2.format(e.total)}%</b></td></tr></tfoot></table></section>`;
+  };
+  d.innerHTML = `<article class="ficha orc encargos">
+    <div class="orc-topo"><h2>Encargos sociais de ${esc(mesNome)}</h2>
+      <p class="sub">Percentuais sobre o salário da mão de obra, conforme o modelo da CEHOP para este mês.</p></div>
+    <div class="enc-grade">${quadro('horista', 'Horistas')}${quadro('mensalista', 'Mensalistas')}</div>
+    <p class="fonte">Fonte: ORSE (CEHOP/SE), Modelo de Encargo Social Horista e Mensalista, referência ${esc(r.referencia.descricao)}.</p>
+  </article>`;
 }

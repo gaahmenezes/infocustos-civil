@@ -17,7 +17,8 @@
       <nav class="abas" aria-label="Seções">
         <a href="#/" data-aba="consulta">Consulta</a>
         <a href="#/orcamentos" data-aba="orcamentos">Orçamentos</a>
-        <a href="#/variacao" data-aba="variacao">O que mudou</a>
+        <a href="#/encargos" data-aba="encargos">Encargos sociais</a>
+        <a href="#/comparativo" data-aba="comparativo">Comparativo entre meses</a>
       </nav>
     </div>
     <form class="busca" id="form-busca" role="search" autocomplete="off">
@@ -37,7 +38,7 @@
         </div>
       </div>
     </form>
-    <div class="referencia" id="referencia" title="Data-base dos preços"></div>
+    <div class="referencia" id="referencia"></div>
   </header>
 
   <main class="area">
@@ -74,6 +75,7 @@
       <label>Orçamento<select id="dlg-orc" required></select></label>
       <label id="dlg-novo-wrap" hidden>Nome do novo orçamento<input id="dlg-novo" maxlength="200"></label>
       <label>Etapa<select id="dlg-etapa"></select></label>
+      <p class="sub" id="dlg-nota">O preço entra pela data-base do orçamento escolhido.</p>
       <label>Quantidade<input id="dlg-qtd" inputmode="decimal" value="1" required></label>
       <p class="erro-campo" id="dlg-erro" role="alert"></p>
       <div class="dlg-acoes">

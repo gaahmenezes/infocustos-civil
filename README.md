@@ -35,6 +35,7 @@ No programa ORSE, em *Relatórios → Relatórios Cadastrais*, gere em PDF:
 1. Tabela de Preço de Insumos (ORSE e SINAPI)
 2. Tabela de Preço de Serviços (ORSE e SINAPI)
 3. Relatório de Composições (ORSE e SINAPI)
+4. Modelo de Encargo Social Horista e Modelo de Encargo Social Mensalista
 
 Depois:
 
@@ -52,8 +53,9 @@ python3 extratores/parse_composicoes.py tmp/comp.txt tmp/comp_raw.json ORSE
 pdftotext -layout <composicoes_sinapi.pdf> tmp/comp_sinapi.txt
 python3 extratores/parse_composicoes.py tmp/comp_sinapi.txt tmp/comp_sinapi_raw.json SINAPI
 
-# banco do mês, banco único com todas as referências, índice e histórico
+# banco do mês, encargos, banco único com todas as referências e índice
 S=tmp REF=AAAA-MM REF_DESCRICAO="mês/AAAA-1" python3 extratores/build_db.py
+python3 extratores/parse_encargos.py dados/orse_sinapi_AAAA-MM.sqlite <encargos_horista.pdf> <encargos_mensalista.pdf>
 gzip -9 -k dados/orse_sinapi_AAAA-MM.sqlite                   # este .gz vai para o repositório
 python3 extratores/juntar_referencias.py dados/orse_sinapi.sqlite dados/orse_sinapi_20*.sqlite
 python3 app/build_index.py dados/orse_sinapi.sqlite
@@ -68,25 +70,26 @@ Os extratores conferem os totais do próprio relatório (quantidade por grupo e 
 ## Regras de cálculo observadas na base
 
 - Mão de obra horista entra na composição com encargo social de 111,51% sobre o salário da tabela.
-- Composições SINAPI com mão de obra mensalista usam outro encargo (cerca de 69,7% em maio e 69,9% em
-  agosto, calculado pelas composições; a confirmar no relatório "Modelo de Encargos Sociais Mensalistas").
+- Composições SINAPI com mão de obra mensalista usam o encargo de mensalista (69,72% em agosto/2026,
+  conforme o relatório da CEHOP), enquanto o relatório analítico mostra o custo com o encargo de horista.
 - Modelo DNIT: (equipamentos + mão de obra) ÷ produção da equipe + serviços auxiliares por unidade.
 - Códigos de insumo e de composição se repetem na mesma base; só itens da seção "serviço auxiliar"
   apontam para outra composição.
 
-## Histórico e atualização de referência
+## Meses de referência
 
-- Cada item guarda o preço em todas as referências (tabela `historico`). A busca mostra a variação
-  em relação à referência anterior, e cada composição e insumo mostra seu histórico.
-- Página **O que mudou**: resumo e maiores altas e quedas entre as duas últimas referências.
-- Item que saiu da base continua abrindo, com os valores da última referência em que aparece.
-- Orçamento com preços de uma referência antiga é sinalizado. **Ver o impacto** mostra o total antes e
-  depois; **Atualizar** leva os custos para a referência atual (ou **Duplicar e atualizar a cópia**).
-  Itens que saíram da base ficam com o preço antigo e são listados para substituição.
-- A curva ABC de insumos desmonta cada item com a composição da data-base do próprio item.
-
-Maio → agosto/2026: 74,8% dos serviços subiram (mediana ORSE +2,8%, SINAPI +7,5%); 196 serviços novos e
-175 saíram da base (ex.: 103335/SINAPI). Encargo de horista mantido em 111,51%.
+- **Cada mês é uma aba própria.** Ao escolher o mês no topo, a consulta, as composições, os insumos e os
+  encargos sociais mostram só os valores daquele mês, sem misturar com outros.
+- **Comparativo entre meses** é a única aba que mostra meses juntos: escolha os dois meses, filtre por
+  serviços ou insumos, base e texto, e veja as maiores altas e quedas. Clicando no código, aparece o preço
+  do item em todos os meses carregados.
+- **Encargos sociais:** quadro de horistas e mensalistas do mês, como no relatório da CEHOP
+  (`extratores/parse_encargos.py` lê os PDFs "Modelo de Encargo Social Horista/Mensalista").
+  Agosto/2026: horista 111,51%, mensalista 69,72%. Maio/2026: só o total de horista (111,51%).
+- **Orçamento:** cada orçamento tem uma data-base (um mês). Os itens entram sempre com o preço desse mês.
+  Trocar a data-base mostra o novo total e os itens que não existem no mês escolhido, e pede confirmação;
+  dá também para criar uma cópia no outro mês e manter o original.
+- Item que não existe no mês escolhido avisa e oferece abrir no mês em que existe (ex.: 103335/SINAPI só em maio).
 
 ## Orçamento (fase 2)
 
@@ -114,5 +117,5 @@ https://claude.ai/artifact/4RYzkGmFRxnGs3XV9EBjMM — mesma interface, rodando s
 
 - Histórico mensal de preços quando houver mais de uma referência carregada.
 - Banco PostgreSQL e autenticação para uso em equipe (publicação no Render).
-- Confirmar o encargo de mensalistas e o significado do marcador "#" nos preços de insumos.
+- Encargos detalhados de maio/2026, se for preciso. Significado do marcador "#" nos preços de insumos.
 - Composições próprias, relatórios no formato de edital, cronograma físico-financeiro.
