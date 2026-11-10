@@ -52,7 +52,8 @@
   --sombra-foco: 0 0 0 4px rgb(245 184 0 / 0.35);
   --suave: cubic-bezier(0.2, 0.8, 0.2, 1);
   --t-rapido: 140ms;
-  --t-medio: 240ms;
+  --t-medio: 180ms;
+  --topo: 62px;
   --fonte: 'Archivo', system-ui, -apple-system, 'Segoe UI', sans-serif;
   color-scheme: light;
 }
@@ -471,9 +472,9 @@ body.modo-orc .ficha.orc { max-width: 1320px; margin: 0 auto; width: 100%; }
 .aviso a { color: var(--sinal); font-weight: 650; }
 
 /* ---------- transições entre estados (View Transitions) ---------- */
-::view-transition-old(root), ::view-transition-new(root) { animation-duration: 200ms; animation-timing-function: var(--suave); }
-::view-transition-group(caixa-busca), ::view-transition-group(filtros) { animation-duration: 260ms; animation-timing-function: var(--suave); }
-::view-transition-new(resultados) { animation: entrar 260ms var(--suave) both; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 130ms; animation-timing-function: var(--suave); }
+::view-transition-group(caixa-busca), ::view-transition-group(filtros) { animation-duration: 200ms; animation-timing-function: var(--suave); }
+::view-transition-new(resultados) { animation: entrar 180ms var(--suave) both; }
 ::view-transition-group(barra) { animation: none; }
 
 /* ---------- telas menores ---------- */
@@ -521,7 +522,7 @@ body.modo-orc .ficha.orc { max-width: 1320px; margin: 0 auto; width: 100%; }
 }
 
 @media print {
-  .cabecalho, .pesquisa, .resultados, .acoes, .voltar, .expandir, .abas, .orc-barra .acoes, .add-linha, .nova-etapa, .ctrl, .link-acao { display: none !important; }
+  .cabecalho, .pesquisa, .resultados, .acoes, .voltar, .menu, .segmentos, .voltar-lista, dialog, .expandir, .abas, .orc-barra .acoes, .add-linha, .nova-etapa, .ctrl, .link-acao { display: none !important; }
   body, .detalhe { background: #fff; display: block; }
   .area { display: block; padding: 0; }
   .ficha { box-shadow: none; border: 0; padding: 0; }
@@ -578,8 +579,8 @@ mark { background: linear-gradient(transparent 55%, rgb(245 184 0 / 0.55) 55%); 
 .res[aria-current="true"] { background: var(--planta-claro); border-color: var(--planta-borda); box-shadow: inset 3px 0 0 var(--acao); }
 .tipo-servico { background: var(--grafite); color: #fff; }
 .selo { background: var(--grafite); color: #fff; }
-.link-acao, .arvore .cod a, .planilha .cod a, .uso a, .link-cod { color: var(--tinta); text-decoration: underline; text-decoration-color: var(--acao); text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.link-acao:hover, .arvore .cod a:hover, .planilha .cod a:hover, .uso a:hover, .link-cod:hover { text-decoration-color: var(--tinta); }
+.link-acao { color: var(--tinta); text-decoration: underline; text-decoration-color: var(--acao); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.link-acao:hover { text-decoration-color: var(--tinta); }
 .expandir { background: var(--acao); border-color: var(--acao-forte); color: var(--sobre-acao); }
 tr.filho td.desc { box-shadow: inset 3px 0 0 var(--acao); }
 .peso i, .hist-barra i { background: var(--tinta-2); }
@@ -644,3 +645,196 @@ body:not(.ocioso) .selo-base { display: none; }
 .ficha-cod .cb-base { font-size: 12.5px; padding: 6px 9px 5px; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .cb-SINAPI { color: #10161C; } }
 :root[data-theme="dark"] .cb-SINAPI { color: #10161C; }
+
+/* ===================== refino: padrão único de páginas, tabelas e botões ===================== */
+/* barra superior: mês e tema à direita */
+.cab-direita { display: flex; align-items: center; gap: 10px; min-width: 0; justify-self: end; }
+.tema { width: 36px; height: 36px; flex: none; border-radius: 999px; border: 1px solid var(--grafite-linha); background: var(--grafite-2); color: var(--grafite-texto);
+  display: grid; place-items: center; padding: 0; transition: color var(--t-rapido), border-color var(--t-rapido), transform var(--t-rapido) var(--suave); }
+.tema:hover { color: var(--acao); border-color: #555B61; }
+.tema:active { transform: scale(0.94); }
+.tema svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.tema[data-tema="dark"] .tema-lua, .tema:not([data-tema="dark"]) .tema-sol { display: none; }
+:focus-visible { outline-color: var(--acao-forte); }
+.cabecalho :focus-visible { outline-color: var(--acao); }
+
+/* tela inicial mais alta na página, com menos vazio */
+body.ocioso .pesquisa { padding-top: clamp(28px, 7vh, 84px); }
+.cartao .vazio-cartao { display: flex; align-items: center; gap: 10px; line-height: 1.35; }
+.cartao .vazio-cartao svg { flex: none; width: 24px; height: 24px; fill: none; stroke: var(--linha-forte); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+.cartao .linha-2 b { color: var(--tinta-2); font-weight: 650; letter-spacing: 0.02em; }
+
+/* estado vazio: ícone, frase e, se houver, a ação */
+.vazio-estado { display: grid; justify-items: center; text-align: center; gap: 6px; padding: 44px 20px; color: var(--tinta-2); }
+.vazio-estado svg { width: 40px; height: 40px; margin-bottom: 6px; fill: none; stroke: var(--tinta-3); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.vazio-estado b { color: var(--tinta); font-size: 16px; font-weight: 650; }
+.vazio-estado p { margin: 0; max-width: 46ch; font-size: 14px; }
+.vazio-estado .botao { margin-top: 12px; }
+.pagina > .vazio-estado { background: var(--superficie); border: 1px dashed var(--linha-forte); border-radius: var(--raio-g); padding: 64px 20px; }
+
+/* páginas (Orçamentos, Encargos, Comparativo): título fora do cartão, conteúdo em cartões */
+.pagina { max-width: 1320px; width: 100%; margin: 0 auto; animation: entrar var(--t-medio) var(--suave) both; }
+.pagina .ficha { max-width: none; animation: none; }
+.pag-cab { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px 24px; flex-wrap: wrap; margin: 6px 0 18px; }
+.pag-cab h1 { margin: 0 0 4px; font-size: 28px; line-height: 1.1; font-weight: 700; font-stretch: 84%; letter-spacing: -0.015em; }
+.pag-cab .sub b { color: var(--tinta); font-weight: 650; }
+.pag-barra { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.pag-barra .cmp-q { flex: 1 1 260px; max-width: 420px; padding: 9px 12px; }
+.ordem { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.ordem select { font-size: 14px; color: var(--tinta); background: var(--superficie); border: 1px solid var(--linha-forte); border-radius: var(--raio-p); padding: 8px 10px; }
+.ordem select:focus { outline: none; border-color: var(--tinta); box-shadow: var(--sombra-foco); }
+.blocos { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.bloco { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-g); box-shadow: var(--sombra-1); padding: 14px 16px 13px; display: grid; gap: 2px; min-width: 0; }
+.bloco-rotulo { display: flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 600; color: var(--tinta-2); }
+.bloco-rotulo::before { content: ""; width: 8px; height: 8px; border-radius: 3px; background: var(--cor, var(--tinta-3)); }
+.bloco b { font-size: 28px; line-height: 1.1; font-weight: 700; font-stretch: 82%; letter-spacing: -0.01em; }
+.bloco-nota { font-size: 12.5px; color: var(--tinta-3); }
+
+/* botões: um só amarelo por tela; o resto fica no menu */
+.menu { position: relative; }
+.menu summary { list-style: none; cursor: pointer; user-select: none; }
+.menu summary::-webkit-details-marker { display: none; }
+.seta { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--t-rapido) var(--suave); }
+.menu[open] .seta { transform: rotate(180deg); }
+.menu[open] summary { background: var(--superficie-2); border-color: var(--tinta-3); }
+.menu-lista { position: absolute; z-index: 15; right: 0; top: calc(100% + 6px); min-width: 230px; padding: 6px; background: var(--superficie); border: 1px solid var(--linha);
+  border-radius: var(--raio); box-shadow: var(--sombra-2); display: grid; gap: 2px; animation: entrar var(--t-rapido) var(--suave) both; }
+.menu-lista > * { display: block; width: 100%; text-align: left; border: 0; background: transparent; padding: 9px 11px; border-radius: var(--raio-p);
+  font-size: 14px; font-weight: 500; color: var(--tinta); text-decoration: none; white-space: nowrap; transition: background-color var(--t-rapido); }
+.menu-lista > *:hover, .menu-lista > *:focus-visible { background: var(--superficie-2); }
+.menu-lista .perigo { color: var(--perigo); }
+.botao.perigo-cheio { background: var(--perigo); border-color: var(--perigo); color: #fff; }
+.botao.perigo-cheio:hover { filter: brightness(0.92); background: var(--perigo); }
+.voltar-lista { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 600; color: var(--tinta-2); text-decoration: none; margin-left: -4px; padding: 2px 6px 2px 2px; border-radius: var(--raio-p); transition: color var(--t-rapido), background-color var(--t-rapido); }
+.voltar-lista:hover { color: var(--tinta); background: var(--superficie-2); }
+.voltar-lista svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* tabelas: cabeçalho que acompanha a rolagem, linhas compactas, código + base como etiqueta */
+.tabela-barra { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin: 26px 0 10px; }
+.tabela-barra h3 { margin: 0; }
+.tabela-barra .sub { margin-top: 2px; }
+.custo + .tabela-barra { margin-top: 4px; }
+.arvore, .uso, .planilha { overflow: visible; }
+.uso { margin-top: 0; }
+.arvore thead th, .uso thead th, .planilha thead th { position: sticky; top: var(--topo); z-index: 3; box-shadow: 0 1px 0 var(--linha); letter-spacing: 0.02em; }
+.arvore thead th:first-child, .uso thead th:first-child, .planilha thead th:first-child { border-top-left-radius: calc(var(--raio) - 1px); }
+.arvore thead th:last-child, .uso thead th:last-child, .planilha thead th:last-child { border-top-right-radius: calc(var(--raio) - 1px); }
+.arvore tbody:last-child tr:last-child td:first-child, .uso tbody tr:last-child td:first-child, .planilha > :last-child tr:last-child td:first-child { border-bottom-left-radius: calc(var(--raio) - 1px); }
+.arvore tbody:last-child tr:last-child td:last-child, .uso tbody tr:last-child td:last-child, .planilha > :last-child tr:last-child td:last-child { border-bottom-right-radius: calc(var(--raio) - 1px); }
+.arvore th.num, .uso th.num, .planilha th.num { text-align: right; }
+td.total { font-weight: 650; }
+.arvore td, .uso td { vertical-align: baseline; }
+.arvore .desc, .uso .desc { line-height: 1.35; }
+.col-peso { width: 132px; white-space: nowrap; }
+td.col-peso { font-size: 12px; color: var(--tinta-3); text-align: right; }
+.peso { display: inline-block; vertical-align: middle; width: 58px; height: 5px; margin: 0 8px 0 0; max-width: none; background: var(--linha); border-radius: 999px; overflow: hidden; }
+.peso i { display: block; height: 100%; border-radius: 999px; }
+.peso-n { display: inline-block; min-width: 42px; }
+/* etiqueta discreta dentro das tabelas */
+.cb-p { box-shadow: none; border-radius: 0; overflow: visible; align-items: center; gap: 6px; text-decoration: none; vertical-align: baseline; border: 0; background: none; padding: 0; cursor: pointer; }
+.cb-p .cb-num { font-size: 13px; font-weight: 700; letter-spacing: 0.02em; padding: 0; }
+.cb-p .cb-base { font-size: 9.5px; padding: 3px 5px 2px; border-radius: 4px; letter-spacing: 0.05em; }
+.cb-p:hover .cb-num { text-decoration: underline; text-decoration-color: var(--acao); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.arvore .cod, .uso .cod, .planilha .cod { color: var(--tinta); }
+.cod .expandir { vertical-align: middle; }
+/* altura das linhas */
+:root[data-densidade="compacta"] .arvore td { padding: 5px 12px; font-size: 13.5px; }
+:root[data-densidade="compacta"] .arvore th, :root[data-densidade="compacta"] .uso th, :root[data-densidade="compacta"] .planilha th { padding-top: 7px; padding-bottom: 7px; }
+:root[data-densidade="compacta"] .arvore tr.secao td { padding: 0; }
+:root[data-densidade="compacta"] .secao-bt { padding: 7px 12px; font-size: 13.5px; }
+:root[data-densidade="compacta"] .uso td { padding: 5px 12px; font-size: 13.5px; }
+:root[data-densidade="compacta"] .enc .planilha td { padding: 4px 10px; font-size: 13.5px; }
+:root[data-densidade="compacta"] .expandir { width: 18px; height: 18px; line-height: 14px; font-size: 12px; border-radius: 5px; }
+:root[data-densidade="compacta"] tr.filho td { font-size: 13px; }
+
+/* resultados: dicas de teclado no rodapé */
+.resultados-rod { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; padding: 8px 14px; border-top: 1px solid var(--linha); font-size: 11.5px; color: var(--tinta-3); background: var(--superficie-2); }
+.resultados-rod kbd { font: 600 10.5px/1 var(--fonte); color: var(--tinta-2); padding: 3px 5px; margin-right: 3px; border: 1px solid var(--linha-forte); border-radius: 4px; background: var(--superficie); }
+.res:focus-visible { outline: 2px solid var(--acao-forte); outline-offset: -2px; background: var(--superficie-2); }
+
+/* orçamentos em cartões */
+.orc-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+.orc-nada { grid-column: 1 / -1; }
+.orc-cartao { display: grid; grid-template-columns: 1fr; gap: 2px; height: 100%; padding: 18px 20px 14px; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-g);
+  box-shadow: var(--sombra-1); color: var(--tinta); text-decoration: none; min-width: 0;
+  transition: transform var(--t-rapido) var(--suave), box-shadow var(--t-medio) var(--suave), border-color var(--t-rapido); }
+.orc-cartao:hover { transform: translateY(-2px); box-shadow: var(--sombra-2), inset 0 3px 0 var(--acao); border-color: var(--linha-forte); }
+.orc-cartao:active { transform: none; }
+.orc-c-nome { font-size: 16px; font-weight: 650; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.orc-c-sub { font-size: 13px; color: var(--tinta-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orc-c-total { margin-top: 14px; font-size: 27px; font-weight: 700; font-stretch: 80%; line-height: 1.05; letter-spacing: -0.01em; }
+.orc-c-rot { font-size: 12.5px; color: var(--tinta-3); }
+.orc-cartao .res-div { margin-top: 12px; }
+.orc-cartao .mini-barra { flex: 1 1 auto; }
+.orc-c-meta { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--linha); font-size: 12.5px; color: var(--tinta-2); align-self: end; }
+
+/* painel lateral (novo orçamento) e confirmação */
+.gaveta { margin: 0 0 0 auto; width: min(480px, 100vw); height: 100dvh; max-height: 100dvh; padding: 0; border: 0; border-left: 1px solid var(--linha); border-radius: var(--raio-g) 0 0 var(--raio-g); }
+.gaveta[open] { animation: gaveta 220ms var(--suave) both; }
+@keyframes gaveta { from { opacity: 0; transform: translateX(36px); } }
+.gaveta form { height: 100%; gap: 0; }
+.gaveta-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 22px 24px 16px; border-bottom: 1px solid var(--linha); }
+.gaveta-cab h2 { font-size: 21px; font-stretch: 88%; }
+.gaveta-campos { flex: 1; overflow-y: auto; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; padding: 20px 24px; }
+.gaveta-campos .largo { grid-column: 1 / -1; }
+.gaveta-campos input, .gaveta-campos select { padding: 10px 12px; width: 100%; }
+.dialogo small { font-size: 12px; font-weight: 400; color: var(--tinta-3); }
+.gaveta .erro-campo { padding: 0 24px; }
+.gaveta-rod { display: flex; justify-content: flex-end; gap: 8px; padding: 14px 24px calc(14px + env(safe-area-inset-bottom, 0px)); border-top: 1px solid var(--linha); background: var(--superficie-2); }
+.dialogo-p { width: min(440px, calc(100vw - 32px)); }
+.dialogo-p h2 { margin-bottom: 6px; }
+.dialogo-p .dlg-acoes { margin-top: 20px; }
+.dialogo input:focus, .dialogo select:focus { border-color: var(--tinta); }
+
+/* encargos */
+.ficha.enc { padding: 22px 24px 24px; }
+.enc-cab { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 14px; }
+.ficha .enc-cab h2 { margin: 0 0 2px; font-size: 19px; font-stretch: 90%; }
+.enc-total { font-size: 32px; line-height: 1; font-weight: 700; font-stretch: 80%; white-space: nowrap; }
+.enc .planilha { margin-top: 0; }
+.enc-grupo td { background: var(--superficie-2); }
+.enc-grupo td:first-child { box-shadow: inset 3px 0 0 var(--acao); }
+
+/* comparativo */
+.pag-cab .cmp-meses { margin: 0; }
+.comparativo .var-filtros { margin-top: 0; }
+.comparativo .planilha { margin-top: 0; }
+.comparativo .ficha { padding: 20px 22px 22px; }
+.cmp-detalhe { margin: 0 0 14px; }
+.cmp-detalhe-cab { align-items: center; gap: 12px; }
+.tabela-rola { overflow-x: visible; }
+
+@media (max-width: 1100px) {
+  .cab-direita { justify-self: end; }
+}
+@media (max-width: 900px) {
+  .cab-direita { justify-self: stretch; justify-content: flex-end; }
+  .col-peso, .resultados-rod { display: none; }
+  .blocos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bloco b { font-size: 24px; }
+  .pag-cab h1 { font-size: 24px; }
+  .pag-cab > .botao { width: 100%; }
+  .orc-lista { grid-template-columns: 1fr; }
+  .gaveta { width: 100vw; border-radius: 0; border-left: 0; }
+  .gaveta-campos { grid-template-columns: 1fr; }
+  .tabela-rola { overflow-x: auto; }
+  .arvore thead th, .uso thead th, .planilha thead th { position: static; }
+  .uso { display: block; overflow-x: auto; }
+  .menu-lista { right: auto; left: 0; }
+  .ficha.enc { padding: 16px; }
+}
+@media print {
+  .tabela-barra .segmentos, .tema, .resultados-rod { display: none !important; }
+  .arvore thead th, .uso thead th, .planilha thead th { position: static; }
+}
+.orc-cartao .res-div { grid-area: auto; }
+.gaveta-campos select { min-height: 43px; }
+.orc-c-meta { display: block; }
+.orc-campos label { flex: 0 1 190px; }
+:root[data-densidade="compacta"] .comparativo .planilha td, :root[data-densidade="compacta"] .abc td { padding: 5px 10px; font-size: 13.5px; }
+body.ocioso .inicio-painel { align-items: start; }
+@media (max-width: 900px) {
+  .pag-cab .cmp-meses { flex-wrap: nowrap; width: 100%; }
+  .pag-cab .cmp-meses label { flex: 1; min-width: 0; }
+  .pag-cab .cmp-meses select { min-width: 0; width: 100%; }
+}

@@ -150,3 +150,17 @@ def test_mudar_data_base_do_orcamento():
         assert n['referencia'] == '2026-05' and n['total'] == 613.00
     finally:
         c.delete(f"/api/orcamentos/{o['id']}")
+
+
+def test_divisao_do_custo_do_orcamento(orc):
+    assert orc['divisao'] is None  # sem itens, não há o que dividir
+    c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100})
+    o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'insumo', 'base': 'SINAPI', 'codigo': '04750', 'quantidade': 10}).json()
+    d = o['divisao']
+    assert abs(sum(d.values()) - 1) < 0.001 and set(d) == {'mo', 'mat', 'equip', 'terc'}
+    # 00003/ORSE é 80,9% mão de obra; o pedreiro (insumo de pessoal) entra inteiro em mão de obra
+    custo = {i['codigo']: i['custo_total'] for e in o['etapas'] for i in e['itens']}
+    esperado = (custo['00003'] * 0.809 + custo['04750']) / (custo['00003'] + custo['04750'])
+    assert abs(d['mo'] - esperado) < 0.002
+    lista = {x['id']: x for x in c.get('/api/orcamentos').json()}
+    assert lista[orc['id']]['divisao'] == d

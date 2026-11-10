@@ -196,6 +196,21 @@ const LOCAL = (() => {
     const { etapas: _e, itens: _i, ...cab } = o;
     return { ...cab, etapas, custo_total: custo, total, valor_bdi: r2(total - custo), qtd_itens: o.itens.length, referencia_descricao: mes(o.referencia).descricao };
   }
+  // divisão do custo direto do orçamento (mesma regra do servidor)
+  const PARTE_CAT = { PESSOAL: 'mo', EQUIPAMENTOS: 'equip', 'SERVIÇOS DE TERCEIROS': 'terc' };
+  async function comDivisao(c) {
+    const partes = { mo: 0, mat: 0, equip: 0, terc: 0 };
+    for (const e of c.etapas) for (const i of e.itens) {
+      if (!i.custo_total) continue;
+      const it = item(await dados(i.referencia || c.referencia), i.tipo, i.base, i.codigo);
+      if (i.tipo === 'servico' && it && it.pct_mo != null) for (const k of Object.keys(partes)) partes[k] += i.custo_total * (it['pct_' + k] || 0);
+      else if (i.tipo === 'insumo') partes[PARTE_CAT[it ? it.categoria : ''] || 'mat'] += i.custo_total;
+      else partes.mat += i.custo_total;
+    }
+    const soma = partes.mo + partes.mat + partes.equip + partes.terc;
+    c.divisao = soma > 0 ? Object.fromEntries(Object.entries(partes).map(([k, v]) => [k, Math.round((v / soma) * 1e4) / 1e4])) : null;
+    return c;
+  }
   function tocar(o) { o.atualizado_em = agora(); gravar(); return calcular(o); }
   function mover(lista, id, direcao) {
     ordenar(lista); const k = lista.findIndex((x) => x.id === Number(id)); const j = direcao === 'cima' ? k - 1 : k + 1;
@@ -261,7 +276,10 @@ const LOCAL = (() => {
     }
     return { referencia: ref, total_depois: r2(novo), itens: linhas, sem_preco: sem };
   }
-  async function criarExemplo() {
+  let exemploEmCurso = null;
+  // leituras simultâneas esperam a mesma criação, para nenhuma ver a lista ainda vazia
+  function criarExemplo() { return exemploEmCurso || (exemploEmCurso = montarExemplo()); }
+  async function montarExemplo() {
     const b = banco(); if (b.exemplo_v2) return; b.exemplo_v2 = true;
     const ref = MESES[0].id;  // exemplo feito no primeiro mês carregado
     const o = { id: novoId(), nome: `Exemplo: reforma de escola em ${nomeMes(MESES[0])} (dados fictícios)`, cliente: 'Exemplo', local: 'Aracaju/SE',
@@ -307,7 +325,7 @@ const LOCAL = (() => {
     if (r0 === 'orcamentos') {
       await criarExemplo();
       const b = banco();
-      if (!r1 && M === 'GET') return b.orcamentos.slice().sort((x, y) => y.atualizado_em.localeCompare(x.atualizado_em)).map((o) => calcular(o));
+      if (!r1 && M === 'GET') return Promise.all(b.orcamentos.slice().sort((x, y) => y.atualizado_em.localeCompare(x.atualizado_em)).map((o) => comDivisao(calcular(o))));
       if (!r1 && M === 'POST') {
         if (!String(corpo.nome || '').trim()) throw erro(422, 'Dê um nome ao orçamento.');
         const o = { id: novoId(), nome: corpo.nome.trim(), cliente: (corpo.cliente || '').trim(), local: (corpo.local || '').trim(), referencia: mes(corpo.referencia).id,
@@ -315,7 +333,7 @@ const LOCAL = (() => {
         o.etapas.push({ id: novoId(), ordem: 1, titulo: 'Serviços preliminares' }); b.orcamentos.push(o); return tocar(o);
       }
       const o = achar(r1);
-      if (!r2_ && M === 'GET') return calcular(o);
+      if (!r2_ && M === 'GET') return comDivisao(calcular(o));
       if (!r2_ && M === 'PATCH') { for (const k of ['nome', 'cliente', 'local', 'bdi', 'observacoes']) if (corpo[k] != null) o[k] = k === 'bdi' ? Number(corpo[k]) : corpo[k]; return tocar(o); }
       if (!r2_ && M === 'DELETE') { b.orcamentos = b.orcamentos.filter((x) => x !== o); gravar(); return null; }
       if (r2_ === 'duplicar') {

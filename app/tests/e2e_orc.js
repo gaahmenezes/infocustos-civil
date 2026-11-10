@@ -6,10 +6,10 @@ const U = 'http://localhost:8000';
   const p = await b.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
   const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
   p.on('dialog', d => d.accept());
-  await p.goto(U + '/#/orcamentos'); await p.waitForSelector('#form-novo');
+  await p.goto(U + '/#/orcamentos'); await p.click('#novo-orc'); await p.waitForSelector('#dlg-novo-orc[open]');
   await p.fill('[name=nome]', 'Reforma da Escola Estadual Rio Branco'); await p.fill('[name=cliente]', 'Secretaria de Educação');
   await p.fill('[name=local]', 'Aracaju/SE'); await p.fill('[name=bdi]', '24,23');
-  await p.click('#form-novo button'); await p.waitForSelector('.planilha');
+  await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
   ok(/#\/orcamento\/\d+/.test(p.url()), 'Criou orçamento e abriu a planilha');
   const add = async (etapaIdx, termo, qtd) => {
     const inp = (await p.$$('.add-q'))[etapaIdx]; await inp.fill(termo);

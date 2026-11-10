@@ -21,25 +21,22 @@ def trocar(texto, pares, nome):
 
 app = (STATIC / 'app.js').read_text(encoding='utf-8')
 app = re.sub(r'async function api\(url\) \{.*?\n\}\n', 'async function api(url) { return LOCAL.req(url); }\n', app, count=1, flags=re.S)
+# no artefato não há download de arquivo: o menu "Exportar" vira "Copiar para o Excel"
+app, n = re.subn(r'/\*EXPORTAR-COMP\*/.*?/\*FIM-EXPORTAR-COMP\*/',
+                 "function exportarComposicao() { return '<button type=\"button\" class=\"botao\" data-copiar>Copiar para o Excel</button>'; }",
+                 app, count=1, flags=re.S)
+assert n == 1, 'menu de exportação não encontrado em app.js'
 app = trocar(app, [
-    ("const h = `#/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}`;",
-     "const h = `#${tipo === 'servico' ? 'c' : 'i'}-${base}-${codigo}`;"),
+    ("const rotaItem = (tipo, base, codigo) => `#/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}`;",
+     "const rotaItem = (tipo, base, codigo) => `#${tipo === 'servico' ? 'c' : 'i'}-${base}-${codigo}`;"),
+    ("const rotaOrc = (id, aba) => `#/orcamento/${id}${aba ? '/' + aba : ''}`;",
+     "const rotaOrc = (id, aba) => `#orc-${id}${aba ? '-' + aba : ''}`;"),
     ("const emOrc = /^#\\/orcamento/.test(location.hash);", "const emOrc = /^#orc/.test(location.hash);"),
     ("const m = location.hash.match(/^#\\/(composicao|insumo)\\/(ORSE|SINAPI)\\/(\\w+)/);",
      "const m = location.hash.match(/^#(c|i)-(ORSE|SINAPI)-(\\w+)$/);"),
     ("const [, tipo, base, codigo] = m;", "const [, t, base, codigo] = m; const tipo = t === 'c' ? 'composicao' : 'insumo';"),
-    ("href=\"#/${tipoLink === 'servico' ? 'composicao' : 'insumo'}/${esc(i.base)}/${esc(i.codigo)}\"",
-     "href=\"#${tipoLink === 'servico' ? 'c' : 'i'}-${esc(i.base)}-${esc(i.codigo)}\""),
-    ('<a class="botao" href="/api/exportar/composicao/${esc(c.base)}/${esc(c.codigo)}.xlsx?ref=${esc(c.referencia)}">Exportar Excel</a>\n'
-     '        <button type="button" class="botao" onclick="window.print()">Imprimir ou PDF</button>',
-     '<button type="button" class="botao" data-copiar>Copiar para o Excel</button>'),
-    ('} catch (e) { alert(e.message); }', '} catch (e) { avisar(esc(e.message)); }'),
-    ('href="#/composicao/${esc(u.base)}/${esc(u.codigo)}"', 'href="#c-${esc(u.base)}-${esc(u.codigo)}"'),
     ("const emVar = /^#\\/comparativo/.test(location.hash);", "const emVar = /^#comparativo/.test(location.hash);"),
     ("const emEnc = /^#\\/encargos/.test(location.hash);", "const emEnc = /^#encargos/.test(location.hash);"),
-    ("<a href=\"#/${x.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(x.base)}/${esc(x.codigo)}\">",
-     "<a href=\"#${x.tipo === 'servico' ? 'c' : 'i'}-${esc(x.base)}-${esc(x.codigo)}\">"),
-    ('<a href="#/orcamento/${o.id}">', '<a href="#orc-${o.id}">'),
 ], 'app.js')
 app = app.replace('href="#/orcamentos"', 'href="#orcamentos"')
 
@@ -49,30 +46,13 @@ orc = re.sub(r'async function req\(url, metodo = .GET., corpo\) \{.*?\n\}\n',
 orc = trocar(orc, [
     ("location.hash.match(/^#\\/orcamento\\/(\\d+)(?:\\/(planilha|abc-servicos|abc-insumos))?/)",
      "location.hash.match(/^#orc-(\\d+)(?:-(planilha|abc-servicos|abc-insumos))?$/)"),
-    ('href="#/orcamento/${o.id}/${k}"', 'href="#orc-${o.id}-${k}"'),
     ('<a class="botao primario" href="/api/orcamentos/${o.id}/exportar.xlsx">Exportar Excel</a>',
      '<button type="button" class="botao primario" data-copiar>Copiar para o Excel</button>'),
-    ("""  $('#orc-excluir').addEventListener('click', async () => {
-    if (!confirm(`Excluir o orçamento "${o.nome}"? Isso não pode ser desfeito.`)) return;""",
-     """  $('#orc-excluir').addEventListener('click', async (ev) => {
-    const bt = ev.currentTarget;
-    if (bt.dataset.confirmar !== '1') {
-      bt.dataset.confirmar = '1'; bt.textContent = 'Confirmar exclusão';
-      setTimeout(() => { bt.dataset.confirmar = ''; bt.textContent = 'Excluir'; }, 5000); return;
-    }"""),
-    ("if (et.itens.length && !confirm(`Excluir a etapa \"${et.titulo}\" e seus ${et.itens.length} itens?`)) return;",
-     "if (et.itens.length && b.dataset.confirmar !== '1') { b.dataset.confirmar = '1'; b.textContent = '?'; "
-     "avisar(`Clique de novo no ✕ para excluir a etapa \"${esc(et.titulo)}\" e seus ${et.itens.length} itens.`); "
-     "setTimeout(() => { b.dataset.confirmar = ''; b.textContent = '✕'; }, 5000); return; }"),
-    ("href=\"#/${i.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(i.base)}/${esc(i.codigo)}\"",
-     "href=\"#${i.tipo === 'servico' ? 'c' : 'i'}-${esc(i.base)}-${esc(i.codigo)}\""),
-    ("href=\"#/${tipo === 'servicos' && l.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(l.base)}/${esc(l.codigo)}\"",
-     "href=\"#${tipo === 'servicos' && l.tipo === 'servico' ? 'c' : 'i'}-${esc(l.base)}-${esc(l.codigo)}\""),
+    ('<div><h1>Orçamentos</h1><p class="sub" id="orc-resumo"></p></div>',
+     '<div><h1>Orçamentos</h1><p class="sub" id="orc-resumo"></p><p class="sub nota-teste">Versão de teste: os orçamentos ficam salvos só neste navegador.</p></div>'),
 ], 'orcamento.js')
-orc = orc.replace('#/orcamento/${', '#orc-${').replace("'#/orcamentos'", "'#orcamentos'").replace('"#/orcamentos"', '"#orcamentos"')
-orc = orc.replace("""<div class="orc-topo"><h2>Orçamentos</h2></div>""",
-                  """<div class="orc-topo"><h2>Orçamentos</h2><p class="sub">Versão de teste: os orçamentos ficam salvos só neste navegador.</p></div>""")
-assert '#/' not in orc.replace('#/orcamentos', ''), 'sobrou rota antiga em orcamento.js'
+orc = orc.replace("'#/orcamentos'", "'#orcamentos'").replace('"#/orcamentos"', '"#orcamentos"')
+assert '#/' not in orc, 'sobrou rota antiga em orcamento.js'
 assert '#/' not in app.replace("'#/'", ''), 'sobrou rota antiga em app.js'
 
 html = (STATIC / 'index.html').read_text(encoding='utf-8')
@@ -107,8 +87,8 @@ function tabelaParaTexto(tab) {
   tab.querySelectorAll('tr').forEach((tr) => {
     if (tr.hidden || tr.classList.contains('add-linha')) return;
     const cel = [...tr.children].map((td) => {
-      const inp = td.querySelector('input');
-      const t = inp ? inp.value : td.innerText;
+      const inp = td.querySelector('input'), cb = td.querySelector('.cb');
+      const t = inp ? inp.value : cb ? `${cb.querySelector('.cb-num').textContent}/${cb.querySelector('.cb-base').textContent}` : td.innerText;
       return t.replace(/\s+/g, ' ').replace(/[↑↓✕+−?]/g, '').trim();
     });
     if (cel.some(Boolean)) linhas.push(cel.join('\t'));
@@ -121,7 +101,7 @@ async function copiarTexto(texto, rotulo) {
 }
 document.addEventListener('click', (e) => {
   if (e.target.closest('[data-copiar]')) {
-    const tab = document.querySelector('#detalhe table.arvore, #detalhe table.planilha');
+    const tab = document.querySelector('#detalhe table.arvore, #detalhe table.planilha, #detalhe table.uso');
     if (!tab) return;
     const cab = document.querySelector('#detalhe h2, #detalhe .orc-nome');
     const titulo = cab ? (cab.value || cab.innerText) : '';
@@ -141,7 +121,7 @@ css += '''
 button.link-acao { border: 0; background: none; cursor: pointer; padding: 0; font: inherit; font-size: 13px; }
 #copiar-texto { width: 100%; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; background: var(--concreto); color: var(--tinta);
   border: 1px solid var(--linha-forte); border-radius: var(--raio); padding: 8px; }
-.orc-topo .sub { margin: -8px 0 14px; }
+.nota-teste { margin-top: 2px; font-size: 12.5px; color: var(--tinta-3); }
 '''
 
 local = (AQUI / 'local.js').read_text(encoding='utf-8')

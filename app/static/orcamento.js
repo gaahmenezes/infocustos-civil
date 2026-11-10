@@ -21,6 +21,19 @@ function avisar(html, ms = 4000) {
   clearTimeout(avisar.t); avisar.t = setTimeout(() => { a.hidden = true; }, ms);
 }
 
+// pergunta de confirmação com o visual do sistema; devolve true ou false
+function confirmar({ titulo, texto, ok = 'Confirmar', perigo = false }) {
+  const d = $('#dlg-confirmar');
+  $('#confirmar-titulo').textContent = titulo; $('#confirmar-texto').textContent = texto || '';
+  const bt = $('#confirmar-ok'); bt.textContent = ok; bt.className = `botao ${perigo ? 'perigo-cheio' : 'primario'}`;
+  return new Promise((resolver) => {
+    const fim = () => { d.removeEventListener('close', fim); resolver(d.returnValue === 'ok'); };
+    d.returnValue = ''; d.addEventListener('close', fim); d.showModal(); $('#confirmar-cancelar').focus();
+  });
+}
+$('#confirmar-ok').addEventListener('click', () => $('#dlg-confirmar').close('ok'));
+$('#confirmar-cancelar').addEventListener('click', () => $('#dlg-confirmar').close(''));
+
 const qtdFmt = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 4 });
 const lerNum = (s) => { const v = Number(String(s).trim().replace(/\./g, '').replace(',', '.')); return Number.isFinite(v) ? v : NaN; };
 const dataFmt = (iso) => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
@@ -37,36 +50,72 @@ window.rotaOrcamento = async function () {
   }
 };
 
+const LISTA = { q: '', ordem: 'recentes', todos: [] };
+const ORDENS = {
+  recentes: ['Alterados por último', (a, b) => String(b.atualizado_em).localeCompare(String(a.atualizado_em))],
+  nome: ['Nome (A a Z)', (a, b) => a.nome.localeCompare(b.nome, 'pt-BR')],
+  total: ['Maior total', (a, b) => b.total - a.total],
+};
+function desenharCartoesOrc() {
+  const termo = LISTA.q.trim().toLowerCase();
+  const vis = LISTA.todos.filter((o) => !termo || [o.nome, o.cliente, o.local].join(' ').toLowerCase().includes(termo)).sort(ORDENS[LISTA.ordem][1]);
+  const soma = vis.reduce((t, o) => t + o.total, 0);
+  $('#orc-resumo').innerHTML = LISTA.todos.length
+    ? `<b>${vis.length}</b> ${vis.length === 1 ? 'orçamento' : 'orçamentos'}${termo ? ` de ${LISTA.todos.length}` : ''} · <b>${brl.format(soma)}</b> no total, com BDI`
+    : 'Monte a planilha da obra com os preços da ORSE e da SINAPI.';
+  const ul = $('#orc-lista'); if (!ul) return;
+  ul.innerHTML = vis.length ? vis.map((o) => `<li><a class="orc-cartao" href="${rotaOrc(o.id)}">
+      <span class="orc-c-nome">${esc(o.nome)}</span>
+      <span class="orc-c-sub">${esc([o.cliente, o.local].filter(Boolean).join(' · ') || 'Sem cliente e local')}</span>
+      <span class="orc-c-total">${brl.format(o.total)}</span>
+      <span class="orc-c-rot">total com BDI de ${num2.format(o.bdi)}%</span>
+      <span class="res-div">${o.divisao ? barraDivisao(o.divisao) : '<span class="dom">Ainda sem itens</span>'}</span>
+      <span class="orc-c-meta">${esc(nomeRef(o.referencia))} · ${o.qtd_itens} ${o.qtd_itens === 1 ? 'item' : 'itens'} · alterado em ${dataFmt(o.atualizado_em)}</span>
+    </a></li>`).join('')
+    : `<li class="orc-nada">${vazio('lupa', 'Nenhum orçamento com esse nome', 'Confira a grafia ou limpe o filtro.')}</li>`;
+}
+
+function abrirNovoOrcamento() {
+  const d = $('#dlg-novo-orc'), f = $('#form-novo');
+  f.reset(); $('#novo-orc-erro').textContent = '';
+  f.elements.referencia.innerHTML = [...((estado.ref && estado.ref.referencias) || [])].reverse().map((r) =>
+    `<option value="${esc(r.id)}"${r.id === estado.mes ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}</option>`).join('');
+  d.showModal(); f.elements.nome.focus();
+}
+document.addEventListener('click', (e) => {
+  if (e.target.closest('[data-novo-orc]')) abrirNovoOrcamento();
+  const f = e.target.closest('[data-fechar]'); if (f) f.closest('dialog').close();
+});
+$('#form-novo').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const f = new FormData(e.target); const bdi = lerNum(f.get('bdi'));
+  if (!(bdi >= 0 && bdi <= 100)) { $('#novo-orc-erro').textContent = 'O BDI precisa ficar entre 0 e 100%.'; return; }
+  try {
+    const o = await req('/api/orcamentos', 'POST', { nome: f.get('nome'), cliente: f.get('cliente'), local: f.get('local'), bdi, referencia: f.get('referencia') || undefined });
+    $('#dlg-novo-orc').close(); lembrar(o.id); location.hash = rotaOrc(o.id);
+  } catch (err) { $('#novo-orc-erro').textContent = err.message; }
+});
+
 async function listarOrcamentos() {
-  const lista = await req('/api/orcamentos');
-  const linhas = lista.map((o) => `<tr>
-      <td><a href="#/orcamento/${o.id}"><b>${esc(o.nome)}</b></a><span class="sub-linha">${esc([o.cliente, o.local].filter(Boolean).join(' · '))}</span></td>
-      <td>${esc(nomeRef(o.referencia))}</td>
-      <td class="num">${o.qtd_itens}</td><td class="num">${num2.format(o.bdi)}%</td>
-      <td class="num"><b>${brl.format(o.total)}</b></td><td class="num">${dataFmt(o.atualizado_em)}</td></tr>`).join('');
-  $('#detalhe').innerHTML = `<article class="ficha orc">
-    <div class="orc-topo"><h2>Orçamentos</h2></div>
-    <form class="novo-orc" id="form-novo">
-      <label>Nome<input name="nome" required maxlength="200" placeholder="Ex.: Reforma da Escola Estadual Rio Branco"></label>
-      <label>Cliente<input name="cliente" maxlength="200" placeholder="Opcional"></label>
-      <label>Local<input name="local" maxlength="200" placeholder="Ex.: Aracaju/SE"></label>
-      <label class="curto">BDI (%)<input name="bdi" inputmode="decimal" value="25,00" required></label>
-      <label class="curto">Data-base<select name="referencia">${((estado.ref && estado.ref.referencias) || []).map((r) =>
-        `<option value="${esc(r.id)}"${r.id === estado.mes ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}</option>`).join('')}</select></label>
-      <button class="botao primario" type="submit">Criar orçamento</button>
-    </form>
-    ${lista.length ? `<table class="uso lista-orc"><thead><tr><th>Orçamento</th><th>Data-base</th><th class="num">Itens</th><th class="num">BDI</th><th class="num">Total</th><th class="num">Alterado</th></tr></thead><tbody>${linhas}</tbody></table>`
-      : '<p class="sub" style="margin-top:24px">Nenhum orçamento ainda. Preencha o nome acima para criar o primeiro.</p>'}
-  </article>`;
-  $('#form-novo').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const f = new FormData(e.target); const bdi = lerNum(f.get('bdi'));
-    if (!(bdi >= 0 && bdi <= 100)) { avisar('O BDI precisa ficar entre 0 e 100%.'); return; }
-    try {
-      const o = await req('/api/orcamentos', 'POST', { nome: f.get('nome'), cliente: f.get('cliente'), local: f.get('local'), bdi, referencia: f.get('referencia') || undefined });
-      lembrar(o.id); location.hash = `#/orcamento/${o.id}`;
-    } catch (err) { avisar(esc(err.message)); }
-  });
+  LISTA.todos = await req('/api/orcamentos');
+  const tem = LISTA.todos.length > 0;
+  $('#detalhe').innerHTML = `<div class="pagina orcamentos">
+    <header class="pag-cab">
+      <div><h1>Orçamentos</h1><p class="sub" id="orc-resumo"></p></div>
+      <button type="button" class="botao primario" id="novo-orc" data-novo-orc>Novo orçamento</button>
+    </header>
+    ${tem ? `<div class="pag-barra">
+        <input type="search" id="orc-q" class="cmp-q" placeholder="Filtrar por nome, cliente ou local" value="${esc(LISTA.q)}" aria-label="Filtrar orçamentos">
+        <label class="ordem">Ordenar por <select id="orc-ordem">${Object.entries(ORDENS).map(([k, [n]]) => `<option value="${k}"${k === LISTA.ordem ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+      </div>
+      <ul class="orc-lista lista-orc" id="orc-lista"></ul>`
+    : vazio('planilha', 'Nenhum orçamento ainda', 'Crie o primeiro e adicione composições e insumos direto da consulta.',
+      '<button type="button" class="botao primario" data-novo-orc>Criar o primeiro orçamento</button>')}
+  </div>`;
+  desenharCartoesOrc();
+  if (!tem) return;
+  $('#orc-q').addEventListener('input', (e) => { LISTA.q = e.target.value; desenharCartoesOrc(); });
+  $('#orc-ordem').addEventListener('change', (e) => { LISTA.ordem = e.target.value; desenharCartoesOrc(); });
 }
 
 // ---------- orçamento ----------
@@ -75,7 +124,7 @@ async function abrirOrcamento(id, dados) {
   ORC.atual = o; lembrar(o.id);
   const abas = [['planilha', 'Planilha'], ['abc-servicos', 'Curva ABC de serviços'], ['abc-insumos', 'Curva ABC de insumos']];
   $('#detalhe').innerHTML = `<article class="ficha orc">
-    <a class="link-acao" href="#/orcamentos">Todos os orçamentos</a>
+    <a class="voltar-lista" href="#/orcamentos"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Todos os orçamentos</a>
     <div class="orc-cab">
       <div class="orc-ident">
         <input class="orc-nome" id="orc-nome" value="${esc(o.nome)}" aria-label="Nome do orçamento" maxlength="200">
@@ -91,11 +140,11 @@ async function abrirOrcamento(id, dados) {
     </div>
     <div class="mudar-mes" id="orc-mudar-mes" hidden></div>
     <div class="orc-barra">
-      <nav class="abas-orc" aria-label="Visões do orçamento">${abas.map(([k, n]) => `<a href="#/orcamento/${o.id}/${k}" aria-current="${ORC.aba === k}">${n}</a>`).join('')}</nav>
+      <nav class="abas-orc" aria-label="Visões do orçamento">${abas.map(([k, n]) => `<a href="${rotaOrc(o.id, k)}" aria-current="${ORC.aba === k}">${n}</a>`).join('')}</nav>
       <div class="acoes">
         <a class="botao primario" href="/api/orcamentos/${o.id}/exportar.xlsx">Exportar Excel</a>
-        <button type="button" class="botao" id="orc-duplicar">Duplicar</button>
-        <button type="button" class="botao perigo" id="orc-excluir">Excluir</button>
+        ${menu('Mais', ['<button type="button" role="menuitem" id="orc-duplicar">Duplicar orçamento</button>',
+          '<button type="button" role="menuitem" class="perigo" id="orc-excluir">Excluir orçamento</button>'])}
       </div>
     </div>
     <div id="orc-corpo"></div>
@@ -127,10 +176,10 @@ function ligarCabecalho(o) {
     const n = await salvar('bdi', v); if (n) { e.target.value = num2.format(n.bdi); abrirOrcamento(n.id, n); avisar(`BDI alterado para ${num2.format(n.bdi)}%. Preços recalculados.`); }
   });
   $('#orc-duplicar').addEventListener('click', async () => {
-    const n = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST'); location.hash = `#/orcamento/${n.id}`; avisar('Orçamento duplicado.');
+    const n = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST'); location.hash = rotaOrc(n.id); avisar('Orçamento duplicado.');
   });
   $('#orc-excluir').addEventListener('click', async () => {
-    if (!confirm(`Excluir o orçamento "${o.nome}"? Isso não pode ser desfeito.`)) return;
+    if (!await confirmar({ titulo: 'Excluir este orçamento?', texto: `"${o.nome}" e todos os seus itens serão apagados. Isso não pode ser desfeito.`, ok: 'Excluir orçamento', perigo: true })) return;
     await req(`/api/orcamentos/${o.id}`, 'DELETE'); location.hash = '#/orcamentos'; avisar('Orçamento excluído.');
   });
 }
@@ -151,13 +200,13 @@ function desenharPlanilha(o) {
       </tr>
       ${e.itens.map((i, m) => `<tr class="item" data-item="${i.id}">
         <td class="n">${i.numero}</td>
-        <td class="cod"><a href="#/${i.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(i.base)}/${esc(i.codigo)}">${esc(i.codigo)}</a>/${esc(i.base)}</td>
+        <td class="cod">${codLink(i.tipo, i.base, i.codigo)}</td>
         <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}</td>
         <td>${esc(i.unidade)}</td>
         <td class="num"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
         <td class="num">${money(i.custo_unit)}</td>
         <td class="num">${money(i.preco_unit)}</td>
-        <td class="num"><b>${money(i.total)}</b></td>
+        <td class="num total">${money(i.total)}</td>
         <td class="ctrl">
           <button type="button" class="mini" data-acao="item-cima" data-id="${i.id}" ${m === 0 ? 'disabled' : ''} aria-label="Subir item">↑</button>
           <button type="button" class="mini" data-acao="item-baixo" data-id="${i.id}" ${m === e.itens.length - 1 ? 'disabled' : ''} aria-label="Descer item">↓</button>
@@ -211,7 +260,7 @@ function ligarPlanilha(o) {
       if (a === 'item-excluir') atualizar(await req(`/api/itens/${id}`, 'DELETE'));
       if (a === 'etapa-excluir') {
         const et = o.etapas.find((x) => String(x.id) === id);
-        if (et.itens.length && !confirm(`Excluir a etapa "${et.titulo}" e seus ${et.itens.length} itens?`)) return;
+        if (et.itens.length && !await confirmar({ titulo: 'Excluir esta etapa?', texto: `"${et.titulo}" e ${et.itens.length === 1 ? 'o seu item' : `os seus ${et.itens.length} itens`} sairão do orçamento.`, ok: 'Excluir etapa', perigo: true })) return;
         atualizar(await req(`/api/etapas/${id}`, 'DELETE'));
       }
     } catch (err) { avisar(esc(err.message)); }
@@ -243,7 +292,7 @@ function ligarBuscaInline(inp) {
       const r = await req(`/api/busca?${new URLSearchParams({ q, limite: 8, ref: ORC.atual.referencia })}`);
       if (meu !== seqLocal) return;
       itens = r.itens.filter((x) => x.preco != null);
-      ul.innerHTML = itens.length ? itens.map((x, k) => `<li data-k="${k}"><span class="res-cod">${esc(x.codigo)}/${esc(x.base)} · ${x.tipo === 'servico' ? 'serviço' : 'insumo'}</span>
+      ul.innerHTML = itens.length ? itens.map((x, k) => `<li data-k="${k}"><span class="res-cod">${codigoBase(x.codigo, x.base)}<span class="tipo tipo-${x.tipo}">${x.tipo === 'servico' ? 'Composição' : 'Insumo'}</span></span>
           <span>${trecho(x)}</span><span class="add-preco">${brl.format(x.preco)}/${esc(x.unidade)}</span></li>`).join('')
         : `<li class="nada">Nada encontrado com preço em ${esc(nomeRef(ORC.atual.referencia))}.</li>`;
       ul.hidden = false; sel = -1;
@@ -271,7 +320,7 @@ function ligarBuscaInline(inp) {
 // ---------- curva ABC ----------
 async function desenharABC(o, tipo) {
   const corpo = $('#orc-corpo');
-  if (!o.qtd_itens) { corpo.innerHTML = '<p class="sub" style="margin-top:20px">A curva ABC aparece quando o orçamento tiver itens. Adicione serviços na planilha.</p>'; return; }
+  if (!o.qtd_itens) { corpo.innerHTML = vazio('grafico', 'A curva ABC aparece quando houver itens', 'Adicione composições ou insumos na aba Planilha.'); return; }
   corpo.innerHTML = '<p class="carregando">Calculando a curva ABC…</p>';
   const r = await req(`/api/orcamentos/${o.id}/abc?tipo=${tipo}`);
   const chave = tipo === 'servicos' ? 'total' : 'custo_total';
@@ -281,11 +330,11 @@ async function desenharABC(o, tipo) {
   const barra = ['A', 'B', 'C'].filter((cl) => r.resumo[cl].valor > 0).map((cl) => `<span style="flex-grow:${r.resumo[cl].valor};background:${cores[cl]}"></span>`).join('');
   const linhas = r.linhas.map((l) => `<tr class="cl-${l.classe}">
       <td class="n">${l.posicao}</td>
-      <td class="cod"><a href="#/${tipo === 'servicos' && l.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(l.base)}/${esc(l.codigo)}">${esc(l.codigo)}</a>/${esc(l.base)}</td>
+      <td class="cod">${codLink(tipo === 'servicos' && l.tipo === 'servico' ? 'servico' : 'insumo', l.base, l.codigo)}</td>
       <td class="desc">${esc(l.descricao)}</td><td>${esc(l.unidade)}</td>
       <td class="num">${qtdFmt.format(l.quantidade)}</td>
       <td class="num">${money(tipo === 'servicos' ? l.preco_unit : l.custo_unit)}</td>
-      <td class="num"><b>${money(l[chave])}</b></td>
+      <td class="num total">${money(l[chave])}</td>
       <td class="num">${pct.format(l.percentual)}</td>
       <td class="num">${pct.format(l.acumulado)}</td>
       <td class="classe"><span>${l.classe}</span></td></tr>`).join('');
@@ -342,7 +391,7 @@ $('#form-adicionar').addEventListener('submit', async (e) => {
     }
     const n = await req(`/api/orcamentos/${oid}/itens`, 'POST', { etapa_id: etapa, tipo: dlgItem.tipo, base: dlgItem.base, codigo: dlgItem.codigo, quantidade: q });
     lembrar(n.id); dlg.close();
-    avisar(`Adicionado a <b>${esc(n.nome)}</b> · total ${brl.format(n.total)} · <a href="#/orcamento/${n.id}">Abrir orçamento</a>`, 6000);
+    avisar(`Adicionado a <b>${esc(n.nome)}</b> · total ${brl.format(n.total)} · <a href="${rotaOrc(n.id)}">Abrir orçamento</a>`, 6000);
   } catch (err) { $('#dlg-erro').textContent = err.message; }
 });
 
@@ -375,7 +424,7 @@ function ligarMudarMes(o) {
         const copia = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST');
         const n = await req(`/api/orcamentos/${copia.id}/atualizar?referencia=${encodeURIComponent(alvo)}`, 'POST');
         await req(`/api/orcamentos/${n.id}`, 'PATCH', { nome: `${o.nome} (${nome})` });
-        location.hash = `#/orcamento/${n.id}`; avisar(`Cópia criada em ${esc(nome)}. O orçamento original não mudou.`, 6000);
+        location.hash = rotaOrc(n.id); avisar(`Cópia criada em ${esc(nome)}. O orçamento original não mudou.`, 6000);
       });
     } catch (e) { caixa.innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
   });

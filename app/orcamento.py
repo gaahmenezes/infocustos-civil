@@ -147,6 +147,31 @@ def explodir(b, base, codigo, fator, acc, profundidade=0, ref=None):
 
 
 # ---------- cálculo ----------
+CATEGORIA_PARTE = {'PESSOAL': 'mo', 'EQUIPAMENTOS': 'equip', 'SERVIÇOS DE TERCEIROS': 'terc'}
+
+
+def dividir_custo(b, itens, ref_orc):
+    """Divisão do custo direto do orçamento em mão de obra, material, equipamento e terceiros (frações de 0 a 1).
+    Serviço: usa a divisão da própria composição. Insumo: entra inteiro na parte da sua categoria."""
+    partes = {'mo': 0.0, 'mat': 0.0, 'equip': 0.0, 'terc': 0.0}
+    for i in itens:
+        custo = i['custo_total']
+        if not custo:
+            continue
+        r = b.execute('''SELECT categoria, pct_mo, pct_mat, pct_equip, pct_terc FROM item_busca
+            WHERE tipo = ? AND base = ? AND codigo = ? AND referencia = ?''',
+                      (i['tipo'], i['base'], i['codigo'], i['referencia'] or ref_orc)).fetchone()
+        if i['tipo'] == 'servico' and r and r['pct_mo'] is not None:
+            for k in partes:
+                partes[k] += custo * (r['pct_' + k] or 0)
+        elif i['tipo'] == 'insumo':
+            partes[CATEGORIA_PARTE.get(r['categoria'] if r else '', 'mat')] += custo
+        else:
+            partes['mat'] += custo  # serviço sem composição detalhada
+    soma = sum(partes.values())
+    return {k: round(v / soma, 4) for k, v in partes.items()} if soma > 0 else None
+
+
 def calcular(c, oid):
     o = c.execute('SELECT * FROM orcamento WHERE id = ?', (oid,)).fetchone()
     if not o:
@@ -180,6 +205,7 @@ def calcular(c, oid):
     with _base_conn() as b:
         atual = ref_atual(b)
         nomes = {r['id']: r['descricao'] for r in b.execute('SELECT id, descricao FROM referencia')}
+        o['divisao'] = dividir_custo(b, itens, o['referencia'])
     o['referencia_atual'] = atual
     o['referencia_descricao'] = nomes.get(o['referencia'], o['referencia'])
     o['desatualizado'] = any(r < atual['id'] for r in refs_itens) or (not itens and o['referencia'] < atual['id'])
@@ -254,7 +280,7 @@ def listar():
         out = []
         for r in rows:
             o = calcular(c, r['id'])
-            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em', 'desatualizado')})
+            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em', 'desatualizado', 'custo_total', 'divisao')})
         return out
 
 

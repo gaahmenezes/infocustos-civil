@@ -8,6 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
+  <script>try { var t = localStorage.getItem('infocustos-tema'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body class="ocioso">
   <header class="cabecalho">
@@ -25,7 +26,13 @@
       <a href="#/encargos" data-aba="encargos">Encargos sociais</a>
       <a href="#/comparativo" data-aba="comparativo">Comparativo entre meses</a>
     </nav>
-    <div class="referencia" id="referencia"></div>
+    <div class="cab-direita">
+      <div class="referencia" id="referencia"></div>
+      <button type="button" class="tema" id="tema" aria-label="Usar tema escuro">
+        <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3 7 7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7" /></svg>
+        <svg class="tema-lua" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2Z" /></svg>
+      </button>
+    </div>
   </header>
 
   <section class="pesquisa" id="pesquisa" aria-label="Pesquisa">
@@ -82,6 +89,7 @@
         <a id="exportar-busca" class="link-acao" href="#" download>Exportar resultado</a>
       </div>
       <ol id="lista" class="lista"></ol>
+      <p class="resultados-rod" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> navegar</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> limpar</span><span><kbd>/</kbd> pesquisar</span></p>
     </section>
 
     <section class="detalhe" id="detalhe" aria-live="polite">
@@ -107,6 +115,34 @@
         <button type="submit" class="botao primario" id="dlg-ok">Adicionar</button>
       </div>
     </form>
+  </dialog>
+  <dialog id="dlg-novo-orc" class="dialogo gaveta" aria-labelledby="novo-orc-t">
+    <form id="form-novo" autocomplete="off">
+      <header class="gaveta-cab">
+        <div><h2 id="novo-orc-t">Novo orçamento</h2><p class="sub">Os itens entram depois, direto da consulta ou da planilha.</p></div>
+        <button type="button" class="mini" data-fechar aria-label="Fechar">✕</button>
+      </header>
+      <div class="gaveta-campos">
+        <label class="largo">Nome da obra ou do orçamento<input name="nome" required maxlength="200" placeholder="Ex.: Reforma da Escola Estadual Rio Branco"></label>
+        <label>Cliente<input name="cliente" maxlength="200" placeholder="Opcional"></label>
+        <label>Local<input name="local" maxlength="200" placeholder="Ex.: Aracaju/SE"></label>
+        <label>BDI (%)<input name="bdi" inputmode="decimal" value="25,00" required><small>Pode ser alterado depois.</small></label>
+        <label>Data-base<select name="referencia"></select><small>Mês dos preços usados.</small></label>
+      </div>
+      <p class="erro-campo" id="novo-orc-erro" role="alert"></p>
+      <footer class="gaveta-rod">
+        <button type="button" class="botao" data-fechar>Cancelar</button>
+        <button type="submit" class="botao primario">Criar orçamento</button>
+      </footer>
+    </form>
+  </dialog>
+  <dialog id="dlg-confirmar" class="dialogo dialogo-p" aria-labelledby="confirmar-titulo">
+    <h2 id="confirmar-titulo"></h2>
+    <p class="sub" id="confirmar-texto"></p>
+    <div class="dlg-acoes">
+      <button type="button" class="botao" id="confirmar-cancelar">Cancelar</button>
+      <button type="button" class="botao primario" id="confirmar-ok">Confirmar</button>
+    </div>
   </dialog>
   <div class="aviso" id="aviso" role="status" aria-live="polite" hidden></div>
 

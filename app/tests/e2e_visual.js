@@ -46,7 +46,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   await p.keyboard.press('Escape'); await p.waitForTimeout(400);
   ok(await p.evaluate(() => document.body.classList.contains('ocioso')), 'Esc limpa e volta ao início');
   // outras abas continuam funcionando
-  for (const [aba, sel] of [['orcamentos', '#form-novo'], ['encargos', '.enc'], ['comparativo', '.comparativo table']]) {
+  for (const [aba, sel] of [['orcamentos', '.pagina.orcamentos'], ['encargos', '.enc'], ['comparativo', '.comparativo table']]) {
     await p.click(`.abas a[data-aba="${aba}"]`); await p.waitForSelector(sel);
     ok(!(await p.isVisible('#pesquisa')), `Aba ${aba} sem a caixa de pesquisa`);
     await p.screenshot({ path: OUT + `/4_${aba}.png` });
