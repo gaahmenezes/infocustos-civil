@@ -29,6 +29,10 @@ assert n == 1, 'menu de exportação não encontrado em app.js'
 app = trocar(app, [
     ("const rotaItem = (tipo, base, codigo) => `#/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}`;",
      "const rotaItem = (tipo, base, codigo) => `#${tipo === 'servico' ? 'c' : 'i'}-${base}-${codigo}`;"),
+    ("const rotaComparar = (lista) => `#/comparar/${lista.map((x) => `${x.base}-${x.codigo}`).join(',')}`;",
+     "const rotaComparar = (lista) => `#comparar=${lista.map((x) => `${x.base}-${x.codigo}`).join(',')}`;"),
+    ("const m = location.hash.match(/^#\\/comparar\\/(.+)/); return m ? m[1] : null;",
+     "const m = location.hash.match(/^#comparar=(.+)/); return m ? m[1] : null;"),
     ("const rotaOrc = (id, aba) => `#/orcamento/${id}${aba ? '/' + aba : ''}`;",
      "const rotaOrc = (id, aba) => `#orc-${id}${aba ? '-' + aba : ''}`;"),
     ("const emOrc = /^#\\/orcamento/.test(location.hash);", "const emOrc = /^#orc/.test(location.hash);"),
@@ -44,14 +48,20 @@ orc = (STATIC / 'orcamento.js').read_text(encoding='utf-8')
 orc = re.sub(r'async function req\(url, metodo = .GET., corpo\) \{.*?\n\}\n',
              "async function req(url, metodo = 'GET', corpo) { return LOCAL.req(url, metodo, corpo || {}); }\n", orc, count=1, flags=re.S)
 orc = trocar(orc, [
-    ("location.hash.match(/^#\\/orcamento\\/(\\d+)(?:\\/(planilha|abc-servicos|abc-insumos))?/)",
-     "location.hash.match(/^#orc-(\\d+)(?:-(planilha|abc-servicos|abc-insumos))?$/)"),
-    ('<a class="botao primario" href="/api/orcamentos/${o.id}/exportar.xlsx">Exportar Excel</a>',
-     '<button type="button" class="botao primario" data-copiar>Copiar para o Excel</button>'),
+    ("location.hash.match(/^#\\/orcamento\\/(\\d+)(?:\\/(planilha|abc-servicos|abc-insumos|relatorio))?/)",
+     "location.hash.match(/^#orc-(\\d+)(?:-(planilha|abc-servicos|abc-insumos|relatorio))?$/)"),
+    ('`<a role="menuitem" href="/api/orcamentos/${o.id}/exportar.xlsx">Planilha do Excel (.xlsx)</a>`',
+     "'<button type=\"button\" role=\"menuitem\" data-copiar>Copiar para o Excel</button>'"),
     ('<div><h1>Orçamentos</h1><p class="sub" id="orc-resumo"></p></div>',
      '<div><h1>Orçamentos</h1><p class="sub" id="orc-resumo"></p><p class="sub nota-teste">Versão de teste: os orçamentos ficam salvos só neste navegador.</p></div>'),
 ], 'orcamento.js')
 orc = orc.replace("'#/orcamentos'", "'#orcamentos'").replace('"#/orcamentos"', '"#orcamentos"')
+# telas novas: painel do orçamento, comparação e relatório (usam as rotas e as funções já trocadas acima)
+extras = ''
+for nome in ('painel.js', 'comparar.js', 'relatorio.js'):
+    t = (STATIC / nome).read_text(encoding='utf-8').replace('href="#/"', 'href="#inicio"')
+    assert '#/' not in t, f'sobrou rota antiga em {nome}'
+    extras += f'\n/* ---- {nome} ---- */\n' + t
 assert '#/' not in orc, 'sobrou rota antiga em orcamento.js'
 assert '#/' not in app.replace("'#/'", ''), 'sobrou rota antiga em app.js'
 
@@ -140,6 +150,7 @@ pagina = f'''<title>InfoCustos Civil</title>
 </script>
 <script>
 {orc}
+{extras}
 {copiar_js}
 </script>
 '''

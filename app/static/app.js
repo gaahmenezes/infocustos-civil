@@ -21,6 +21,8 @@ const estado = { q: '', base: 'todas', tipo: 'todos', itens: [], atual: null, re
 
 // ---------- endereços das telas ----------
 const rotaItem = (tipo, base, codigo) => `#/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}`;
+const rotaComparar = (lista) => `#/comparar/${lista.map((x) => `${x.base}-${x.codigo}`).join(',')}`;
+const lerRotaComparar = () => { const m = location.hash.match(/^#\/comparar\/(.+)/); return m ? m[1] : null; };
 const rotaOrc = (id, aba) => `#/orcamento/${id}${aba ? '/' + aba : ''}`;
 
 // ---------- preferências (ficam só neste navegador) ----------
@@ -224,7 +226,7 @@ function transicao(fn) {
 function aplicarEstado() {
   const naConsulta = (document.body.dataset.aba || 'consulta') === 'consulta';
   const temQ = estado.q.trim().length > 0;
-  const ocioso = naConsulta && !temQ && !estado.atual;
+  const ocioso = naConsulta && !temQ && !estado.atual && !estado.comparando;
   const mudou = document.body.classList.contains('ocioso') !== ocioso || document.body.classList.contains('buscando') !== (naConsulta && temQ);
   if (ocioso && (mudou || !aplicarEstado.inicio)) { aplicarEstado.inicio = true; desenharInicio(); }
   const aplicar = () => {
@@ -346,7 +348,8 @@ function desenharLista(r) {
       <span class="res-desc">${trecho(it)}</span>
       <span class="res-meta">${esc(meta.join(' · '))}</span>
       <span class="res-preco">${it.preco == null ? 'sem preço' : brl.format(it.preco)}</span>
-      <span class="res-div">${divisaoCusto(it)}</span></button></li>`;
+      <span class="res-div">${divisaoCusto(it)}</span></button>${it.tipo === 'servico' && it.tem_composicao
+        ? `<button type="button" class="cmp-bt" data-comparar="${esc(it.base)}|${esc(it.codigo)}" data-desc="${esc(it.descricao)}" aria-pressed="${window.estaComparando ? window.estaComparando(it.base, it.codigo) : false}" title="Comparar esta composição com outras">Comparar</button>` : ''}</li>`;
   }).join('');
 }
 
@@ -369,12 +372,16 @@ async function rota() {
   const emOrc = /^#\/orcamento/.test(location.hash);
   const emVar = /^#\/comparativo/.test(location.hash);
   const emEnc = /^#\/encargos/.test(location.hash);
-  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc);
+  const emCmp = lerRotaComparar() !== null;
+  estado.comparando = emCmp;
+  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp);
   const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : 'consulta';
   document.body.dataset.aba = aba;
   document.querySelectorAll('.abas a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
-  if (aba !== 'consulta') estado.atual = null;
+  if (aba !== 'consulta' || emCmp) estado.atual = null;
   aplicarEstado();
+  window.desenharBandeja && window.desenharBandeja();
+  if (emCmp) { document.body.classList.remove('ver-detalhe'); window.desenharComparar(lerRotaComparar()); return; }
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
   if (emVar) { desenharComparativo(); return; }
   if (emEnc) { desenharEncargos(); return; }
@@ -498,6 +505,7 @@ function desenharComposicao(c) {
       </div>
       <div class="acoes">
         <button type="button" class="botao primario" data-adicionar="servico" data-base="${esc(c.base)}" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}">Adicionar ao orçamento</button>
+        <button type="button" class="botao" data-comparar="${esc(c.base)}|${esc(c.codigo)}" data-desc="${esc(c.descricao)}" aria-pressed="${window.estaComparando ? window.estaComparando(c.base, c.codigo) : false}">Comparar</button>
         ${exportarComposicao(c)}
       </div>
     </div>
@@ -637,7 +645,7 @@ document.addEventListener('click', (e) => {
   HIST[b.dataset.limparHist] = []; gravarHist(); desenharInicio();
 });
 const inicioHTML = $('#detalhe').innerHTML;
-carregarReferencia().then(() => { buscar(); rota(); });
+carregarReferencia().then(() => { buscar(); rota(); }).finally(() => { const a = $('#abertura'); if (a) a.remove(); });
 
 
 // ---------- comparativo entre meses (único lugar onde meses diferentes aparecem juntos) ----------

@@ -21,18 +21,21 @@ function avisar(html, ms = 4000) {
   clearTimeout(avisar.t); avisar.t = setTimeout(() => { a.hidden = true; }, ms);
 }
 
-// pergunta de confirmação com o visual do sistema; devolve true ou false
-function confirmar({ titulo, texto, ok = 'Confirmar', perigo = false }) {
-  const d = $('#dlg-confirmar');
-  $('#confirmar-titulo').textContent = titulo; $('#confirmar-texto').textContent = texto || '';
-  const bt = $('#confirmar-ok'); bt.textContent = ok; bt.className = `botao ${perigo ? 'perigo-cheio' : 'primario'}`;
-  return new Promise((resolver) => {
-    const fim = () => { d.removeEventListener('close', fim); resolver(d.returnValue === 'ok'); };
-    d.returnValue = ''; d.addEventListener('close', fim); d.showModal(); $('#confirmar-cancelar').focus();
-  });
+// exclusões não perguntam: o aviso traz "Desfazer", que devolve o que saiu
+let ultimoDesfazer = null;
+function avisarDesfazer(texto, desfazer) {
+  ultimoDesfazer = desfazer;
+  avisar(`${texto} <button type="button" class="aviso-bt" data-desfazer>Desfazer</button>`, 9000);
 }
-$('#confirmar-ok').addEventListener('click', () => $('#dlg-confirmar').close('ok'));
-$('#confirmar-cancelar').addEventListener('click', () => $('#dlg-confirmar').close(''));
+document.addEventListener('click', async (e) => {
+  if (!e.target.closest('[data-desfazer]') || !ultimoDesfazer) return;
+  const d = ultimoDesfazer; ultimoDesfazer = null;
+  try {
+    const n = await req('/api/restaurar', 'POST', d);
+    avisar(d.tipo === 'orcamento' ? 'Orçamento restaurado.' : d.tipo === 'etapa' ? 'Etapa restaurada.' : 'Item restaurado.');
+    if (location.hash === rotaOrc(n.id) || location.hash.startsWith(rotaOrc(n.id, ''))) window.rotaOrcamento(); else location.hash = rotaOrc(n.id);
+  } catch (err) { avisar(esc(err.message)); }
+});
 
 const qtdFmt = new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 4 });
 const lerNum = (s) => { const v = Number(String(s).trim().replace(/\./g, '').replace(',', '.')); return Number.isFinite(v) ? v : NaN; };
@@ -40,7 +43,7 @@ const dataFmt = (iso) => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: 
 
 // ---------- rotas ----------
 window.rotaOrcamento = async function () {
-  const m = location.hash.match(/^#\/orcamento\/(\d+)(?:\/(planilha|abc-servicos|abc-insumos))?/);
+  const m = location.hash.match(/^#\/orcamento\/(\d+)(?:\/(planilha|abc-servicos|abc-insumos|relatorio))?/);
   const d = $('#detalhe');
   try {
     if (m) { ORC.aba = m[2] || 'planilha'; await abrirOrcamento(Number(m[1])); }
@@ -121,7 +124,9 @@ async function listarOrcamentos() {
 // ---------- orçamento ----------
 async function abrirOrcamento(id, dados) {
   const o = dados || await req(`/api/orcamentos/${id}`);
+  if (!ORC.atual || ORC.atual.id !== o.id || !o.etapas.some((e) => e.id === ORC.filtro)) ORC.filtro = null;
   ORC.atual = o; lembrar(o.id);
+  if (ORC.aba === 'relatorio') { await window.desenharRelatorio(o); return; }
   const abas = [['planilha', 'Planilha'], ['abc-servicos', 'Curva ABC de serviços'], ['abc-insumos', 'Curva ABC de insumos']];
   $('#detalhe').innerHTML = `<article class="ficha orc">
     <a class="voltar-lista" href="#/orcamentos"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Todos os orçamentos</a>
@@ -139,17 +144,20 @@ async function abrirOrcamento(id, dados) {
       <div class="orc-totais" id="orc-totais"></div>
     </div>
     <div class="mudar-mes" id="orc-mudar-mes" hidden></div>
+    <div id="orc-painel"></div>
     <div class="orc-barra">
       <nav class="abas-orc" aria-label="Visões do orçamento">${abas.map(([k, n]) => `<a href="${rotaOrc(o.id, k)}" aria-current="${ORC.aba === k}">${n}</a>`).join('')}</nav>
       <div class="acoes">
-        <a class="botao primario" href="/api/orcamentos/${o.id}/exportar.xlsx">Exportar Excel</a>
-        ${menu('Mais', ['<button type="button" role="menuitem" id="orc-duplicar">Duplicar orçamento</button>',
+        <a class="botao primario" href="${rotaOrc(o.id, 'relatorio')}">Relatório em PDF</a>
+        ${menu('Mais', [`<a role="menuitem" href="/api/orcamentos/${o.id}/exportar.xlsx">Planilha do Excel (.xlsx)</a>`,
+          '<button type="button" role="menuitem" id="orc-duplicar">Duplicar orçamento</button>',
           '<button type="button" role="menuitem" class="perigo" id="orc-excluir">Excluir orçamento</button>'])}
       </div>
     </div>
     <div id="orc-corpo"></div>
   </article>`;
   desenharTotais(o);
+  window.desenharPainel(o);
   ligarCabecalho(o);
   ligarMudarMes(o);
   if (ORC.aba === 'planilha') desenharPlanilha(o);
@@ -179,27 +187,26 @@ function ligarCabecalho(o) {
     const n = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST'); location.hash = rotaOrc(n.id); avisar('Orçamento duplicado.');
   });
   $('#orc-excluir').addEventListener('click', async () => {
-    if (!await confirmar({ titulo: 'Excluir este orçamento?', texto: `"${o.nome}" e todos os seus itens serão apagados. Isso não pode ser desfeito.`, ok: 'Excluir orçamento', perigo: true })) return;
-    await req(`/api/orcamentos/${o.id}`, 'DELETE'); location.hash = '#/orcamentos'; avisar('Orçamento excluído.');
+    const r = await req(`/api/orcamentos/${o.id}`, 'DELETE'); location.hash = '#/orcamentos';
+    avisarDesfazer(`Orçamento "${esc(o.nome)}" excluído.`, r && r.desfazer);
   });
 }
 
 function desenharPlanilha(o) {
-  const etapas = o.etapas.map((e, k) => `
+  const visiveis = o.etapas.filter((e) => !ORC.filtro || e.id === ORC.filtro);
+  const etapas = visiveis.map((e) => `
     <tbody class="etapa" data-etapa="${e.id}">
       <tr class="etapa-cab">
-        <td class="n">${e.numero}</td>
+        <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover a etapa ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button>${e.numero}</td>
         <td colspan="5"><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título da etapa ${e.numero}" data-etapa="${e.id}"></td>
         <td class="num"><span class="peso-etapa">${pct.format(e.peso)}</span></td>
         <td class="num"><b>${brl.format(e.total)}</b></td>
         <td class="ctrl">
-          <button type="button" class="mini" data-acao="etapa-cima" data-id="${e.id}" ${k === 0 ? 'disabled' : ''} aria-label="Subir etapa">↑</button>
-          <button type="button" class="mini" data-acao="etapa-baixo" data-id="${e.id}" ${k === o.etapas.length - 1 ? 'disabled' : ''} aria-label="Descer etapa">↓</button>
           <button type="button" class="mini" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir etapa">✕</button>
         </td>
       </tr>
-      ${e.itens.map((i, m) => `<tr class="item" data-item="${i.id}">
-        <td class="n">${i.numero}</td>
+      ${e.itens.map((i) => `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
+        <td class="n"><button type="button" class="pega" data-pega="item" data-id="${i.id}" aria-label="Mover o item ${i.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem ou a etapa">⠿</button>${i.numero}</td>
         <td class="cod">${codLink(i.tipo, i.base, i.codigo)}</td>
         <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}</td>
         <td>${esc(i.unidade)}</td>
@@ -208,8 +215,6 @@ function desenharPlanilha(o) {
         <td class="num">${money(i.preco_unit)}</td>
         <td class="num total">${money(i.total)}</td>
         <td class="ctrl">
-          <button type="button" class="mini" data-acao="item-cima" data-id="${i.id}" ${m === 0 ? 'disabled' : ''} aria-label="Subir item">↑</button>
-          <button type="button" class="mini" data-acao="item-baixo" data-id="${i.id}" ${m === e.itens.length - 1 ? 'disabled' : ''} aria-label="Descer item">↓</button>
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
         </td></tr>`).join('')}
       <tr class="add-linha"><td></td><td colspan="8">
@@ -219,8 +224,10 @@ function desenharPlanilha(o) {
         </div>
       </td></tr>
     </tbody>`).join('');
+  const filtrada = ORC.filtro && visiveis[0];
   $('#orc-corpo').innerHTML = `
-    <table class="planilha">
+    ${filtrada ? `<p class="filtro-ativo">Mostrando só a etapa <b>${filtrada.numero}. ${esc(filtrada.titulo)}</b><button type="button" class="link-acao" data-ver-todas>Ver todas as etapas</button></p>` : ''}
+    <table class="planilha planilha-orc">
       <thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num">Custo unit.</th><th class="num">Preço c/ BDI</th><th class="num">Total</th><th></th></tr></thead>
       ${etapas}
     </table>
@@ -234,7 +241,8 @@ function desenharPlanilha(o) {
 
 function ligarPlanilha(o) {
   const corpo = $('#orc-corpo');
-  const atualizar = (n) => { ORC.atual = n; const foco = document.activeElement && document.activeElement.dataset; abrirOrcamento(n.id, n).then(() => restaurarFoco(foco)); };
+  const atualizar = (n) => { const foco = document.activeElement && { ...document.activeElement.dataset }; return abrirOrcamento(n.id, n).then(() => restaurarFoco(foco)); };
+  window.ligarArrastar(corpo, o, atualizar);
   corpo.addEventListener('change', async (e) => {
     const t = e.target;
     try {
@@ -255,16 +263,18 @@ function ligarPlanilha(o) {
     const id = b.dataset.id;
     try {
       const a = b.dataset.acao;
-      if (a === 'etapa-cima' || a === 'etapa-baixo') atualizar(await req(`/api/etapas/${id}/mover?direcao=${a.endsWith('cima') ? 'cima' : 'baixo'}`, 'POST'));
-      if (a === 'item-cima' || a === 'item-baixo') atualizar(await req(`/api/itens/${id}/mover?direcao=${a.endsWith('cima') ? 'cima' : 'baixo'}`, 'POST'));
-      if (a === 'item-excluir') atualizar(await req(`/api/itens/${id}`, 'DELETE'));
+      if (a === 'item-excluir') {
+        const r = await req(`/api/itens/${id}`, 'DELETE'); await atualizar(r);
+        avisarDesfazer('Item excluído.', r.desfazer);
+      }
       if (a === 'etapa-excluir') {
         const et = o.etapas.find((x) => String(x.id) === id);
-        if (et.itens.length && !await confirmar({ titulo: 'Excluir esta etapa?', texto: `"${et.titulo}" e ${et.itens.length === 1 ? 'o seu item' : `os seus ${et.itens.length} itens`} sairão do orçamento.`, ok: 'Excluir etapa', perigo: true })) return;
-        atualizar(await req(`/api/etapas/${id}`, 'DELETE'));
+        const r = await req(`/api/etapas/${id}`, 'DELETE'); await atualizar(r);
+        avisarDesfazer(`Etapa "${esc(et.titulo)}" excluída${et.itens.length ? `, com ${et.itens.length} ${et.itens.length === 1 ? 'item' : 'itens'}` : ''}.`, r.desfazer);
       }
     } catch (err) { avisar(esc(err.message)); }
   });
+  corpo.addEventListener('click', (e) => { if (e.target.closest('[data-ver-todas]')) { ORC.filtro = null; abrirOrcamento(o.id, ORC.atual); } });
   $('#form-etapa').addEventListener('submit', async (e) => {
     e.preventDefault();
     const v = $('#nova-etapa').value.trim(); if (!v) { $('#nova-etapa').focus(); return; }
@@ -277,7 +287,8 @@ function restaurarFoco(foco) {
   if (!foco) return;
   let el = null;
   if (foco.item) el = document.querySelector(`.qtd[data-item="${foco.item}"]`);
-  if (el) { el.focus(); el.select(); }
+  if (el) { el.focus(); el.select(); return; }
+  if (foco.pega) { el = document.querySelector(`.pega[data-pega="${foco.pega}"][data-id="${foco.id}"]`); if (el) el.focus(); }
 }
 
 function ligarBuscaInline(inp) {

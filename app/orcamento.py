@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -314,10 +314,17 @@ def editar(oid: int, d: EdicaoOrcamento):
         return calcular(c, oid)
 
 
-@router.delete('/orcamentos/{oid}', status_code=204)
+@router.delete('/orcamentos/{oid}')
 def excluir(oid: int):
     with orc() as c:
+        o = c.execute('SELECT * FROM orcamento WHERE id = ?', (oid,)).fetchone()
+        if not o:
+            raise HTTPException(404, 'Orçamento não encontrado.')
+        desfazer = {'tipo': 'orcamento', 'orcamento': dict(o),
+                    'etapas': [dict(r) for r in c.execute('SELECT * FROM etapa WHERE orcamento_id = ?', (oid,))],
+                    'itens': [dict(r) for r in c.execute('SELECT * FROM item WHERE orcamento_id = ?', (oid,))]}
         c.execute('DELETE FROM orcamento WHERE id = ?', (oid,))
+        return {'desfazer': desfazer}
 
 
 @router.post('/orcamentos/{oid}/duplicar', status_code=201)
@@ -374,11 +381,13 @@ def mover_etapa(eid: int, direcao: Literal['cima', 'baixo']):
 @router.delete('/etapas/{eid}')
 def excluir_etapa(eid: int):
     with orc() as c:
-        e = c.execute('SELECT orcamento_id FROM etapa WHERE id = ?', (eid,)).fetchone()
+        e = c.execute('SELECT * FROM etapa WHERE id = ?', (eid,)).fetchone()
         if not e:
             raise HTTPException(404, 'Etapa não encontrada.')
+        desfazer = {'tipo': 'etapa', 'etapas': [dict(e)], 'itens': [dict(r) for r in c.execute('SELECT * FROM item WHERE etapa_id = ?', (eid,))]}
         c.execute('DELETE FROM etapa WHERE id = ?', (eid,))
-        return calcular(c, e['orcamento_id'])
+        c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), e['orcamento_id']))
+        return calcular(c, e['orcamento_id']) | {'desfazer': desfazer}
 
 
 @router.post('/orcamentos/{oid}/itens', status_code=201)
@@ -449,12 +458,110 @@ def mover_item(iid: int, direcao: Literal['cima', 'baixo']):
 @router.delete('/itens/{iid}')
 def excluir_item(iid: int):
     with orc() as c:
-        i = c.execute('SELECT orcamento_id FROM item WHERE id = ?', (iid,)).fetchone()
+        i = c.execute('SELECT * FROM item WHERE id = ?', (iid,)).fetchone()
         if not i:
             raise HTTPException(404, 'Item não encontrado.')
         c.execute('DELETE FROM item WHERE id = ?', (iid,))
         c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), i['orcamento_id']))
+        return calcular(c, i['orcamento_id']) | {'desfazer': {'tipo': 'item', 'etapas': [], 'itens': [dict(i)]}}
+
+
+# ---------- arrastar: põe o item ou a etapa numa posição exata ----------
+def _renumerar(c, tabela, ids):
+    for n, x in enumerate(ids, 1):
+        c.execute(f'UPDATE {tabela} SET ordem = ? WHERE id = ?', (n, x))
+
+
+@router.post('/itens/{iid}/posicionar')
+def posicionar_item(iid: int, etapa_id: int, posicao: int = Query(ge=0)):
+    """Move o item para a etapa `etapa_id`, na posição `posicao` (0 = primeiro)."""
+    with orc() as c:
+        i = c.execute('SELECT * FROM item WHERE id = ?', (iid,)).fetchone()
+        if not i:
+            raise HTTPException(404, 'Item não encontrado.')
+        if not c.execute('SELECT 1 FROM etapa WHERE id = ? AND orcamento_id = ?', (etapa_id, i['orcamento_id'])).fetchone():
+            raise HTTPException(404, 'Etapa não encontrada neste orçamento.')
+        destino = [r['id'] for r in c.execute('SELECT id FROM item WHERE etapa_id = ? AND id <> ? ORDER BY ordem, id', (etapa_id, iid))]
+        destino.insert(min(posicao, len(destino)), iid)
+        c.execute('UPDATE item SET etapa_id = ? WHERE id = ?', (etapa_id, iid))
+        _renumerar(c, 'item', destino)
+        if etapa_id != i['etapa_id']:
+            _renumerar(c, 'item', [r['id'] for r in c.execute('SELECT id FROM item WHERE etapa_id = ? ORDER BY ordem, id', (i['etapa_id'],))])
+        c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), i['orcamento_id']))
         return calcular(c, i['orcamento_id'])
+
+
+@router.post('/etapas/{eid}/posicionar')
+def posicionar_etapa(eid: int, posicao: int = Query(ge=0)):
+    with orc() as c:
+        e = c.execute('SELECT * FROM etapa WHERE id = ?', (eid,)).fetchone()
+        if not e:
+            raise HTTPException(404, 'Etapa não encontrada.')
+        lista = [r['id'] for r in c.execute('SELECT id FROM etapa WHERE orcamento_id = ? AND id <> ? ORDER BY ordem, id', (e['orcamento_id'], eid))]
+        lista.insert(min(posicao, len(lista)), eid)
+        _renumerar(c, 'etapa', lista)
+        c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), e['orcamento_id']))
+        return calcular(c, e['orcamento_id'])
+
+
+# ---------- desfazer uma exclusão ----------
+class Desfazer(BaseModel):
+    tipo: Literal['item', 'etapa', 'orcamento']
+    orcamento: Optional[dict] = None
+    etapas: list[dict] = []
+    itens: list[dict] = []
+
+
+COLUNAS = {
+    'orcamento': ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'observacoes', 'criado_em', 'atualizado_em'),
+    'etapa': ('id', 'orcamento_id', 'ordem', 'titulo'),
+    'item': ('id', 'orcamento_id', 'etapa_id', 'ordem', 'tipo', 'base', 'codigo', 'descricao', 'unidade', 'quantidade', 'custo_unit', 'referencia'),
+}
+
+
+def _reinserir(c, tabela, linha):
+    """Recoloca a linha com o mesmo id; se o id já foi reaproveitado, entra com um novo. Devolve o id final."""
+    cols = [k for k in COLUNAS[tabela] if k in linha]
+    if c.execute(f'SELECT 1 FROM {tabela} WHERE id = ?', (linha.get('id'),)).fetchone():
+        cols.remove('id')
+    cur = c.execute(f"INSERT INTO {tabela} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [linha[k] for k in cols])
+    return cur.lastrowid
+
+
+@router.post('/restaurar', status_code=201)
+def restaurar(d: Desfazer):
+    """Devolve ao orçamento o que a última exclusão tirou (o corpo é o `desfazer` que a exclusão retornou)."""
+    try:
+        with orc() as c:
+            oid = None
+            if d.tipo == 'orcamento':
+                if not d.orcamento:
+                    raise HTTPException(422, 'Faltam os dados do orçamento.')
+                oid = _reinserir(c, 'orcamento', d.orcamento)
+            mapa = {}
+            for e in d.etapas:
+                e = dict(e)
+                if oid is not None:
+                    e['orcamento_id'] = oid
+                if not c.execute('SELECT 1 FROM orcamento WHERE id = ?', (e.get('orcamento_id'),)).fetchone():
+                    raise HTTPException(404, 'O orçamento não existe mais.')
+                mapa[e.get('id')] = _reinserir(c, 'etapa', e)
+                oid = oid or e['orcamento_id']
+            for i in d.itens:
+                i = dict(i)
+                if d.tipo == 'orcamento':
+                    i['orcamento_id'] = oid
+                i['etapa_id'] = mapa.get(i.get('etapa_id'), i.get('etapa_id'))
+                if not c.execute('SELECT 1 FROM etapa WHERE id = ? AND orcamento_id = ?', (i['etapa_id'], i.get('orcamento_id'))).fetchone():
+                    raise HTTPException(404, 'A etapa deste item não existe mais.')
+                _reinserir(c, 'item', i)
+                oid = oid or i['orcamento_id']
+            if oid is None:
+                raise HTTPException(422, 'Nada para restaurar.')
+            c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), oid))
+            return calcular(c, oid)
+    except (sqlite3.IntegrityError, KeyError, TypeError):
+        raise HTTPException(422, 'Não foi possível desfazer: os dados não conferem.')
 
 
 def _simular(c, oid, ref=None):

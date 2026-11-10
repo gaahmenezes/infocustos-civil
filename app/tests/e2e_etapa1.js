@@ -69,11 +69,9 @@ const R = (h) => U + (art ? h.replace('#/', '#') : h);
   await p.fill('#orc-q', 'zzzz-nada');
   ok(await p.isVisible('.orc-nada .vazio-estado'), 'Filtro sem resultado mostra estado vazio');
   await p.fill('#orc-q', 'etapa1 teste'); await p.click('.orc-cartao'); await p.waitForSelector('.planilha');
-  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.waitForSelector('#dlg-confirmar[open]');
-  await p.click('#confirmar-cancelar'); ok(await p.isVisible('.planilha'), 'Cancelar a exclusão mantém o orçamento');
-  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.click('#confirmar-ok');
+  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir');
   await p.waitForSelector('.pagina.orcamentos');
-  ok(!(await p.textContent('#detalhe')).includes('Etapa1 teste de tela'), 'Confirmar exclui o orçamento');
+  ok(!(await p.textContent('#detalhe')).includes('Etapa1 teste de tela'), 'Excluir tira o orçamento da lista');
 
   // padrão das outras páginas
   await p.goto(R('#/encargos')); await p.waitForSelector('.enc');

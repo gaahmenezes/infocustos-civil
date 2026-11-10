@@ -6,17 +6,22 @@
   <title>InfoCustos Civil — Consulta ORSE e SINAPI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23F5B800'/%3E%3Cpath d='M7 25.5v-7h6v-5.5h6V7.5h6v18z' fill='%2317191C'/%3E%3C/svg%3E">
+  <meta name="theme-color" content="#17191C">
   <link rel="stylesheet" href="/static/styles.css">
   <script>try { var t = localStorage.getItem('infocustos-tema'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body class="ocioso">
+  <div class="abertura" id="abertura" aria-hidden="true">
+    <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#F5B800" /><path d="M7 25.5v-7h6v-5.5h6V7.5h6v18z" fill="#17191C" /></svg>
+    <span>InfoCustos <b>Civil</b></span><i></i>
+  </div>
   <header class="cabecalho">
     <a class="marca" href="#/" aria-label="InfoCustos Civil, início">
       <svg class="marca-simbolo" viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="3" y="17" width="12" height="12" rx="2.5" />
-        <rect x="17" y="17" width="12" height="12" rx="2.5" />
-        <rect x="10" y="3" width="12" height="12" rx="2.5" class="marca-topo" />
+        <rect class="marca-fundo" width="32" height="32" rx="8" />
+        <path class="marca-degraus" d="M7 25.5v-7h6v-5.5h6V7.5h6v18z" />
       </svg>
       <span class="marca-nome">InfoCustos<b>Civil</b></span>
     </a>
@@ -136,17 +141,40 @@
       </footer>
     </form>
   </dialog>
-  <dialog id="dlg-confirmar" class="dialogo dialogo-p" aria-labelledby="confirmar-titulo">
-    <h2 id="confirmar-titulo"></h2>
-    <p class="sub" id="confirmar-texto"></p>
-    <div class="dlg-acoes">
-      <button type="button" class="botao" id="confirmar-cancelar">Cancelar</button>
-      <button type="button" class="botao primario" id="confirmar-ok">Confirmar</button>
-    </div>
+  <dialog id="dlg-empresa" class="dialogo gaveta" aria-labelledby="empresa-t">
+    <form id="form-empresa" autocomplete="off">
+      <header class="gaveta-cab">
+        <div><h2 id="empresa-t">Dados da empresa</h2><p class="sub">Aparecem na capa e no cabeçalho do relatório. Ficam salvos só neste navegador.</p></div>
+        <button type="button" class="mini" data-fechar aria-label="Fechar">✕</button>
+      </header>
+      <div class="gaveta-campos">
+        <label class="largo">Nome da empresa<input name="nome" maxlength="120" placeholder="Ex.: Construtora Exemplo Ltda."></label>
+        <label>CNPJ<input name="cnpj" maxlength="20" placeholder="00.000.000/0000-00"></label>
+        <label>Telefone ou e-mail<input name="contato" maxlength="80"></label>
+        <label class="largo">Endereço<input name="endereco" maxlength="160"></label>
+        <label>Responsável técnico<input name="responsavel" maxlength="100"></label>
+        <label>Registro (CREA/CAU)<input name="registro" maxlength="40"></label>
+        <div class="largo logo-campo">
+          <span class="rotulo">Logotipo</span>
+          <div class="logo-linha"><img id="empresa-logo-previa" alt="" hidden>
+            <label class="botao">Escolher imagem<input type="file" id="empresa-logo" accept="image/png,image/jpeg,image/svg+xml,image/webp" hidden></label>
+            <button type="button" class="botao" id="empresa-logo-tirar" hidden>Remover</button></div>
+          <small>PNG ou JPG. A imagem é reduzida e guardada neste navegador.</small>
+        </div>
+      </div>
+      <footer class="gaveta-rod">
+        <button type="button" class="botao" data-fechar>Cancelar</button>
+        <button type="submit" class="botao primario">Salvar</button>
+      </footer>
+    </form>
   </dialog>
+  <div class="bandeja" id="bandeja" hidden></div>
   <div class="aviso" id="aviso" role="status" aria-live="polite" hidden></div>
 
   <script src="/static/app.js"></script>
   <script src="/static/orcamento.js"></script>
+  <script src="/static/painel.js"></script>
+  <script src="/static/comparar.js"></script>
+  <script src="/static/relatorio.js"></script>
 </body>
 </html>

@@ -164,3 +164,41 @@ def test_divisao_do_custo_do_orcamento(orc):
     assert abs(d['mo'] - esperado) < 0.002
     lista = {x['id']: x for x in c.get('/api/orcamentos').json()}
     assert lista[orc['id']]['divisao'] == d
+
+
+def _add(oid, cod, qtd=1, etapa=None, base='ORSE'):
+    return c.post(f"/api/orcamentos/{oid}/itens", json={'tipo': 'servico', 'base': base, 'codigo': cod, 'quantidade': qtd, 'etapa_id': etapa}).json()
+
+
+def test_posicionar_item_e_etapa(orc):
+    oid = orc['id']
+    e1 = orc['etapas'][0]['id']
+    e2 = c.post(f'/api/orcamentos/{oid}/etapas', json={'titulo': 'Alvenaria'}).json()['etapas'][1]['id']
+    a = _add(oid, '00003', etapa=e1)['item_criado']; b = _add(oid, '00004', etapa=e1)['item_criado']; d = _add(oid, '00005', etapa=e1)['item_criado']
+    o = c.post(f'/api/itens/{d}/posicionar', params={'etapa_id': e1, 'posicao': 0}).json()
+    assert [i['id'] for i in o['etapas'][0]['itens']] == [d, a, b]
+    o = c.post(f'/api/itens/{a}/posicionar', params={'etapa_id': e2, 'posicao': 0}).json()
+    assert [i['id'] for i in o['etapas'][0]['itens']] == [d, b] and [i['id'] for i in o['etapas'][1]['itens']] == [a]
+    assert [i['numero'] for i in o['etapas'][0]['itens']] == ['1.1', '1.2'] and o['etapas'][1]['itens'][0]['numero'] == '2.1'
+    o = c.post(f'/api/etapas/{e2}/posicionar', params={'posicao': 0}).json()
+    assert [e['id'] for e in o['etapas']] == [e2, e1]
+    assert c.post(f'/api/itens/{a}/posicionar', params={'etapa_id': 999999, 'posicao': 0}).status_code == 404
+
+
+def test_desfazer_exclusao_de_item_etapa_e_orcamento():
+    o = c.post('/api/orcamentos', json={'nome': 'Para desfazer', 'bdi': 20}).json()
+    oid, e1 = o['id'], o['etapas'][0]['id']
+    a = _add(oid, '00003', 100, e1)['item_criado']; antes = _add(oid, '00004', 2, e1)
+    r = c.delete(f'/api/itens/{a}').json()
+    assert r['qtd_itens'] == 1 and r['desfazer']['tipo'] == 'item'
+    volta = c.post('/api/restaurar', json=r['desfazer']).json()
+    assert volta['total'] == antes['total'] and [i['id'] for i in volta['etapas'][0]['itens']] == [a, antes['item_criado']]
+    r = c.delete(f'/api/etapas/{e1}').json()
+    assert r['qtd_itens'] == 0 and len(r['desfazer']['itens']) == 2
+    assert c.post('/api/restaurar', json=r['desfazer']).json()['total'] == antes['total']
+    r = c.delete(f'/api/orcamentos/{oid}').json()
+    assert c.get(f'/api/orcamentos/{oid}').status_code == 404
+    volta = c.post('/api/restaurar', json=r['desfazer']).json()
+    assert volta['nome'] == 'Para desfazer' and volta['total'] == antes['total'] and volta['bdi'] == 20
+    c.delete(f"/api/orcamentos/{volta['id']}")
+    assert c.post('/api/restaurar', json={'tipo': 'item', 'itens': [{'id': 1, 'orcamento_id': 987654, 'etapa_id': 987654}]}).status_code == 404

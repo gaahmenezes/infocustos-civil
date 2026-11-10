@@ -298,7 +298,13 @@ const LOCAL = (() => {
   }
 
   // ---------- roteador ----------
+  // toda resposta com o orçamento inteiro leva a divisão do custo, como no servidor
   async function req(url, metodo = 'GET', corpo = {}) {
+    const r = await rotear(url, metodo, corpo);
+    if (r && Array.isArray(r.etapas) && r.divisao === undefined) await comDivisao(r);
+    return r;
+  }
+  async function rotear(url, metodo, corpo) {
     await carregar();
     const u = new URL(url, 'http://local'); const p = u.pathname.split('/').filter(Boolean).slice(1); const qs = u.searchParams;
     const M = metodo.toUpperCase();
@@ -335,7 +341,7 @@ const LOCAL = (() => {
       const o = achar(r1);
       if (!r2_ && M === 'GET') return comDivisao(calcular(o));
       if (!r2_ && M === 'PATCH') { for (const k of ['nome', 'cliente', 'local', 'bdi', 'observacoes']) if (corpo[k] != null) o[k] = k === 'bdi' ? Number(corpo[k]) : corpo[k]; return tocar(o); }
-      if (!r2_ && M === 'DELETE') { b.orcamentos = b.orcamentos.filter((x) => x !== o); gravar(); return null; }
+      if (!r2_ && M === 'DELETE') { b.orcamentos = b.orcamentos.filter((x) => x !== o); gravar(); return { desfazer: { tipo: 'orcamento', orcamento: o } }; }
       if (r2_ === 'duplicar') {
         const mapa = new Map(); const n = { ...JSON.parse(JSON.stringify(o)), id: novoId(), nome: o.nome + ' (cópia)', criado_em: agora() };
         n.etapas.forEach((e) => { const id = novoId(); mapa.set(e.id, id); e.id = id; });
@@ -369,13 +375,41 @@ const LOCAL = (() => {
       const [o, e] = donoEtapa(r1);
       if (r2_ === 'mover') { mover(o.etapas, e.id, qs.get('direcao')); return tocar(o); }
       if (M === 'PATCH') { e.titulo = corpo.titulo.trim(); return tocar(o); }
-      if (M === 'DELETE') { o.etapas = o.etapas.filter((x) => x !== e); o.itens = o.itens.filter((i) => i.etapa_id !== e.id); return tocar(o); }
+      if (r2_ === 'posicionar') {
+        const resto = ordenar(o.etapas.filter((x) => x !== e)); resto.splice(Math.min(Number(qs.get('posicao')), resto.length), 0, e);
+        resto.forEach((x, n) => { x.ordem = n + 1; }); return tocar(o);
+      }
+      if (M === 'DELETE') {
+        const itens = o.itens.filter((i) => i.etapa_id === e.id);
+        o.etapas = o.etapas.filter((x) => x !== e); o.itens = o.itens.filter((i) => i.etapa_id !== e.id);
+        return { ...tocar(o), desfazer: { tipo: 'etapa', orcamento_id: o.id, etapas: [e], itens } };
+      }
     }
     if (r0 === 'itens') {
       const [o, i] = donoItem(r1);
       if (r2_ === 'mover') { mover(o.itens.filter((x) => x.etapa_id === i.etapa_id), i.id, qs.get('direcao')); return tocar(o); }
       if (M === 'PATCH') { if (corpo.quantidade != null) i.quantidade = Number(corpo.quantidade); return tocar(o); }
-      if (M === 'DELETE') { o.itens = o.itens.filter((x) => x !== i); return tocar(o); }
+      if (r2_ === 'posicionar') {
+        const eid = Number(qs.get('etapa_id')), origem = i.etapa_id;
+        if (!o.etapas.some((e) => e.id === eid)) throw erro(404, 'Etapa não encontrada neste orçamento.');
+        const destino = ordenar(o.itens.filter((x) => x.etapa_id === eid && x !== i)); destino.splice(Math.min(Number(qs.get('posicao')), destino.length), 0, i);
+        i.etapa_id = eid; destino.forEach((x, n) => { x.ordem = n + 1; });
+        if (origem !== eid) ordenar(o.itens.filter((x) => x.etapa_id === origem)).forEach((x, n) => { x.ordem = n + 1; });
+        return tocar(o);
+      }
+      if (M === 'DELETE') { o.itens = o.itens.filter((x) => x !== i); return { ...tocar(o), desfazer: { tipo: 'item', orcamento_id: o.id, itens: [i] } }; }
+    }
+    if (r0 === 'restaurar') {
+      // devolve o que a última exclusão tirou
+      const b = banco();
+      if (corpo.tipo === 'orcamento') {
+        const o = corpo.orcamento; if (b.orcamentos.some((x) => x.id === o.id)) o.id = novoId();
+        b.orcamentos.push(o); return comDivisao(tocar(o));
+      }
+      const o = achar(corpo.orcamento_id);
+      for (const e of corpo.etapas || []) o.etapas.push(e);
+      for (const i of corpo.itens || []) { if (!o.etapas.some((e) => e.id === i.etapa_id)) throw erro(404, 'A etapa deste item não existe mais.'); o.itens.push(i); }
+      return comDivisao(tocar(o));
     }
     throw erro(404, 'Rota não encontrada.');
   }
