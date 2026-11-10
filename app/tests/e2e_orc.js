@@ -30,7 +30,7 @@ const U = 'http://localhost:8000';
   const nums = await p.$$eval('tr.item .n', r => r.map(x => x.textContent));
   ok(JSON.stringify(nums) === JSON.stringify(['1.1', '1.2', '2.1', '2.2', '2.3', '3.1']), 'Numeração ' + nums.join(' '));
   const total1 = await p.textContent('.orc-totais .total b');
-  await p.fill('#orc-bdi', '0'); await p.press('#orc-bdi', 'Tab'); await p.waitForTimeout(500);
+  await p.click('#orc-editar'); await p.fill('#orc-bdi', '0'); await p.press('#orc-bdi', 'Tab'); await p.waitForTimeout(500);
   const custo = await p.textContent('.orc-totais div:first-child b'); const total0 = await p.textContent('.orc-totais .total b');
   ok(custo === total0 && total0 !== total1, `BDI 0% → total = custo direto (${total0}); com 24,23%: ${total1}`);
   await p.fill('#orc-bdi', '24,23'); await p.press('#orc-bdi', 'Tab'); await p.waitForTimeout(500);

@@ -9,6 +9,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23F5B800'/%3E%3Cpath d='M7 25.5v-7h6v-5.5h6V7.5h6v18z' fill='%2317191C'/%3E%3C/svg%3E">
   <meta name="theme-color" content="#17191C">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/static/icones/icone-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="InfoCustos">
   <link rel="stylesheet" href="/static/styles.css">
   <script>try { var t = localStorage.getItem('infocustos-tema'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
@@ -17,6 +22,7 @@
     <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#F5B800" /><path d="M7 25.5v-7h6v-5.5h6V7.5h6v18z" fill="#17191C" /></svg>
     <span>InfoCustos <b>Civil</b></span><i></i>
   </div>
+  <a class="pular" href="#detalhe">Pular para o conteúdo</a>
   <header class="cabecalho">
     <a class="marca" href="#/" aria-label="InfoCustos Civil, início">
       <svg class="marca-simbolo" viewBox="0 0 32 32" aria-hidden="true">
@@ -33,6 +39,9 @@
     </nav>
     <div class="cab-direita">
       <div class="referencia" id="referencia"></div>
+      <button type="button" class="atalho-paleta" data-paleta aria-label="Abrir a busca rápida e os comandos (Ctrl+K)" title="Busca rápida e comandos">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg><kbd>Ctrl K</kbd>
+      </button>
       <button type="button" class="tema" id="tema" aria-label="Usar tema escuro">
         <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3 7 7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7" /></svg>
         <svg class="tema-lua" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.2A8 8 0 0 1 9.8 4a8 8 0 1 0 10.2 10.2Z" /></svg>
@@ -50,7 +59,7 @@
       <label for="q" class="sr">Buscar composição ou insumo</label>
       <svg class="busca-icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>
       <input id="q" name="q" type="search" placeholder="Ex.: alvenaria bloco cerâmico 14, chapisco, 00003, cimento"
-             autofocus spellcheck="false" enterkeyhint="search">
+             spellcheck="false" enterkeyhint="search">
       <button type="button" class="busca-limpar" id="limpar" aria-label="Limpar pesquisa" hidden>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
       </button>
@@ -169,6 +178,22 @@
     </form>
   </dialog>
   <div class="bandeja" id="bandeja" hidden></div>
+  <dialog id="dlg-paleta" class="paleta" aria-label="Busca rápida e comandos">
+    <div class="paleta-topo">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>
+      <input id="paleta-q" type="text" role="combobox" aria-expanded="true" aria-controls="paleta-lista" aria-autocomplete="list" autocomplete="off" spellcheck="false"
+             placeholder="Buscar item, orçamento ou comando" aria-label="Buscar item, orçamento ou comando">
+      <kbd>Esc</kbd>
+    </div>
+    <ul id="paleta-lista" class="paleta-lista" role="listbox" aria-label="Resultados"></ul>
+    <p class="paleta-rod" aria-hidden="true"><span><kbd>↑</kbd><kbd>↓</kbd> escolher</span><span><kbd>Enter</kbd> abrir</span><span><kbd>Esc</kbd> fechar</span></p>
+  </dialog>
+  <nav class="nav-baixo" aria-label="Seções">
+    <a href="#/" data-aba="consulta"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>Consulta</a>
+    <a href="#/orcamentos" data-aba="orcamentos"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.5" width="16" height="17" rx="2.5" /><path d="M8 8.5h8M8 12.5h8M8 16.5h4.5" /></svg>Orçamentos</a>
+    <a href="#/encargos" data-aba="encargos"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5M16 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.9c1.6.6 2.6 2.1 3 4.6" /></svg>Encargos</a>
+    <a href="#/comparativo" data-aba="comparativo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 20v-7M12 20V5M17 20v-10" /></svg>Meses</a>
+  </nav>
   <div class="aviso" id="aviso" role="status" aria-live="polite" hidden></div>
 
   <script src="/static/app.js"></script>
@@ -176,5 +201,6 @@
   <script src="/static/painel.js"></script>
   <script src="/static/comparar.js"></script>
   <script src="/static/relatorio.js"></script>
+  <script src="/static/paleta.js"></script>
 </body>
 </html>

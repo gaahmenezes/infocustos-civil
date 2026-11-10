@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -359,6 +359,18 @@ import orcamento  # noqa: E402
 orcamento.configurar(conn)
 app.include_router(orcamento.router)
 app.mount('/static', StaticFiles(directory=AQUI / 'static'), name='static')
+
+
+@app.get('/manifest.webmanifest')
+def manifesto():
+    """Permite instalar o site como aplicativo no celular e no computador."""
+    icone = lambda n, uso='any': {'src': f'/static/icones/icone-{n}.png', 'sizes': f'{n}x{n}', 'type': 'image/png', 'purpose': uso}
+    return JSONResponse({
+        'name': 'InfoCustos Civil', 'short_name': 'InfoCustos', 'lang': 'pt-BR',
+        'description': 'Consulta de preços ORSE e SINAPI, composições e orçamentos de obra.',
+        'start_url': '/', 'scope': '/', 'display': 'standalone', 'background_color': '#17191C', 'theme_color': '#17191C',
+        'icons': [icone(192), icone(512), {'src': '/static/icones/icone-mascara-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'}],
+    }, media_type='application/manifest+json')
 
 
 @app.get('/')

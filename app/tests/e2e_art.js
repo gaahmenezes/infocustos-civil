@@ -30,7 +30,7 @@ const U = 'http://localhost:8100/index.html';
   await p.keyboard.press('Enter'); await p.waitForFunction(() => document.activeElement.classList.contains('qtd'));
   await p.keyboard.type('300'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
   ok((await p.$$('tr.item')).length === 7, 'Item adicionado pela busca da etapa');
-  await p.fill('#orc-bdi', '0'); await p.press('#orc-bdi', 'Tab'); await p.waitForTimeout(300);
+  await p.click('#orc-editar'); await p.fill('#orc-bdi', '0'); await p.press('#orc-bdi', 'Tab'); await p.waitForTimeout(300);
   ok((await p.textContent('.orc-totais div:first-child b')) === (await p.textContent('.orc-totais .total b')), 'BDI 0% recalcula');
   await p.fill('#orc-bdi', '24,23'); await p.press('#orc-bdi', 'Tab'); await p.waitForTimeout(300);
   await p.click('.abas-orc a[href$="abc-insumos"]');

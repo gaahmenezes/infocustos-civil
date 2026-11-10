@@ -6,6 +6,8 @@ const num2 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumF
 const pct = new Intl.NumberFormat('pt-BR', { style: 'percent', maximumFractionDigits: 1 });
 const coef = (v) => v == null ? '—' : new Intl.NumberFormat('pt-BR', { maximumFractionDigits: 8 }).format(v);
 const money = (v) => v == null ? '—' : num2.format(v);
+// unidade como a pessoa lê: m2 vira m², m3 vira m³
+const unid = (u) => esc(String(u ?? '').trim().replace(/^m2$/i, 'm²').replace(/^m3$/i, 'm³'));
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const SECOES = [
@@ -201,7 +203,7 @@ async function desenharInicio() {
   $('#c-pesquisas-rod').innerHTML = HIST.pesquisas.length ? '<button type="button" data-limpar-hist="pesquisas">Limpar pesquisas</button>' : '';
   $('#c-abertos').innerHTML = HIST.abertos.length
     ? HIST.abertos.map((x) => `<li><a href="${rotaItem(x.tipo, esc(x.base), esc(x.codigo))}">
-        <span class="linha-1">${esc(x.descricao)}</span><span class="linha-2"><b>${esc(x.codigo)}</b> ${esc(x.base)} · ${x.tipo === 'servico' ? 'composição' : 'insumo'} · ${esc(x.unidade)}</span></a></li>`).join('')
+        <span class="linha-1">${esc(x.descricao)}</span><span class="linha-2"><b>${esc(x.codigo)}</b> ${esc(x.base)} · ${x.tipo === 'servico' ? 'composição' : 'insumo'}${x.unidade ? `<span class="un">${unid(x.unidade)}</span>` : ''}</span></a></li>`).join('')
     : `<li class="vazio-cartao"><svg viewBox="0 0 48 48" aria-hidden="true">${ICONES.relogio}</svg>O que você abrir fica aqui, para voltar com um clique.</li>`;
   $('#c-abertos-rod').innerHTML = HIST.abertos.length ? '<button type="button" data-limpar-hist="abertos">Limpar lista</button>' : '';
   try {
@@ -340,14 +342,14 @@ function desenharLista(r) {
     return;
   }
   lista.innerHTML = r.itens.map((it, i) => {
-    const meta = [it.unidade, it.grupo || (it.tipo === 'insumo' ? it.categoria : ''),
+    const meta = [it.grupo || (it.tipo === 'insumo' ? it.categoria : ''),
       it.tipo === 'insumo' && it.usos ? `em ${it.usos.toLocaleString('pt-BR')} composições` : ''].filter(Boolean);
     const atual = estado.atual && estado.atual.base === it.base && estado.atual.codigo === it.codigo && estado.atual.tipo === it.tipo;
     return `<li><button type="button" class="res" data-i="${i}"${atual ? ' aria-current="true"' : ''}>
       <span class="res-cod">${codigoBase(it.codigo, it.base, true)}<span class="tipo tipo-${it.tipo}">${ROTULO_TIPO[it.tipo]}</span></span>
       <span class="res-desc">${trecho(it)}</span>
       <span class="res-meta">${esc(meta.join(' · '))}</span>
-      <span class="res-preco">${it.preco == null ? 'sem preço' : brl.format(it.preco)}</span>
+      <span class="res-preco">${it.preco == null ? '<span class="sem-preco">sem preço</span>' : brl.format(it.preco)}${it.unidade ? `<span class="un" title="Unidade">${unid(it.unidade)}</span>` : ''}</span>
       <span class="res-div">${divisaoCusto(it)}</span></button>${it.tipo === 'servico' && it.tem_composicao
         ? `<button type="button" class="cmp-bt" data-comparar="${esc(it.base)}|${esc(it.codigo)}" data-desc="${esc(it.descricao)}" aria-pressed="${window.estaComparando ? window.estaComparando(it.base, it.codigo) : false}" title="Comparar esta composição com outras">Comparar</button>` : ''}</li>`;
   }).join('');
@@ -377,7 +379,7 @@ async function rota() {
   document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp);
   const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : 'consulta';
   document.body.dataset.aba = aba;
-  document.querySelectorAll('.abas a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
+  document.querySelectorAll('.abas a, .nav-baixo a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
   if (aba !== 'consulta' || emCmp) estado.atual = null;
   aplicarEstado();
   window.desenharBandeja && window.desenharBandeja();
@@ -497,7 +499,7 @@ function desenharComposicao(c) {
     <div class="ficha-cod">${codigoBase(c.codigo, c.base)}<span class="selo">${dnit ? 'Composição padrão DNIT' : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
     <h2>${esc(c.descricao || 'Composição sem descrição na base')}</h2>
     <div class="ficha-linha">
-      <div class="preco-grande"><span class="valor">${brl.format(total)}</span><span class="por">por ${esc(c.unidade)}${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>
+      <div class="preco-grande"><span class="valor">${brl.format(total)}</span><span class="por">por <b class="un">${unid(c.unidade)}</b>${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>
       <div class="fatos">
         <div>Itens<b>${c.itens.length}</b></div>
         ${c.usada_em ? `<div>Usada em<b>${c.usada_em} composições</b></div>` : ''}
@@ -569,7 +571,7 @@ function desenharInsumo(i) {
     <div class="ficha-cod">${codigoBase(i.codigo, i.base)}<span class="selo">Insumo</span><span>${esc(i.tipo)} › ${esc(i.grupo)}${i.subgrupo ? ' › ' + esc(i.subgrupo) : ''}</span></div>
     <h2>${esc(i.descricao || 'Insumo sem descrição na base')}</h2>
     <div class="ficha-linha">
-      <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : brl.format(i.preco)}</span><span class="por">por ${esc(i.unidade)}${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>
+      <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : brl.format(i.preco)}</span><span class="por">por <b class="un">${unid(i.unidade)}</b>${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>
       <div class="fatos">
         ${mo ? `<div>Com encargo social de ${num2.format(estado.ref.encargo_social_horista)}%<b>${brl.format(comEnc)} por ${esc(i.unidade)}</b></div>` : ''}
         <div>Usado em<b>${i.usado_em.toLocaleString('pt-BR')} composições</b></div>
@@ -645,7 +647,10 @@ document.addEventListener('click', (e) => {
   HIST[b.dataset.limparHist] = []; gravarHist(); desenharInicio();
 });
 const inicioHTML = $('#detalhe').innerHTML;
-carregarReferencia().then(() => { buscar(); rota(); }).finally(() => { const a = $('#abertura'); if (a) a.remove(); });
+// o cursor já começa na pesquisa quando a tela inicial é a consulta (em tela de toque não, para o teclado não subir sozinho);
+// nas outras telas o foco fica no começo da página, e o primeiro Tab encontra "Pular para o conteúdo"
+const focoInicial = () => { if (document.body.classList.contains('ocioso') && window.matchMedia('(hover: hover)').matches) $('#q').focus(); };
+carregarReferencia().then(() => { buscar(); rota(); focoInicial(); }).finally(() => { const a = $('#abertura'); if (a) a.remove(); });
 
 
 // ---------- comparativo entre meses (único lugar onde meses diferentes aparecem juntos) ----------
@@ -746,3 +751,12 @@ async function desenharEncargos() {
     <p class="fonte">Fonte: ORSE (CEHOP/SE), Modelo de Encargo Social Horista e Mensalista, referência ${esc(r.referencia.descricao)}.</p>
   </div>`;
 }
+
+// "Pular para o conteúdo": leva o foco direto à área principal, sem mexer no endereço da tela
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.pular')) return;
+  e.preventDefault();
+  const alvo = document.body.classList.contains('ocioso') ? $('#q') : $('#detalhe');
+  if (alvo.id === 'detalhe') alvo.setAttribute('tabindex', '-1');
+  alvo.focus();
+});

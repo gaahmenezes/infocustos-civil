@@ -133,7 +133,9 @@ async function abrirOrcamento(id, dados) {
     <div class="orc-cab">
       <div class="orc-ident">
         <input class="orc-nome" id="orc-nome" value="${esc(o.nome)}" aria-label="Nome do orçamento" maxlength="200">
-        <div class="orc-campos">
+        <p class="orc-dados">${[o.cliente, o.local].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('')}<span>BDI de <b>${num2.format(o.bdi)}%</b></span><span>data-base <b>${esc(nomeRef(o.referencia))}</b></span>
+          <button type="button" class="link-acao" id="orc-editar" aria-expanded="${!!ORC.editando}" aria-controls="orc-campos">${ORC.editando ? 'Fechar' : 'Editar dados'}</button></p>
+        <div class="orc-campos" id="orc-campos"${ORC.editando ? '' : ' hidden'}>
           <label>Cliente<input id="orc-cliente" value="${esc(o.cliente)}" placeholder="—"></label>
           <label>Local<input id="orc-local" value="${esc(o.local)}" placeholder="—"></label>
           <label class="curto">BDI (%)<input id="orc-bdi" inputmode="decimal" value="${num2.format(o.bdi)}"></label>
@@ -143,6 +145,8 @@ async function abrirOrcamento(id, dados) {
       </div>
       <div class="orc-totais" id="orc-totais"></div>
     </div>
+    <div class="orc-fixa" aria-hidden="true"><div class="orc-fixa-barra"><b>${esc(o.nome)}</b>
+      <span>Custo direto ${brl.format(o.custo_total)}</span><span>BDI ${brl.format(o.valor_bdi)}</span><strong>${brl.format(o.total)}</strong></div></div>
     <div class="mudar-mes" id="orc-mudar-mes" hidden></div>
     <div id="orc-painel"></div>
     <div class="orc-barra">
@@ -175,9 +179,16 @@ function ligarCabecalho(o) {
   const salvar = async (campo, valor) => {
     try { const n = await req(`/api/orcamentos/${o.id}`, 'PATCH', { [campo]: valor }); ORC.atual = n; return n; } catch (e) { avisar(esc(e.message)); return null; }
   };
+  $('#orc-editar').addEventListener('click', () => {
+    ORC.editando = !ORC.editando; $('#orc-campos').hidden = !ORC.editando;
+    $('#orc-editar').setAttribute('aria-expanded', String(ORC.editando)); $('#orc-editar').textContent = ORC.editando ? 'Fechar' : 'Editar dados';
+    if (ORC.editando) $('#orc-cliente').focus();
+  });
   $('#orc-nome').addEventListener('change', (e) => { if (e.target.value.trim()) salvar('nome', e.target.value.trim()); });
-  $('#orc-cliente').addEventListener('change', (e) => salvar('cliente', e.target.value));
-  $('#orc-local').addEventListener('change', (e) => salvar('local', e.target.value));
+  // cliente e local aparecem no resumo acima dos campos: redesenha para o resumo acompanhar
+  const salvarTexto = async (campo, valor) => { const n = await salvar(campo, valor); if (n) abrirOrcamento(n.id, n); };
+  $('#orc-cliente').addEventListener('change', (e) => salvarTexto('cliente', e.target.value));
+  $('#orc-local').addEventListener('change', (e) => salvarTexto('local', e.target.value));
   $('#orc-bdi').addEventListener('change', async (e) => {
     const v = lerNum(e.target.value);
     if (!(v >= 0 && v <= 100)) { avisar('O BDI precisa ficar entre 0 e 100%.'); e.target.value = num2.format(ORC.atual.bdi); return; }
@@ -209,11 +220,11 @@ function desenharPlanilha(o) {
         <td class="n"><button type="button" class="pega" data-pega="item" data-id="${i.id}" aria-label="Mover o item ${i.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem ou a etapa">⠿</button>${i.numero}</td>
         <td class="cod">${codLink(i.tipo, i.base, i.codigo)}</td>
         <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}</td>
-        <td>${esc(i.unidade)}</td>
-        <td class="num"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
-        <td class="num">${money(i.custo_unit)}</td>
-        <td class="num">${money(i.preco_unit)}</td>
-        <td class="num total">${money(i.total)}</td>
+        <td class="c-un">${unid(i.unidade)}</td>
+        <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
+        <td class="num c-custo" data-rotulo="Custo unit.">${money(i.custo_unit)}</td>
+        <td class="num c-preco" data-rotulo="Preço c/ BDI">${money(i.preco_unit)}</td>
+        <td class="num total c-total" data-rotulo="Total">${money(i.total)}</td>
         <td class="ctrl">
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
         </td></tr>`).join('')}
@@ -304,7 +315,7 @@ function ligarBuscaInline(inp) {
       if (meu !== seqLocal) return;
       itens = r.itens.filter((x) => x.preco != null);
       ul.innerHTML = itens.length ? itens.map((x, k) => `<li data-k="${k}"><span class="res-cod">${codigoBase(x.codigo, x.base)}<span class="tipo tipo-${x.tipo}">${x.tipo === 'servico' ? 'Composição' : 'Insumo'}</span></span>
-          <span>${trecho(x)}</span><span class="add-preco">${brl.format(x.preco)}/${esc(x.unidade)}</span></li>`).join('')
+          <span>${trecho(x)}</span><span class="add-preco">${brl.format(x.preco)}<span class="un">${unid(x.unidade)}</span></span></li>`).join('')
         : `<li class="nada">Nada encontrado com preço em ${esc(nomeRef(ORC.atual.referencia))}.</li>`;
       ul.hidden = false; sel = -1;
     }, 160);
@@ -440,3 +451,11 @@ function ligarMudarMes(o) {
     } catch (e) { caixa.innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
   });
 }
+
+// ---------- totais sempre à vista ----------
+// quando o cabeçalho do orçamento sai da tela, uma faixa fina com nome e totais gruda no topo
+window.addEventListener('scroll', () => {
+  const cab = document.querySelector('.ficha.orc .orc-cab'); if (!cab) return;
+  const topo = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topo')) || 62;
+  cab.closest('.ficha').classList.toggle('rolou', cab.getBoundingClientRect().bottom < topo);
+}, { passive: true });

@@ -58,8 +58,10 @@ orc = trocar(orc, [
 orc = orc.replace("'#/orcamentos'", "'#orcamentos'").replace('"#/orcamentos"', '"#orcamentos"')
 # telas novas: painel do orçamento, comparação e relatório (usam as rotas e as funções já trocadas acima)
 extras = ''
-for nome in ('painel.js', 'comparar.js', 'relatorio.js'):
+for nome in ('painel.js', 'comparar.js', 'relatorio.js', 'paleta.js'):
     t = (STATIC / nome).read_text(encoding='utf-8').replace('href="#/"', 'href="#inicio"')
+    for velho, novo in (("'#/orcamentos'", "'#orcamentos'"), ("'#/encargos'", "'#encargos'"), ("'#/comparativo'", "'#comparativo'"), ("'#/'", "'#inicio'")):
+        t = t.replace(velho, novo)
     assert '#/' not in t, f'sobrou rota antiga em {nome}'
     extras += f'\n/* ---- {nome} ---- */\n' + t
 assert '#/' not in orc, 'sobrou rota antiga em orcamento.js'
@@ -77,7 +79,8 @@ corpo = trocar(corpo, [
     ('<a id="exportar-busca" class="link-acao" href="#" download>Exportar resultado</a>',
      '<button type="button" id="exportar-busca" class="link-acao" data-copiar-lista>Copiar para o Excel</button>'),
 ], 'index.html')
-corpo = corpo.replace('href="#/orcamentos"', 'href="#orcamentos"').replace('href="#/"', 'href="#inicio"')
+corpo = (corpo.replace('href="#/orcamentos"', 'href="#orcamentos"').replace('href="#/encargos"', 'href="#encargos"')
+         .replace('href="#/comparativo"', 'href="#comparativo"').replace('href="#/"', 'href="#inicio"'))
 assert 'href="#/' not in corpo, 'sobrou rota antiga no HTML'
 corpo += '''
   <dialog id="dlg-copiar" class="dialogo" aria-labelledby="dlg-copiar-t">
