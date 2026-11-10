@@ -32,13 +32,13 @@ function graficoABC(l) {
     `<line class="g-grade${v === 0 ? ' g-base' : ''}" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" /><text class="g-eixo" x="${L - 7}" y="${y(v) + 3.5}" text-anchor="end">${t}</text>`).join('');
   // o nome da faixa fica logo abaixo do limite dela, no canto direito (a curva termina no alto, então não cruza)
   const faixas = [['classe A', 0.8], ['classe B', 0.95]].map(([c, lim]) => `<text class="g-faixa" x="${W - R - 2}" y="${y(lim) + 12}" text-anchor="end">${c}</text>`).join('');
-  const pontos = l.length <= 40 ? l.map((p) => `<circle class="g-ponto" cx="${x(p.posicao).toFixed(1)}" cy="${y(p.acumulado).toFixed(1)}" r="4" />`).join('') : '';
+  const pontos = l.length <= 40 ? l.map((p, k) => `<circle class="g-ponto" style="--k:${k}" cx="${x(p.posicao).toFixed(1)}" cy="${y(p.acumulado).toFixed(1)}" r="4" />`).join('') : '';
   const larg = l.length === 1 ? pw : pw / (l.length - 1);
   const alvos = l.map((p, k) => `<rect class="g-alvo" data-k="${k}" x="${(x(p.posicao) - larg / 2).toFixed(1)}" y="${T}" width="${larg.toFixed(1)}" height="${ph}" tabindex="0" role="button" aria-label="${p.posicao}º: ${esc(p.codigo)}/${esc(p.base)}, ${brl.format(p.total)}, acumulado ${pct.format(p.acumulado)}, classe ${p.classe}" />`).join('');
   return `<svg class="grafico" viewBox="0 0 ${W} ${H}" role="group" aria-label="Curva ABC: valor acumulado dos itens, do mais caro para o mais barato">
     ${grade}${faixas}
     <text class="g-eixo" x="${L}" y="${H - 7}">1º item</text><text class="g-eixo" x="${W - R}" y="${H - 7}" text-anchor="end">${l.length}º item</text>
-    <path class="g-linha" d="${linha}" /><line class="g-mira" x1="0" x2="0" y1="${T}" y2="${T + ph}" hidden />${pontos}
+    <path class="g-linha" pathLength="1" d="${linha}" /><line class="g-mira" x1="0" x2="0" y1="${T}" y2="${T + ph}" hidden />${pontos}
     <circle class="g-foco" r="5.5" hidden />${alvos}</svg>`;
 }
 
@@ -55,7 +55,8 @@ window.desenharPainel = function (o) {
   const dv = o.divisao;
   const barras = dv ? PAINEL_PARTES.filter(([k]) => dv[k] > 0).map(([k, n, cor]) => `<span style="flex-grow:${dv[k]};background:var(${cor})" title="${n}: ${pct.format(dv[k])}"></span>`).join('') : '';
   const legenda = dv ? PAINEL_PARTES.map(([k, n, cor]) => `<div style="--cor:var(${cor})">${n}<b>${brl.format(o.custo_total * dv[k])}</b><span class="pct">${pct.format(dv[k])}</span></div>`).join('') : '';
-  d.innerHTML = `<section class="painel-orc" aria-label="Resumo visual do orçamento">
+  const estreia = ORC.painelVisto !== o.id; ORC.painelVisto = o.id;
+  d.innerHTML = `<section class="painel-orc${estreia ? ' estreia' : ''}" aria-label="Resumo visual do orçamento">
     <button type="button" class="painel-alternar" aria-expanded="${aberto}" data-painel-alternar>Resumo visual${SETA}</button>
     <div class="painel-grade"${aberto ? '' : ' hidden'}>
       <article class="pcartao"><h3>Custo por etapa <span class="sub">com BDI · clique para filtrar a planilha</span></h3><ul class="pe-lista">${etapas}</ul></article>
@@ -107,65 +108,79 @@ window.desenharPainel = function (o) {
 };
 
 // ---------- arrastar para reordenar ----------
+// Enquanto se arrasta, a linha acompanha o ponteiro e as vizinhas abrem espaço no lugar onde ela vai cair.
+// As posições são calculadas pelas medidas tiradas no início, e não pelo que está sob o ponteiro, para a tela não oscilar.
 window.ligarArrastar = function (corpo, o, atualizar) {
-  let arr = null;  // { tipo, id, linha, marca, alvo }
+  let arr = null;
   const limpar = () => {
     if (!arr) return;
-    arr.linha.classList.remove('arrastando'); arr.marca.remove(); document.body.classList.remove('arrastando-algo'); arr = null;
+    arr.pecas.forEach((p) => { p.el.style.transform = ''; p.el.style.transition = ''; p.el.classList.remove('arrastando'); });
+    document.body.classList.remove('arrastando-algo'); arr = null;
   };
-  const acharAlvo = (x, y) => {
-    const el = document.elementFromPoint(x, y); if (!el) return null;
+  // onde a peça cairia com o ponteiro nesta altura da página
+  const destino = (yPag) => {
     if (arr.tipo === 'etapa') {
-      const tb = el.closest('tbody.etapa'); if (!tb) return null;
-      const r = tb.getBoundingClientRect(); const depois = y > r.top + r.height / 2;
-      return { tbody: tb, depois, yLinha: depois ? r.bottom : r.top, esq: r.left, larg: r.width };
+      const outras = arr.pecas.filter((p) => p !== arr.eu);
+      let pos = 0; for (const p of outras) if (yPag > p.meio - (p.ordem > arr.eu.ordem ? arr.eu.alt : 0)) pos += 1;
+      return { pos };
     }
-    const tr = el.closest('tr.item, tr.etapa-cab, tr.add-linha'); if (!tr) return null;
-    const tb = tr.closest('tbody.etapa'); const r = tr.getBoundingClientRect();
-    if (tr.classList.contains('etapa-cab')) return { tbody: tb, antesDe: tb.querySelector('tr.item'), yLinha: r.bottom, esq: r.left, larg: r.width };
-    if (tr.classList.contains('add-linha')) return { tbody: tb, antesDe: null, yLinha: r.top, esq: r.left, larg: r.width };
-    const depois = y > r.top + r.height / 2;
-    let prox = tr.nextElementSibling; if (prox && !prox.classList.contains('item')) prox = null;
-    return { tbody: tb, antesDe: depois ? prox : tr, yLinha: depois ? r.bottom : r.top, esq: r.left, larg: r.width };
+    const tb = arr.etapas.find((t) => yPag >= t.topo && yPag < t.base) || (yPag < arr.etapas[0].topo ? arr.etapas[0] : arr.etapas[arr.etapas.length - 1]);
+    const itens = arr.pecas.filter((p) => p.etapa === tb.id && p !== arr.eu && p.item);
+    let pos = 0; for (const p of itens) if (yPag > p.meio - (p.ordem > arr.eu.ordem ? arr.eu.alt : 0)) pos += 1;
+    return { etapa: tb.id, pos, antes: itens[pos] || null };
+  };
+  const acomodar = (d) => {
+    // tudo o que estava depois da peça sobe o espaço que ela deixou; tudo a partir do ponto de queda desce para abrir a vaga
+    let corte;
+    if (arr.tipo === 'etapa') { const outras = arr.pecas.filter((p) => p !== arr.eu); corte = d.pos < outras.length ? outras[d.pos].ordem : Infinity; }
+    else if (d.antes) corte = d.antes.ordem;
+    else { const fim = arr.pecas.find((p) => p.etapa === d.etapa && p.fim); corte = fim ? fim.ordem : Infinity; }
+    for (const p of arr.pecas) {
+      if (p === arr.eu) continue;
+      const dy = (p.ordem > arr.eu.ordem ? -arr.eu.alt : 0) + (p.ordem >= corte ? arr.eu.alt : 0);
+      p.el.style.transform = dy ? `translateY(${dy}px)` : '';
+    }
   };
   corpo.addEventListener('pointerdown', (e) => {
-    const p = e.target.closest('.pega'); if (!p || e.button > 0) return;
+    const pega = e.target.closest('.pega'); if (!pega || e.button > 0) return;
     e.preventDefault();
-    const linha = p.dataset.pega === 'etapa' ? p.closest('tbody') : p.closest('tr');
-    const marca = document.createElement('div'); marca.className = 'solta-aqui'; marca.hidden = true; document.body.appendChild(marca);
-    arr = { tipo: p.dataset.pega, id: Number(p.dataset.id), linha, marca, alvo: null, pega: p };
-    linha.classList.add('arrastando'); document.body.classList.add('arrastando-algo');
-    p.setPointerCapture(e.pointerId);
+    const tipo = pega.dataset.pega, sy = window.scrollY;
+    const els = tipo === 'etapa' ? [...corpo.querySelectorAll('tbody.etapa')] : [...corpo.querySelectorAll('tbody.etapa > tr')];
+    const pecas = els.map((el, ordem) => {
+      const r = el.getBoundingClientRect(), tb = el.closest('tbody');
+      return { el, ordem, topo: r.top + sy, alt: r.height, meio: r.top + sy + r.height / 2, etapa: Number(tb.dataset.etapa), item: el.classList.contains('item'), fim: el.classList.contains('add-linha') };
+    });
+    const meuEl = tipo === 'etapa' ? pega.closest('tbody') : pega.closest('tr');
+    const etapas = [...corpo.querySelectorAll('tbody.etapa')].map((tb) => { const r = tb.getBoundingClientRect(); return { id: Number(tb.dataset.etapa), topo: r.top + sy, base: r.bottom + sy }; });
+    arr = { tipo, id: Number(pega.dataset.id), pega, pecas, etapas, eu: pecas.find((p) => p.el === meuEl), y0: e.clientY + sy, alvo: null };
+    const anima = semMovimento() ? '' : `transform 220ms ${MOLA}`;
+    pecas.forEach((p) => { if (p !== arr.eu) p.el.style.transition = anima; });
+    meuEl.classList.add('arrastando'); document.body.classList.add('arrastando-algo');
+    pega.setPointerCapture(e.pointerId);
   });
   corpo.addEventListener('pointermove', (e) => {
     if (!arr) return;
-    const a = acharAlvo(e.clientX, e.clientY); arr.alvo = a;
-    if (!a) { arr.marca.hidden = true; return; }
-    arr.marca.hidden = false;
-    Object.assign(arr.marca.style, { left: `${a.esq + window.scrollX}px`, top: `${a.yLinha + window.scrollY - 1.5}px`, width: `${a.larg}px` });
+    const yPag = e.clientY + window.scrollY;
+    arr.eu.el.style.transform = `translateY(${yPag - arr.y0}px)`;
+    arr.alvo = destino(yPag); acomodar(arr.alvo);
     // perto das bordas da janela, rola a página para alcançar o destino
-    if (e.clientY < 90) window.scrollBy(0, -14); else if (e.clientY > window.innerHeight - 60) window.scrollBy(0, 14);
+    if (e.clientY < 110) window.scrollBy(0, -14); else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
   });
   const soltar = async () => {
     if (!arr) return;
-    const { tipo, id, alvo, pega } = arr; limpar();
-    if (!alvo) return;
+    const { tipo, id, alvo, pega } = arr;
+    if (!alvo) { limpar(); return; }
+    // tira as medidas com as linhas ainda deslocadas: ao redesenhar, cada uma assenta de onde está
+    const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
+    limpar();
     try {
       if (tipo === 'etapa') {
-        const ids = o.etapas.map((x) => x.id).filter((x) => x !== id);
-        const ref = Number(alvo.tbody.dataset.etapa); if (ref === id) return;
-        const pos = ids.indexOf(ref) + (alvo.depois ? 1 : 0);
-        if (o.etapas.findIndex((x) => x.id === id) === pos) return;
-        await atualizar(await req(`/api/etapas/${id}/posicionar?posicao=${pos}`, 'POST'));
+        if (o.etapas.findIndex((x) => x.id === id) === alvo.pos) return;
+        await atualizar(await req(`/api/etapas/${id}/posicionar?posicao=${alvo.pos}`, 'POST'), deslizar);
       } else {
-        const eid = Number(alvo.tbody.dataset.etapa);
-        const ids = o.etapas.find((x) => x.id === eid).itens.map((x) => x.id).filter((x) => x !== id);
-        const antes = alvo.antesDe ? Number(alvo.antesDe.dataset.item) : null;
-        if (antes === id) return;
-        const pos = antes === null ? ids.length : ids.indexOf(antes);
         const origem = o.etapas.find((x) => x.itens.some((i) => i.id === id));
-        if (origem.id === eid && origem.itens.findIndex((i) => i.id === id) === pos) return;
-        await atualizar(await req(`/api/itens/${id}/posicionar?etapa_id=${eid}&posicao=${pos}`, 'POST'));
+        if (origem.id === alvo.etapa && origem.itens.findIndex((i) => i.id === id) === alvo.pos) return;
+        await atualizar(await req(`/api/itens/${id}/posicionar?etapa_id=${alvo.etapa}&posicao=${alvo.pos}`, 'POST'), deslizar);
       }
       const nova = document.querySelector(`.pega[data-pega="${tipo}"][data-id="${id}"]`); if (nova) nova.focus();
     } catch (err) { avisar(esc(err.message)); pega.focus(); }

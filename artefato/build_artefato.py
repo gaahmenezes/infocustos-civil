@@ -41,6 +41,7 @@ app = trocar(app, [
     ("const [, tipo, base, codigo] = m;", "const [, t, base, codigo] = m; const tipo = t === 'c' ? 'composicao' : 'insumo';"),
     ("const emVar = /^#\\/comparativo/.test(location.hash);", "const emVar = /^#comparativo/.test(location.hash);"),
     ("const emEnc = /^#\\/encargos/.test(location.hash);", "const emEnc = /^#encargos/.test(location.hash);"),
+    ("const emAp = /^#\\/apresentacao/.test(location.hash);", "const emAp = /^#apresentacao/.test(location.hash);"),
 ], 'app.js')
 app = app.replace('href="#/orcamentos"', 'href="#orcamentos"')
 
@@ -58,9 +59,10 @@ orc = trocar(orc, [
 orc = orc.replace("'#/orcamentos'", "'#orcamentos'").replace('"#/orcamentos"', '"#orcamentos"')
 # telas novas: painel do orçamento, comparação e relatório (usam as rotas e as funções já trocadas acima)
 extras = ''
-for nome in ('painel.js', 'comparar.js', 'relatorio.js', 'paleta.js'):
+for nome in ('movimento.js', 'painel.js', 'comparar.js', 'relatorio.js', 'paleta.js', 'apresentacao.js'):
     t = (STATIC / nome).read_text(encoding='utf-8').replace('href="#/"', 'href="#inicio"')
-    for velho, novo in (("'#/orcamentos'", "'#orcamentos'"), ("'#/encargos'", "'#encargos'"), ("'#/comparativo'", "'#comparativo'"), ("'#/'", "'#inicio'")):
+    t = t.replace('href="#/orcamentos"', 'href="#orcamentos"')
+    for velho, novo in (("'#/orcamentos'", "'#orcamentos'"), ("'#/encargos'", "'#encargos'"), ("'#/comparativo'", "'#comparativo'"), ("'#/apresentacao'", "'#apresentacao'"), ("'#/'", "'#inicio'")):
         t = t.replace(velho, novo)
     assert '#/' not in t, f'sobrou rota antiga em {nome}'
     extras += f'\n/* ---- {nome} ---- */\n' + t
@@ -80,7 +82,7 @@ corpo = trocar(corpo, [
      '<button type="button" id="exportar-busca" class="link-acao" data-copiar-lista>Copiar para o Excel</button>'),
 ], 'index.html')
 corpo = (corpo.replace('href="#/orcamentos"', 'href="#orcamentos"').replace('href="#/encargos"', 'href="#encargos"')
-         .replace('href="#/comparativo"', 'href="#comparativo"').replace('href="#/"', 'href="#inicio"'))
+         .replace('href="#/comparativo"', 'href="#comparativo"').replace('href="#/apresentacao"', 'href="#apresentacao"').replace('href="#/"', 'href="#inicio"'))
 assert 'href="#/' not in corpo, 'sobrou rota antiga no HTML'
 corpo += '''
   <dialog id="dlg-copiar" class="dialogo" aria-labelledby="dlg-copiar-t">

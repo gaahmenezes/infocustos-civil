@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -371,6 +371,12 @@ def manifesto():
         'start_url': '/', 'scope': '/', 'display': 'standalone', 'background_color': '#17191C', 'theme_color': '#17191C',
         'icons': [icone(192), icone(512), {'src': '/static/icones/icone-mascara-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'}],
     }, media_type='application/manifest+json')
+
+
+@app.get('/apresentacao')
+def apresentacao():
+    """Endereço curto para divulgar: abre a tela de apresentação do sistema."""
+    return RedirectResponse('/#/apresentacao')
 
 
 @app.get('/')

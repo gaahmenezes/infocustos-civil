@@ -70,7 +70,7 @@ function desenharCartoesOrc() {
   ul.innerHTML = vis.length ? vis.map((o) => `<li><a class="orc-cartao" href="${rotaOrc(o.id)}">
       <span class="orc-c-nome">${esc(o.nome)}</span>
       <span class="orc-c-sub">${esc([o.cliente, o.local].filter(Boolean).join(' · ') || 'Sem cliente e local')}</span>
-      <span class="orc-c-total">${brl.format(o.total)}</span>
+      <span class="orc-c-total">${grana(o.total)}</span>
       <span class="orc-c-rot">total com BDI de ${num2.format(o.bdi)}%</span>
       <span class="res-div">${o.divisao ? barraDivisao(o.divisao) : '<span class="dom">Ainda sem itens</span>'}</span>
       <span class="orc-c-meta">${esc(nomeRef(o.referencia))} · ${o.qtd_itens} ${o.qtd_itens === 1 ? 'item' : 'itens'} · alterado em ${dataFmt(o.atualizado_em)}</span>
@@ -100,7 +100,8 @@ $('#form-novo').addEventListener('submit', async (e) => {
 });
 
 async function listarOrcamentos() {
-  LISTA.todos = await req('/api/orcamentos');
+  const semEsq = comEsqueleto($('#detalhe'), `<div class="pagina">${esqueletoCartoes(4)}</div>`);
+  try { LISTA.todos = await req('/api/orcamentos'); } finally { semEsq(); }
   const tem = LISTA.todos.length > 0;
   $('#detalhe').innerHTML = `<div class="pagina orcamentos">
     <header class="pag-cab">
@@ -170,9 +171,13 @@ async function abrirOrcamento(id, dados) {
 
 function desenharTotais(o) {
   $('#orc-totais').innerHTML = `
-    <div>Custo direto<b>${brl.format(o.custo_total)}</b></div>
-    <div>BDI de ${num2.format(o.bdi)}%<b>${brl.format(o.valor_bdi)}</b></div>
-    <div class="total">Total<b>${brl.format(o.total)}</b></div>`;
+    <div>Custo direto<b>${grana(o.custo_total)}</b></div>
+    <div>BDI de ${num2.format(o.bdi)}%<b>${grana(o.valor_bdi)}</b></div>
+    <div class="total">Total<b>${grana(o.total)}</b></div>`;
+  // quando o orçamento muda, os totais contam do valor antigo ao novo
+  const ant = ORC.totais;
+  if (ant && ant.id === o.id) [['custo_total', 0], ['valor_bdi', 1], ['total', 2]].forEach(([k, n]) => contar(document.querySelectorAll('#orc-totais .num-grande')[n], ant[k], o[k]));
+  ORC.totais = { id: o.id, custo_total: o.custo_total, valor_bdi: o.valor_bdi, total: o.total };
 }
 
 function ligarCabecalho(o) {
@@ -252,7 +257,11 @@ function desenharPlanilha(o) {
 
 function ligarPlanilha(o) {
   const corpo = $('#orc-corpo');
-  const atualizar = (n) => { const foco = document.activeElement && { ...document.activeElement.dataset }; return abrirOrcamento(n.id, n).then(() => restaurarFoco(foco)); };
+  const atualizar = (n, jaMedido) => {
+    const foco = document.activeElement && { ...document.activeElement.dataset };
+    const deslizar = jaMedido || medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
+    return abrirOrcamento(n.id, n).then(() => { deslizar(); restaurarFoco(foco); });
+  };
   window.ligarArrastar(corpo, o, atualizar);
   corpo.addEventListener('change', async (e) => {
     const t = e.target;
@@ -332,9 +341,10 @@ function ligarBuscaInline(inp) {
   async function escolher(x) {
     try {
       const n = await req(`/api/orcamentos/${ORC.atual.id}/itens`, 'POST', { etapa_id: Number(inp.dataset.etapa), tipo: x.tipo, base: x.base, codigo: x.codigo, quantidade: 1 });
-      await abrirOrcamento(n.id, n);
+      const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
+      await abrirOrcamento(n.id, n); deslizar();
       const q = document.querySelector(`.qtd[data-item="${n.item_criado}"]`); if (q) { q.focus(); q.select(); }
-      avisar(`${esc(x.codigo)}/${esc(x.base)} adicionado. Digite a quantidade.`);
+      avisar(`${VISTO}${esc(x.codigo)}/${esc(x.base)} adicionado. Digite a quantidade.`);
     } catch (err) { avisar(esc(err.message)); }
   }
 }
@@ -413,7 +423,7 @@ $('#form-adicionar').addEventListener('submit', async (e) => {
     }
     const n = await req(`/api/orcamentos/${oid}/itens`, 'POST', { etapa_id: etapa, tipo: dlgItem.tipo, base: dlgItem.base, codigo: dlgItem.codigo, quantidade: q });
     lembrar(n.id); dlg.close();
-    avisar(`Adicionado a <b>${esc(n.nome)}</b> · total ${brl.format(n.total)} · <a href="${rotaOrc(n.id)}">Abrir orçamento</a>`, 6000);
+    avisar(`${VISTO}Adicionado a <b>${esc(n.nome)}</b> · total ${brl.format(n.total)} · <a href="${rotaOrc(n.id)}">Abrir orçamento</a>`, 6000);
   } catch (err) { $('#dlg-erro').textContent = err.message; }
 });
 

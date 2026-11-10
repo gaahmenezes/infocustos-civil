@@ -19,6 +19,7 @@ const detalhe = process.argv.includes('--detalhe');
       ['orçamento', async () => { await p.goto(U + '#/orcamento/' + OID); await p.waitForSelector('.planilha'); await p.waitForTimeout(500); }],
       ['relatório', async () => { await p.goto(U + '#/orcamento/' + OID + '/relatorio'); await p.waitForSelector('.folha'); await p.waitForTimeout(400); }],
       ['encargos', async () => { await p.goto(U + '#/encargos'); await p.waitForSelector('.enc'); await p.waitForTimeout(300); }],
+      ['apresentação', async () => { await p.goto(U + '#/apresentacao'); await p.waitForSelector('.ap-res.escolhido', { timeout: 15000 }); await p.waitForTimeout(300); }],
       ['comparativo', async () => { await p.goto(U + '#/comparativo'); await p.waitForSelector('.comparativo table'); await p.waitForTimeout(300); }],
     ];
     for (const [nome, ir] of telas) {

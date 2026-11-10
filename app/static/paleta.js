@@ -14,6 +14,7 @@ function acoesDaPaleta() {
     { grupo: 'Ir para', rotulo: 'Orçamentos', dica: 'lista de orçamentos', acao: ir('#/orcamentos') },
     { grupo: 'Ir para', rotulo: 'Encargos sociais', dica: 'horistas e mensalistas', acao: ir('#/encargos') },
     { grupo: 'Ir para', rotulo: 'Comparativo entre meses', dica: 'variação de preços', acao: ir('#/comparativo') },
+    { grupo: 'Ir para', rotulo: 'Apresentação do InfoCustos Civil', dica: 'o que o sistema faz', acao: ir('#/apresentacao') },
     { grupo: 'Ações', rotulo: temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro', dica: 'aparência', acao: () => $('#tema').click() },
     ...meses.filter((m) => m.id !== estado.mes).map((m) => ({ grupo: 'Mês de referência', rotulo: `Ver preços de ${m.descricao.replace(/-1$/, '')}`, dica: 'trocar o mês', acao: () => trocarMes(m.id) })),
   ];

@@ -375,12 +375,17 @@ async function rota() {
   const emVar = /^#\/comparativo/.test(location.hash);
   const emEnc = /^#\/encargos/.test(location.hash);
   const emCmp = lerRotaComparar() !== null;
-  estado.comparando = emCmp;
-  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp);
-  const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : 'consulta';
+  const emAp = /^#\/apresentacao/.test(location.hash);
+  estado.comparando = emCmp || emAp;
+  if (!emAp && window.sairDaApresentacao) window.sairDaApresentacao();
+  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp || emAp);
+  document.body.classList.toggle('modo-ap', emAp);
+  const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : emAp ? 'apresentacao' : 'consulta';
   document.body.dataset.aba = aba;
   document.querySelectorAll('.abas a, .nav-baixo a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
+  moverIndicador();
   if (aba !== 'consulta' || emCmp) estado.atual = null;
+  if (emAp) { aplicarEstado(); window.desenharBandeja && window.desenharBandeja(); window.desenharApresentacao(); window.scrollTo(0, 0); return; }
   aplicarEstado();
   window.desenharBandeja && window.desenharBandeja();
   if (emCmp) { document.body.classList.remove('ver-detalhe'); window.desenharComparar(lerRotaComparar()); return; }
@@ -401,13 +406,24 @@ async function rota() {
   document.body.classList.add('ver-detalhe');
   aplicarEstado();
   const d = $('#detalhe');
+  const semEsqueleto = comEsqueleto(d, esqueletoFicha());
   try {
     const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qsMes()}`) : await api(`/api/insumo/${base}/${codigo}?${qsMes()}`);
-    if (tipo === 'composicao') desenharComposicao(dados); else desenharInsumo(dados);
+    semEsqueleto();
+    // o código e o preço viajam do resultado clicado até o lugar deles na ficha (ou de uma ficha para a outra)
+    const origem = window.innerWidth > 900 && !d.querySelector('.ficha:not(.esq-ficha)') && document.querySelector('.res[aria-current="true"]');
+    const viajantes = origem ? [[origem.querySelector('.cb'), 'vt-cod'], [origem.querySelector('.res-preco'), 'vt-preco']].filter((x) => x[0]) : [];
+    viajantes.forEach(([el, nome]) => { el.style.viewTransitionName = nome; });
+    await transicao(() => {
+      viajantes.forEach(([el]) => { el.style.viewTransitionName = ''; });
+      if (document.startViewTransition && !semMovimento()) d.dataset.vt = '1';
+      if (tipo === 'composicao') desenharComposicao(dados); else desenharInsumo(dados);
+    });
     registrarAberto(dados, tipo === 'composicao' ? 'servico' : 'insumo');
     // a ficha começa visível: no celular volta ao topo; no computador só sobe se o começo ficou fora da tela
     if (window.innerWidth <= 900 || d.getBoundingClientRect().top < 70) window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' });
   } catch (e) {
+    semEsqueleto();
     const outros = ((estado.ref && estado.ref.referencias) || []).filter((r) => r.id !== estado.mes);
     d.innerHTML = `${botaoVoltar()}<div class="erro"><b>Não foi possível abrir ${esc(codigo)}/${esc(base)}.</b><br>${esc(e.message)}
       ${outros.length ? `<div class="acoes" style="margin-top:12px">${outros.map((r) => `<button type="button" class="botao" data-mes="${esc(r.id)}">Ver em ${esc(r.descricao.replace(/-1$/, ''))}</button>`).join('')}</div>` : ''}</div>`;
@@ -499,7 +515,7 @@ function desenharComposicao(c) {
     <div class="ficha-cod">${codigoBase(c.codigo, c.base)}<span class="selo">${dnit ? 'Composição padrão DNIT' : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
     <h2>${esc(c.descricao || 'Composição sem descrição na base')}</h2>
     <div class="ficha-linha">
-      <div class="preco-grande"><span class="valor">${brl.format(total)}</span><span class="por">por <b class="un">${unid(c.unidade)}</b>${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>
+      <div class="preco-grande"><span class="valor">${grana(total)}</span><span class="por">por <b class="un">${unid(c.unidade)}</b>${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>
       <div class="fatos">
         <div>Itens<b>${c.itens.length}</b></div>
         ${c.usada_em ? `<div>Usada em<b>${c.usada_em} composições</b></div>` : ''}
@@ -521,6 +537,14 @@ function desenharComposicao(c) {
     <p class="fonte">Fonte: ${esc(c.base)}, referência ${esc(ref)}. Valores em R$, sem BDI.</p>
   </article>`;
   if (dnit) ajustarDnit(c);
+  contarPreco(`c|${c.base}|${c.codigo}`, total);
+}
+
+// ao trocar de mês com o mesmo item aberto, o preço conta do valor antigo ao novo
+function contarPreco(chave, valor) {
+  const v = estado.precoVisto;
+  if (v && v.chave === chave && valor != null) contar($('.preco-grande .num-grande'), v.valor, valor);
+  estado.precoVisto = { chave, valor };
 }
 
 function ajustarDnit(c) {
@@ -571,7 +595,7 @@ function desenharInsumo(i) {
     <div class="ficha-cod">${codigoBase(i.codigo, i.base)}<span class="selo">Insumo</span><span>${esc(i.tipo)} › ${esc(i.grupo)}${i.subgrupo ? ' › ' + esc(i.subgrupo) : ''}</span></div>
     <h2>${esc(i.descricao || 'Insumo sem descrição na base')}</h2>
     <div class="ficha-linha">
-      <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : brl.format(i.preco)}</span><span class="por">por <b class="un">${unid(i.unidade)}</b>${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>
+      <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : grana(i.preco)}</span><span class="por">por <b class="un">${unid(i.unidade)}</b>${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>
       <div class="fatos">
         ${mo ? `<div>Com encargo social de ${num2.format(estado.ref.encargo_social_horista)}%<b>${brl.format(comEnc)} por ${esc(i.unidade)}</b></div>` : ''}
         <div>Usado em<b>${i.usado_em.toLocaleString('pt-BR')} composições</b></div>
@@ -585,6 +609,7 @@ function desenharInsumo(i) {
     : vazio('folha', 'Nenhuma composição usa este insumo', `Em ${esc(nomeRef(i.referencia) || ref)}, ele aparece só na tabela de preços.`)}
     <p class="fonte">Fonte: ${esc(i.base)}, referência ${esc(ref)}.</p>
   </article>`;
+  contarPreco(`i|${i.base}|${i.codigo}`, i.preco);
 }
 
 // ---------- eventos ----------
@@ -664,10 +689,10 @@ async function desenharComparativo() {
     d.innerHTML = `<div class="pagina">${vazio('calendario', 'Só há um mês carregado', 'Quando outro mês de referência for carregado, esta aba compara os preços entre eles.')}</div>`; return;
   }
   CMP.de = CMP.de || meses[meses.length - 2].id; CMP.para = CMP.para || meses[meses.length - 1].id;
-  if (!d.querySelector('.comparativo')) d.innerHTML = '<p class="carregando">Comparando os meses…</p>';
+  const semEsq = d.querySelector('.comparativo') ? () => {} : comEsqueleto(d, `<div class="pagina"><section class="ficha">${esqueletoTabela(12)}</section></div>`);
   let r;
-  try { r = await api(`/api/comparativo?${new URLSearchParams({ ...CMP, limite: 150 })}`); }
-  catch (e) { d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  try { r = await api(`/api/comparativo?${new URLSearchParams({ ...CMP, limite: 150 })}`); semEsq(); }
+  catch (e) { semEsq(); d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
   const rs = r.resumo, de = nomeRef(r.de.id), para = nomeRef(r.para.id);
   const parte = (n) => pct.format(rs.comparados ? (n || 0) / rs.comparados : 0);
   const seg = (campo, opcoes) => `<div class="segmentos" role="radiogroup" data-cmp="${campo}">${opcoes.map(([v, n]) =>

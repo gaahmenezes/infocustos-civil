@@ -80,7 +80,7 @@ window.desenharComparar = async function (texto) {
     return `<th scope="col" class="cmp-col"><div class="cmp-cab">
         <div class="cmp-cab-topo">${codigoBase(c.codigo, c.base)}${ok.length > 2 ? `<a class="mini" href="${resto(k)}" aria-label="Tirar ${esc(c.codigo)} da comparação" title="Tirar da comparação">✕</a>` : ''}</div>
         <a class="cmp-desc" href="${rotaItem('servico', esc(c.base), esc(c.codigo))}" title="Abrir a composição">${esc(c.descricao)}</a>
-        <div class="cmp-preco"><b>${brl.format(c.custo_total)}</b><span>por ${esc(c.unidade)}</span></div>
+        <div class="cmp-preco"><b>${grana(c.custo_total)}</b><span>por ${esc(c.unidade)}</span></div>
         ${Math.abs(dif) < 0.00005 ? '<span class="var var-baixa">menor preço</span>' : `<span class="var var-alta">+${pct.format(dif)} sobre o menor</span>`}
         <span class="mini-barra">${partes}</span>
       </div></th>`;
