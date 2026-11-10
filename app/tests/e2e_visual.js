@@ -29,7 +29,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   await p.click('.chip[data-v="servico"]'); await p.waitForTimeout(250);
   ok(await p.$$eval('.res .tipo', (t) => t.every((x) => x.textContent === 'Composição')), 'Isolar composições');
   await p.click('.chip[data-v="ORSE"]'); await p.waitForTimeout(250);
-  ok(await p.$$eval('.res-cod', (t) => t.every((x) => x.textContent.includes('/ORSE'))), 'Isolar composições da ORSE');
+  ok(await p.$$eval('.res-cod .cb-base', (t) => t.every((x) => x.textContent === 'ORSE')), 'Isolar composições da ORSE');
   await p.click('.chip[data-v="todos"]'); await p.click('.chip[data-v="todas"]'); await p.waitForTimeout(250);
   ok(await p.$$eval('.res .tipo', (t) => new Set(t.map((x) => x.textContent)).size >= 1), 'Juntar tudo de novo');
   await p.screenshot({ path: OUT + '/2_busca.png' });

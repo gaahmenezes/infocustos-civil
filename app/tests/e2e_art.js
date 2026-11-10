@@ -11,7 +11,7 @@ const U = 'http://localhost:8100/index.html';
   await p.fill('#q', 'chapisco'); await p.waitForTimeout(400);
   ok((await p.textContent('.res-desc')).startsWith('Chapisco'), 'Busca local: ' + (await p.textContent('.res-desc')).slice(0, 50));
   await p.fill('#q', '3'); await p.waitForTimeout(400);
-  ok((await p.textContent('.res-cod')).startsWith('00003/'), 'Busca por código "3"');
+  ok((await p.textContent('.res-cod .cb')) === '00003ORSE', 'Busca por código "3"');
   await p.click('.res'); await p.waitForSelector('.arvore');
   ok(p.url().endsWith('#c-ORSE-00003') && (await p.textContent('.valor')).includes('4,90'), 'Composição 00003 abre com R$ 4,90');
   await p.goto(U + '#c-ORSE-00004'); await p.waitForSelector('.expandir'); await p.click('.expandir'); await p.waitForTimeout(300);

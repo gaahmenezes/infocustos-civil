@@ -239,6 +239,14 @@ function trecho(item) {
   return esc(item.trecho).replace(/\u0001/g, '<mark>').replace(/\u0002/g, '</mark>');
 }
 
+// código e base em destaque: número em algarismos fixos, base como etiqueta com cor própria
+function codigoBase(codigo, base, marcar) {
+  const termo = marcar ? ($('#q').value || '').trim().replace(/^0+/, '') : '';
+  const semZeros = String(codigo).replace(/^0+/, '');
+  const num = termo && /^\d+$/.test(termo) && semZeros.startsWith(termo) ? `<mark>${esc(codigo)}</mark>` : esc(codigo);
+  return `<span class="cb"><span class="cb-num">${num}</span><span class="cb-base cb-${esc(base)}">${esc(base)}</span></span>`;
+}
+
 function desenharLista(r) {
   const lista = $('#lista');
   const t = r.total;
@@ -255,7 +263,7 @@ function desenharLista(r) {
       it.tipo === 'insumo' && it.usos ? `em ${it.usos.toLocaleString('pt-BR')} composições` : ''].filter(Boolean);
     const atual = estado.atual && estado.atual.base === it.base && estado.atual.codigo === it.codigo && estado.atual.tipo === it.tipo;
     return `<li><button type="button" class="res" data-i="${i}"${atual ? ' aria-current="true"' : ''}>
-      <span class="res-cod"><span class="tipo tipo-${it.tipo}">${ROTULO_TIPO[it.tipo]}</span>${esc(it.codigo)}/${esc(it.base)}</span>
+      <span class="res-cod">${codigoBase(it.codigo, it.base, true)}<span class="tipo tipo-${it.tipo}">${ROTULO_TIPO[it.tipo]}</span></span>
       <span class="res-desc">${trecho(it)}</span>
       <span class="res-meta">${esc(meta.join(' · '))}</span>
       <span class="res-preco">${it.preco == null ? 'sem preço' : brl.format(it.preco)}</span>
@@ -391,7 +399,7 @@ function desenharComposicao(c) {
   const ref = estado.ref ? estado.ref.descricao.replace('-1', '') : '';
   $('#detalhe').innerHTML = `<article class="ficha">
     ${botaoVoltar()}
-    <div class="ficha-cod">${esc(c.codigo)}/${esc(c.base)} <span class="selo">${dnit ? 'Composição padrão DNIT' : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
+    <div class="ficha-cod">${codigoBase(c.codigo, c.base)}<span class="selo">${dnit ? 'Composição padrão DNIT' : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
     <h2>${esc(c.descricao || 'Composição sem descrição na base')}</h2>
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${brl.format(total)}</span><span class="por">por ${esc(c.unidade)}${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>
@@ -462,7 +470,7 @@ function desenharInsumo(i) {
     </tr>`).join('');
   $('#detalhe').innerHTML = `<article class="ficha">
     ${botaoVoltar()}
-    <div class="ficha-cod">${esc(i.codigo)}/${esc(i.base)} <span class="selo">Insumo</span><span>${esc(i.tipo)} › ${esc(i.grupo)}${i.subgrupo ? ' › ' + esc(i.subgrupo) : ''}</span></div>
+    <div class="ficha-cod">${codigoBase(i.codigo, i.base)}<span class="selo">Insumo</span><span>${esc(i.tipo)} › ${esc(i.grupo)}${i.subgrupo ? ' › ' + esc(i.subgrupo) : ''}</span></div>
     <h2>${esc(i.descricao || 'Insumo sem descrição na base')}</h2>
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : brl.format(i.preco)}</span><span class="por">por ${esc(i.unidade)}${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>

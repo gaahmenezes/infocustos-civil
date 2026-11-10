@@ -26,7 +26,7 @@ const ok = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); if (!c) process
   await p.goto('http://localhost:8000/#/composicao/ORSE/abc'); await p.waitForSelector('.erro');
   ok(true, 'Código inexistente mostra mensagem de erro: ' + (await p.textContent('.erro')).slice(0, 60));
   await p.click('[data-filtro="base"] [data-v="SINAPI"]'); await p.fill('#q', 'tijolo'); await p.waitForTimeout(500);
-  ok(await p.$$eval('.res-cod', e => e.every(x => x.textContent.includes('/SINAPI'))), 'Filtro SINAPI aplicado');
+  ok(await p.$$eval('.res-cod .cb-base', e => e.every(x => x.textContent === 'SINAPI')), 'Filtro SINAPI aplicado');
   await p.fill('#q', 'xyzwq'); await p.waitForTimeout(500);
   ok((await p.textContent('#contagem')).startsWith('Nada encontrado'), 'Busca sem resultado orienta o usuário');
   const d = await b.newPage({ viewport: { width: 1366, height: 860 }, colorScheme: 'dark', deviceScaleFactor: 1 });
