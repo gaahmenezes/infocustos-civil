@@ -94,20 +94,27 @@ const LOCAL = (() => {
   async function busca(ref, q, base, tipo, limite) {
     const d = await dados(ref);
     q = (q || '').trim();
-    let lista = d.itens;
-    if (base === 'ORSE' || base === 'SINAPI') lista = lista.filter((x) => x.base === base);
-    if (tipo === 'servico' || tipo === 'insumo') lista = lista.filter((x) => x.tipo === tipo);
+    const passa = (x) => (base !== 'ORSE' && base !== 'SINAPI' || x.base === base) && (tipo !== 'servico' && tipo !== 'insumo' || x.tipo === tipo);
+    const contar = (l) => {  // contagem por tipo × base, sem os filtros (para os números dos filtros)
+      const m = new Map(); for (const x of l) { const k = `${x.tipo}|${x.base}`; m.set(k, (m.get(k) || 0) + 1); }
+      return [...m].map(([k, n]) => { const [t, b] = k.split('|'); return { tipo: t, base: b, n }; });
+    };
     if (/^\d{1,7}$/.test(q)) {
       const z = semZero(q);
-      const res = lista.filter((x) => x._z === z || x.codigo.startsWith(q)).sort((a, b) => (b._z === z) - (a._z === z) || (a.tipo === 'servico' ? -1 : 1) || a.codigo.localeCompare(b.codigo));
-      return { total: res.length, referencia: ref, itens: res.slice(0, limite).map((x) => publico(x, null)) };
+      const todos = d.itens.filter((x) => x._z === z || x.codigo.startsWith(q));
+      const res = todos.filter(passa).sort((a, b) => (b._z === z) - (a._z === z) || (a.tipo === 'servico' ? -1 : 1) || a.codigo.localeCompare(b.codigo));
+      return { total: res.length, referencia: ref, grade: contar(todos), itens: res.slice(0, limite).map((x) => publico(x, null)) };
     }
     const termos = palavrasDe(q);
-    if (!termos.length) return { total: lista.length, referencia: ref, itens: [...lista].sort((a, b) => b.usos - a.usos).slice(0, limite).map((x) => publico(x, null)) };
-    const pont = [];
-    for (const it of lista) { const s = pontuar(it, termos); if (s !== null) pont.push([s, it]); }
-    pont.sort((a, b) => a[0] - b[0]);
-    return { total: pont.length, referencia: ref, itens: pont.slice(0, limite).map(([, it]) => publico(it, destacar(it.descricao, termos))) };
+    if (!termos.length) {
+      const lista = d.itens.filter(passa);
+      return { total: lista.length, referencia: ref, grade: contar(d.itens), itens: [...lista].sort((a, b) => b.usos - a.usos).slice(0, limite).map((x) => publico(x, null)) };
+    }
+    const todos = [];
+    for (const it of d.itens) { const s = pontuar(it, termos); if (s !== null) todos.push([s, it]); }
+    const pont = todos.filter(([, it]) => passa(it)).sort((a, b) => a[0] - b[0]);
+    return { total: pont.length, referencia: ref, grade: contar(todos.map(([, it]) => it)),
+      itens: pont.slice(0, limite).map(([, it]) => publico(it, destacar(it.descricao, termos))) };
   }
 
   async function insumo(ref, base, codigo, limite) {

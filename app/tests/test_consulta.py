@@ -120,3 +120,10 @@ def test_todas_as_composicoes_abrem():
     for base, cod, ref in amostra:
         r = c.get(f'/api/composicao/{base}/{cod}', params={'ref': ref})
         assert r.status_code == 200 and r.json()['referencia'] == ref, (base, cod, ref)
+
+
+def test_busca_traz_contagem_por_tipo_e_base():
+    r = c.get('/api/busca', params={'q': 'chapisco', 'tipo': 'servico', 'base': 'ORSE'}).json()
+    g = {(x['tipo'], x['base']): x['n'] for x in r['grade']}
+    assert r['total'] == g[('servico', 'ORSE')]  # a lista filtrada bate com a célula da grade
+    assert ('insumo', 'SINAPI') in g and sum(g.values()) > r['total']  # a grade ignora os filtros

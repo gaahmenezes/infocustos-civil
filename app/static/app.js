@@ -48,7 +48,10 @@ async function carregarReferencia() {
     `<option value="${esc(r.id)}"${r.id === ref.id ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}${r.id === ref.atual ? ' (mais recente)' : ''}</option>`).join('');
   $('#referencia').innerHTML = `<label class="meses-rotulo" for="mes-ref">Mês de referência</label>
     <select id="mes-ref" class="meses-lista">${opcoes}</select>
-    <span class="meses-total">${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} serviços · ${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</span>`;
+    <span class="meses-total">${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} composições · ${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</span>`;
+  $('#pesquisa-sub').innerHTML = `Pesquise entre <b>${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} composições</b> e
+    <b>${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</b> da ORSE e da SINAPI, referência ${esc(ref.descricao.replace(/-1$/, ''))}.`;
+  if (!estado.q.trim()) contarFiltros(totaisDoMes());
 }
 
 async function trocarMes(id) {
@@ -95,22 +98,80 @@ function blocoHistorico(h, unidade) {
 }
 
 
-// ---------- busca ----------
-let tBusca = 0, seq = 0;
-function agendarBusca() { clearTimeout(tBusca); tBusca = setTimeout(buscar, 140); }
+// ---------- estados da tela e transições ----------
+const semMovimento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+function transicao(fn) {
+  // troca de estado com a View Transitions do navegador; sem suporte (ou sem movimento), troca direto
+  if (!document.startViewTransition || semMovimento() || document.hidden) { fn(); return Promise.resolve(); }
+  return document.startViewTransition(fn).finished.catch(() => {});
+}
+function aplicarEstado() {
+  const naConsulta = (document.body.dataset.aba || 'consulta') === 'consulta';
+  const temQ = estado.q.trim().length > 0;
+  const ocioso = naConsulta && !temQ && !estado.atual;
+  const mudou = document.body.classList.contains('ocioso') !== ocioso || document.body.classList.contains('buscando') !== (naConsulta && temQ);
+  const aplicar = () => {
+    document.body.classList.toggle('ocioso', ocioso);
+    document.body.classList.toggle('buscando', naConsulta && temQ);
+    $('#limpar').hidden = !temQ;
+  };
+  if (mudou) transicao(aplicar); else aplicar();
+}
+
+// ---------- busca (em tempo real) ----------
+let tBusca = 0, seq = 0, tAguardo = 0;
+const ROTULO_TIPO = { servico: 'Composição', insumo: 'Insumo' };
+function agendarBusca() { clearTimeout(tBusca); tBusca = setTimeout(buscar, 90); }
+
+function contarFiltros(grade) {
+  // números dos filtros: cada grupo conta respeitando o filtro do outro grupo
+  const g = grade || [];
+  const soma = (f) => g.filter(f).reduce((s, x) => s + x.n, 0);
+  const daBase = (x) => estado.base === 'todas' || x.base === estado.base;
+  const doTipo = (x) => estado.tipo === 'todos' || x.tipo === estado.tipo;
+  const n = {
+    tipo: { todos: soma(daBase), servico: soma((x) => daBase(x) && x.tipo === 'servico'), insumo: soma((x) => daBase(x) && x.tipo === 'insumo') },
+    base: { todas: soma(doTipo), ORSE: soma((x) => doTipo(x) && x.base === 'ORSE'), SINAPI: soma((x) => doTipo(x) && x.base === 'SINAPI') },
+  };
+  document.querySelectorAll('.chips').forEach((grupo) => grupo.querySelectorAll('.chip').forEach((c) => {
+    const v = n[grupo.dataset.filtro][c.dataset.v];
+    c.querySelector('.n').textContent = grade ? v.toLocaleString('pt-BR') : '';
+    c.classList.toggle('zero', !!grade && v === 0);
+  }));
+}
+function totaisDoMes() {
+  // sem nada digitado, os filtros mostram o tamanho da base do mês
+  return estado.ref ? estado.ref.totais.map((t) => ({ tipo: t.tipo, base: t.base, n: t.n })) : null;
+}
+
+function esqueleto() {
+  $('#lista').innerHTML = Array.from({ length: 6 }, () => '<li class="esq" aria-hidden="true"><i></i><i></i><i></i></li>').join('');
+}
 
 async function buscar() {
+  const q = estado.q.trim();
+  aplicarEstado();
+  $('#exportar-busca').href = `/api/exportar/busca.xlsx?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, ref: estado.mes || '' })}`;
+  if (!q) {
+    // nada digitado: nenhuma composição aparece
+    ++seq; estado.itens = []; $('#lista').innerHTML = ''; $('#contagem').textContent = '';
+    contarFiltros(totaisDoMes());
+    return;
+  }
   const meu = ++seq;
-  const p = new URLSearchParams({ q: estado.q, base: estado.base, tipo: estado.tipo, limite: 80, ref: estado.mes || '' });
-  $('#exportar-busca').href = `/api/exportar/busca.xlsx?${new URLSearchParams({ q: estado.q, base: estado.base, tipo: estado.tipo, ref: estado.mes || '' })}`;
-  document.body.classList.toggle('tem-busca', true);
+  const lista = $('#lista');
+  if (!lista.children.length) esqueleto();
+  clearTimeout(tAguardo); tAguardo = setTimeout(() => lista.classList.add('aguardando'), 160);
   try {
-    const r = await api(`/api/busca?${p}`);
+    const r = await api(`/api/busca?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, limite: 80, ref: estado.mes || '' })}`);
     if (meu !== seq) return;
     estado.itens = r.itens;
+    contarFiltros(r.grade);
     desenharLista(r);
   } catch (e) {
-    $('#contagem').textContent = e.message;
+    if (meu === seq) { $('#contagem').textContent = e.message; lista.innerHTML = ''; }
+  } finally {
+    if (meu === seq) { clearTimeout(tAguardo); lista.classList.remove('aguardando'); }
   }
 }
 
@@ -121,27 +182,25 @@ function trecho(item) {
 
 function desenharLista(r) {
   const lista = $('#lista');
-  lista.innerHTML = '';
   const t = r.total;
-  $('#contagem').textContent = !estado.q
-    ? 'Itens mais usados nas composições'
-    : t === 0 ? 'Nada encontrado. Tente menos palavras ou só o começo delas.'
-      : `${t.toLocaleString('pt-BR')} ${t === 1 ? 'resultado' : 'resultados'}${t > r.itens.length ? ` · mostrando ${r.itens.length}` : ''}`;
-  const tpl = $('#tpl-resultado');
-  r.itens.forEach((it, i) => {
-    const li = tpl.content.cloneNode(true);
-    const b = li.querySelector('.res');
-    b.dataset.i = i;
-    b.querySelector('.res-cod').innerHTML = `${esc(it.codigo)}/${esc(it.base)}<span class="tag">${it.tipo === 'servico' ? 'serviço' : 'insumo'}</span>`;
-    b.querySelector('.res-desc').innerHTML = trecho(it);
+  const filtro = [estado.tipo === 'servico' ? 'composições' : estado.tipo === 'insumo' ? 'insumos' : '', estado.base !== 'todas' ? estado.base : ''].filter(Boolean).join(' · ');
+  $('#contagem').innerHTML = t === 0 ? '' : `<b>${t.toLocaleString('pt-BR')}</b> ${t === 1 ? 'resultado' : 'resultados'}${filtro ? ` em ${esc(filtro)}` : ''}${t > r.itens.length ? ` · mostrando ${r.itens.length}` : ''}`;
+  if (!t) {
+    const outros = (r.grade || []).reduce((s, x) => s + x.n, 0);
+    lista.innerHTML = `<li class="nada"><b>Nada encontrado${filtro ? ` em ${esc(filtro)}` : ''}.</b>${outros
+      ? `Há ${outros.toLocaleString('pt-BR')} resultados com os outros filtros.` : 'Tente menos palavras ou só o começo delas.'}</li>`;
+    return;
+  }
+  lista.innerHTML = r.itens.map((it, i) => {
     const meta = [it.unidade, it.grupo || (it.tipo === 'insumo' ? it.categoria : ''),
       it.tipo === 'insumo' && it.usos ? `em ${it.usos.toLocaleString('pt-BR')} composições` : ''].filter(Boolean);
-    b.querySelector('.res-meta').textContent = meta.join(' · ');
-    b.querySelector('.res-preco').textContent = it.preco == null ? 'sem preço' : brl.format(it.preco);
-    if (estado.atual && estado.atual.base === it.base && estado.atual.codigo === it.codigo && estado.atual.tipo === it.tipo) b.setAttribute('aria-current', 'true');
-    b.addEventListener('click', () => abrir(it.tipo, it.base, it.codigo));
-    lista.appendChild(li);
-  });
+    const atual = estado.atual && estado.atual.base === it.base && estado.atual.codigo === it.codigo && estado.atual.tipo === it.tipo;
+    return `<li><button type="button" class="res" data-i="${i}"${atual ? ' aria-current="true"' : ''}>
+      <span class="res-cod"><span class="tipo tipo-${it.tipo}">${ROTULO_TIPO[it.tipo]}</span>${esc(it.codigo)}/${esc(it.base)}</span>
+      <span class="res-desc">${trecho(it)}</span>
+      <span class="res-meta">${esc(meta.join(' · '))}</span>
+      <span class="res-preco">${it.preco == null ? 'sem preço' : brl.format(it.preco)}</span></button></li>`;
+  }).join('');
 }
 
 function marcarAtual() {
@@ -167,25 +226,30 @@ async function rota() {
   const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : 'consulta';
   document.body.dataset.aba = aba;
   document.querySelectorAll('.abas a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
+  if (aba !== 'consulta') estado.atual = null;
+  aplicarEstado();
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
   if (emVar) { desenharComparativo(); return; }
   if (emEnc) { desenharEncargos(); return; }
   const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI)\/(\w+)/);
   if (!m) {
+    estado.atual = null;
     document.body.classList.remove('ver-detalhe');
     if (!$('#inicio')) $('#detalhe').innerHTML = inicioHTML;
+    aplicarEstado();
     return;
   }
   const [, tipo, base, codigo] = m;
   estado.atual = { tipo: tipo === 'composicao' ? 'servico' : 'insumo', base, codigo };
   marcarAtual();
   document.body.classList.add('ver-detalhe');
+  aplicarEstado();
   const d = $('#detalhe');
-  d.innerHTML = '<p class="carregando">Abrindo…</p>';
   try {
-    if (tipo === 'composicao') desenharComposicao(await api(`/api/composicao/${base}/${codigo}?${qsMes()}`));
-    else desenharInsumo(await api(`/api/insumo/${base}/${codigo}?${qsMes()}`));
-    d.scrollTop = 0;
+    const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qsMes()}`) : await api(`/api/insumo/${base}/${codigo}?${qsMes()}`);
+    if (tipo === 'composicao') desenharComposicao(dados); else desenharInsumo(dados);
+    // a ficha começa visível: no celular volta ao topo; no computador só sobe se o começo ficou fora da tela
+    if (window.innerWidth <= 900 || d.getBoundingClientRect().top < 70) window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' });
   } catch (e) {
     const outros = ((estado.ref && estado.ref.referencias) || []).filter((r) => r.id !== estado.mes);
     d.innerHTML = `${botaoVoltar()}<div class="erro"><b>Não foi possível abrir ${esc(codigo)}/${esc(base)}.</b><br>${esc(e.message)}
@@ -360,9 +424,18 @@ function desenharInsumo(i) {
 $('#form-busca').addEventListener('submit', (e) => { e.preventDefault(); buscar(); });
 $('#q').addEventListener('input', (e) => { estado.q = e.target.value; agendarBusca(); });
 $('#q').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && estado.q) { e.preventDefault(); limparBusca(); return; }
   if (e.key === 'ArrowDown' || e.key === 'Enter') {
     const p = document.querySelector('.res'); if (p) { e.preventDefault(); if (e.key === 'Enter') p.click(); else p.focus(); }
   }
+});
+function limparBusca() {
+  estado.q = ''; $('#q').value = ''; buscar(); $('#q').focus();
+}
+$('#limpar').addEventListener('click', limparBusca);
+$('#lista').addEventListener('click', (e) => {
+  const b = e.target.closest('.res'); if (!b) return;
+  const it = estado.itens[b.dataset.i]; if (it) abrir(it.tipo, it.base, it.codigo);
 });
 $('#lista').addEventListener('keydown', (e) => {
   const b = e.target.closest('.res'); if (!b) return;
@@ -370,10 +443,11 @@ $('#lista').addEventListener('keydown', (e) => {
   if (e.key === 'ArrowDown' && li.nextElementSibling) { e.preventDefault(); li.nextElementSibling.firstElementChild.focus(); }
   if (e.key === 'ArrowUp') { e.preventDefault(); (li.previousElementSibling ? li.previousElementSibling.firstElementChild : $('#q')).focus(); }
 });
-document.querySelectorAll('.segmentos').forEach((g) => g.addEventListener('click', (e) => {
-  const b = e.target.closest('button'); if (!b) return;
-  g.querySelectorAll('button').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
-  estado[g.dataset.filtro] = b.dataset.v; buscar();
+document.querySelectorAll('.chips').forEach((g) => g.addEventListener('click', (e) => {
+  const b = e.target.closest('.chip'); if (!b) return;
+  g.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+  estado[g.dataset.filtro] = b.dataset.v;
+  if (estado.q.trim()) buscar(); else contarFiltros(totaisDoMes());
 }));
 $('#detalhe').addEventListener('click', (e) => {
   const sb = e.target.closest('.secao-bt');
@@ -391,7 +465,7 @@ document.addEventListener('keydown', (e) => {
 });
 window.addEventListener('hashchange', rota);
 
-$('#sugestoes').innerHTML = SUGESTOES.map((s) => `<button type="button">${esc(s)}</button>`).join('');
+$('#sugestoes').innerHTML = '<span class="sugestoes-rotulo">Experimente</span>' + SUGESTOES.map((s) => `<button type="button">${esc(s)}</button>`).join('');
 document.addEventListener('click', (e) => {
   const s = e.target.closest('#sugestoes button'); if (!s) return;
   $('#q').value = estado.q = s.textContent; buscar(); $('#q').focus();

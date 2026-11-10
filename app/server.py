@@ -114,8 +114,12 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
         if tipo in ('servico', 'insumo'):
             filtros.append('i.tipo = ?'); args.append(tipo)
         q = q.strip()
+        grade = []  # contagem por tipo × base para o termo, sem os filtros de tipo/base (para os números dos filtros)
         if re.fullmatch(r'\d{1,7}', q):
-            w = ' AND '.join(filtros + ['(i.codigo = ? OR ltrim(i.codigo, "0") = ltrim(?, "0") OR i.codigo LIKE ?)'])
+            cond = '(i.codigo = ? OR ltrim(i.codigo, "0") = ltrim(?, "0") OR i.codigo LIKE ?)'
+            grade = c.execute(f'SELECT i.tipo, i.base, COUNT(*) n FROM item_busca i WHERE i.referencia = ? AND {cond} GROUP BY 1, 2',
+                              [r['id'], q, q, q + '%']).fetchall()
+            w = ' AND '.join(filtros + [cond])
             rows = c.execute(f'''SELECT i.*, NULL AS trecho FROM item_busca i WHERE {w}
                 ORDER BY (ltrim(i.codigo,'0') = ltrim(?,'0')) DESC, i.tipo DESC, i.codigo LIMIT ?''',
                 args + [q, q, q + '%', q, limite]).fetchall()
@@ -124,6 +128,8 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
             fts = montar_fts(q)
             if not fts:
                 return {'total': 0, 'itens': [], 'referencia': r['id']}
+            grade = c.execute('''SELECT i.tipo, i.base, COUNT(*) n FROM busca JOIN item_busca i ON i.id = busca.rowid
+                WHERE busca MATCH ? AND i.referencia = ? GROUP BY 1, 2''', [fts, r['id']]).fetchall()
             w = ' AND '.join(['busca MATCH ?'] + filtros)
             base_sql = f'FROM busca JOIN item_busca i ON i.id = busca.rowid WHERE {w}'
             total = c.execute(f'SELECT COUNT(*) {base_sql}', [fts] + args).fetchone()[0]
@@ -134,7 +140,8 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
             w = 'WHERE ' + ' AND '.join(filtros)
             total = c.execute(f'SELECT COUNT(*) FROM item_busca i {w}', args).fetchone()[0]
             rows = c.execute(f'SELECT i.*, NULL AS trecho FROM item_busca i {w} ORDER BY i.usos DESC LIMIT ?', args + [limite]).fetchall()
-        return {'total': total, 'referencia': r['id'], 'itens': [{k: x[k] for k in x.keys() if k != 'rel'} for x in rows]}
+        return {'total': total, 'referencia': r['id'], 'grade': [dict(g) for g in grade],
+                'itens': [{k: x[k] for k in x.keys() if k != 'rel'} for x in rows]}
 
 
 def ler_composicao(c, base, codigo, ref):

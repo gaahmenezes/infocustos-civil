@@ -72,7 +72,9 @@ assert '#/' not in orc.replace('#/orcamentos', ''), 'sobrou rota antiga em orcam
 assert '#/' not in app.replace("'#/'", ''), 'sobrou rota antiga em app.js'
 
 html = (STATIC / 'index.html').read_text(encoding='utf-8')
-corpo = re.search(r'<body>(.*?)<script src=', html, re.S).group(1)
+corpo = re.search(r'<body[^>]*>(.*?)<script src=', html, re.S).group(1)
+# o esqueleto do artefato traz o próprio <body>: aplica o estado inicial (busca vazia) antes da primeira pintura
+corpo = "<script>document.body.classList.add('ocioso')</script>\n" + corpo
 corpo = trocar(corpo, [
     ('<a href="#/" data-aba="consulta">', '<a href="#inicio" data-aba="consulta">'),
     ('<a href="#/orcamentos" data-aba="orcamentos">', '<a href="#orcamentos" data-aba="orcamentos">'),
@@ -80,7 +82,6 @@ corpo = trocar(corpo, [
     ('<a href="#/comparativo" data-aba="comparativo">', '<a href="#comparativo" data-aba="comparativo">'),
     ('<a id="exportar-busca" class="link-acao" href="#" download>Exportar resultado</a>',
      '<button type="button" id="exportar-busca" class="link-acao" data-copiar-lista>Copiar para o Excel</button>'),
-    ('e pode ser exportada para Excel.', 'e pode ser copiada para o Excel.'),
 ], 'index.html')
 corpo += '''
   <dialog id="dlg-copiar" class="dialogo" aria-labelledby="dlg-copiar-t">

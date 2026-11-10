@@ -9,40 +9,58 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
-<body>
-  <header class="topo">
-    <div class="marca">
-      <span class="marca-nome">InfoCustos Civil</span>
-      <span class="marca-produto">Consulta de preços de obra</span>
-      <nav class="abas" aria-label="Seções">
-        <a href="#/" data-aba="consulta">Consulta</a>
-        <a href="#/orcamentos" data-aba="orcamentos">Orçamentos</a>
-        <a href="#/encargos" data-aba="encargos">Encargos sociais</a>
-        <a href="#/comparativo" data-aba="comparativo">Comparativo entre meses</a>
-      </nav>
-    </div>
-    <form class="busca" id="form-busca" role="search" autocomplete="off">
-      <label for="q" class="sr">Buscar serviço ou insumo</label>
-      <input id="q" name="q" type="search" placeholder="Buscar por descrição ou código — ex.: alvenaria bloco 14, 00003, cimento cp ii"
-             autofocus spellcheck="false">
-      <div class="filtros">
-        <div class="segmentos" role="radiogroup" aria-label="Base de preços" data-filtro="base">
-          <button type="button" role="radio" data-v="todas" aria-checked="true">Todas</button>
-          <button type="button" role="radio" data-v="ORSE" aria-checked="false">ORSE</button>
-          <button type="button" role="radio" data-v="SINAPI" aria-checked="false">SINAPI</button>
-        </div>
-        <div class="segmentos" role="radiogroup" aria-label="Tipo de item" data-filtro="tipo">
-          <button type="button" role="radio" data-v="todos" aria-checked="true">Tudo</button>
-          <button type="button" role="radio" data-v="servico" aria-checked="false">Serviços</button>
-          <button type="button" role="radio" data-v="insumo" aria-checked="false">Insumos</button>
-        </div>
-      </div>
-    </form>
+<body class="ocioso">
+  <header class="cabecalho">
+    <a class="marca" href="#/" aria-label="InfoCustos Civil, início">
+      <svg class="marca-simbolo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="3" y="17" width="12" height="12" rx="2.5" />
+        <rect x="17" y="17" width="12" height="12" rx="2.5" />
+        <rect x="10" y="3" width="12" height="12" rx="2.5" class="marca-topo" />
+      </svg>
+      <span class="marca-nome">InfoCustos<b>Civil</b></span>
+    </a>
+    <nav class="abas" aria-label="Seções">
+      <a href="#/" data-aba="consulta">Consulta</a>
+      <a href="#/orcamentos" data-aba="orcamentos">Orçamentos</a>
+      <a href="#/encargos" data-aba="encargos">Encargos sociais</a>
+      <a href="#/comparativo" data-aba="comparativo">Comparativo entre meses</a>
+    </nav>
     <div class="referencia" id="referencia"></div>
   </header>
 
+  <section class="pesquisa" id="pesquisa" aria-label="Pesquisa">
+    <div class="pesquisa-intro">
+      <h1>O que você quer orçar?</h1>
+      <p id="pesquisa-sub">Digite a descrição ou o código de uma composição ou de um insumo.</p>
+    </div>
+    <form class="busca" id="form-busca" role="search" autocomplete="off">
+      <label for="q" class="sr">Buscar composição ou insumo</label>
+      <svg class="busca-icone" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>
+      <input id="q" name="q" type="search" placeholder="Ex.: alvenaria bloco cerâmico 14, chapisco, 00003, cimento"
+             autofocus spellcheck="false" enterkeyhint="search">
+      <button type="button" class="busca-limpar" id="limpar" aria-label="Limpar pesquisa" hidden>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18" /></svg>
+      </button>
+      <kbd class="busca-atalho" aria-hidden="true">/</kbd>
+    </form>
+    <div class="filtros" id="filtros">
+      <div class="chips" role="radiogroup" aria-label="O que pesquisar" data-filtro="tipo">
+        <button type="button" role="radio" class="chip" data-v="todos" aria-checked="true">Tudo <span class="n"></span></button>
+        <button type="button" role="radio" class="chip" data-v="servico" aria-checked="false">Composições <span class="n"></span></button>
+        <button type="button" role="radio" class="chip" data-v="insumo" aria-checked="false">Insumos <span class="n"></span></button>
+      </div>
+      <span class="filtros-sep" aria-hidden="true"></span>
+      <div class="chips" role="radiogroup" aria-label="Base de preços" data-filtro="base">
+        <button type="button" role="radio" class="chip" data-v="todas" aria-checked="true">Todas as bases <span class="n"></span></button>
+        <button type="button" role="radio" class="chip" data-v="ORSE" aria-checked="false">ORSE <span class="n"></span></button>
+        <button type="button" role="radio" class="chip" data-v="SINAPI" aria-checked="false">SINAPI <span class="n"></span></button>
+      </div>
+    </div>
+    <div class="sugestoes" id="sugestoes"></div>
+  </section>
+
   <main class="area">
-    <section class="resultados" id="resultados" aria-label="Resultados da busca">
+    <section class="resultados" id="resultados" aria-label="Resultados da pesquisa">
       <div class="resultados-topo">
         <p id="contagem" aria-live="polite"></p>
         <a id="exportar-busca" class="link-acao" href="#" download>Exportar resultado</a>
@@ -51,22 +69,12 @@
     </section>
 
     <section class="detalhe" id="detalhe" aria-live="polite">
-      <div class="vazio" id="inicio">
-        <h1>Encontre um serviço e veja do que ele é feito.</h1>
-        <p>Busque pela descrição ou pelo código. Cada composição abre com os insumos, coeficientes e custos, e pode ser exportada para Excel.</p>
-        <div class="sugestoes" id="sugestoes"></div>
+      <div class="vazio vazio-detalhe" id="inicio">
+        <svg viewBox="0 0 48 48" aria-hidden="true"><rect x="8" y="10" width="32" height="28" rx="4" /><path d="M14 18h20M14 24h14M14 30h8" /></svg>
+        <p><b>Escolha um resultado</b> para ver a composição completa, com insumos, coeficientes e custos.</p>
       </div>
     </section>
   </main>
-
-  <template id="tpl-resultado">
-    <li><button type="button" class="res">
-      <span class="res-cod"></span>
-      <span class="res-desc"></span>
-      <span class="res-meta"></span>
-      <span class="res-preco"></span>
-    </button></li>
-  </template>
 
   <dialog id="dlg-adicionar" class="dialogo" aria-labelledby="dlg-titulo">
     <form method="dialog" id="form-adicionar">
