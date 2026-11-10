@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "skills": {
+    "bklit-ui": {
+      "source": "bklit/bklit-ui",
+      "sourceType": "github",
+      "skillPath": "skills/bklit-ui/SKILL.md",
+      "computedHash": "cc6bd66681783815a60a2ce3c3ae7b4a95b3ebce98df949af7a070f19ec5329a",
+      "installMode": "copy"
+    },
+    "bklit-ui-design": {
+      "source": "bklit/bklit-ui",
+      "sourceType": "github",
+      "skillPath": "skills/bklit-ui-design/SKILL.md",
+      "computedHash": "42aaa6cb097157028aa333f01cba4bae578cd0c3eab7efec1d4b6fd8cfec53ce",
+      "installMode": "copy"
+    },
+    "bklit-ui-migrate": {
+      "source": "bklit/bklit-ui",
+      "sourceType": "github",
+      "skillPath": "skills/bklit-ui-migrate/SKILL.md",
+      "computedHash": "b92634c95e82f478b6f3a016654078178d798d583245aac68b53de7f9eaa2bc5",
+      "installMode": "copy"
+    }
+  }
+}
