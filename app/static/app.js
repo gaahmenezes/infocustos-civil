@@ -16,7 +16,6 @@ const SECOES = [
   ['SERVICO_AUXILIAR', 'Serviço auxiliar', '--c-equip'],
 ];
 const NOME_SECAO = Object.fromEntries(SECOES.map(([k, n]) => [k, n]));
-const SUGESTOES = ['alvenaria bloco cerâmico', 'concreto fck 25', 'piso porcelanato', 'pintura acrílica', 'tubo pvc esgoto 100', 'servente', 'escavação mecanizada', 'cimento'];
 
 const estado = { q: '', base: 'todas', tipo: 'todos', itens: [], atual: null, ref: null };
 
@@ -51,6 +50,9 @@ async function carregarReferencia() {
     <span class="meses-total">${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} composições · ${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</span>`;
   $('#pesquisa-sub').innerHTML = `Pesquise entre <b>${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} composições</b> e
     <b>${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</b> da ORSE e da SINAPI, referência ${esc(ref.descricao.replace(/-1$/, ''))}.`;
+  $('#selo-base').hidden = false;
+  $('#selo-base').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>
+    <span>Preços de <b>${esc(ref.descricao.replace(/-1$/, ''))}</b> conferidos item a item com os relatórios da CEHOP</span>`;
   if (!estado.q.trim()) contarFiltros(totaisDoMes());
 }
 
@@ -98,18 +100,64 @@ function blocoHistorico(h, unidade) {
 }
 
 
+// ---------- continuar de onde parou (fica só neste navegador) ----------
+const HIST_CHAVE = 'infocustos-historico';
+const HIST = (() => {
+  try { const h = JSON.parse(localStorage.getItem(HIST_CHAVE) || 'null'); if (h && Array.isArray(h.pesquisas) && Array.isArray(h.abertos)) return h; } catch (_) { /* sem armazenamento */ }
+  return { pesquisas: [], abertos: [] };
+})();
+function gravarHist() { try { localStorage.setItem(HIST_CHAVE, JSON.stringify(HIST)); } catch (_) { /* fica só na memória */ } }
+function registrarPesquisa() {
+  const q = estado.q.trim(); if (q.length < 2) return;
+  HIST.pesquisas = [{ q, tipo: estado.tipo, base: estado.base }, ...HIST.pesquisas.filter((p) => !(p.q.toLowerCase() === q.toLowerCase() && p.tipo === estado.tipo && p.base === estado.base))].slice(0, 6);
+  gravarHist();
+}
+function registrarAberto(d, tipo) {
+  const it = { tipo, base: d.base, codigo: d.codigo, descricao: d.descricao || '', unidade: d.unidade || '' };
+  HIST.abertos = [it, ...HIST.abertos.filter((x) => !(x.tipo === it.tipo && x.base === it.base && x.codigo === it.codigo))].slice(0, 6);
+  gravarHist();
+}
+function definirFiltro(grupo, v) {
+  estado[grupo] = v;
+  document.querySelectorAll(`.chips[data-filtro="${grupo}"] .chip`).forEach((c) => c.setAttribute('aria-checked', String(c.dataset.v === v)));
+}
+const nomeFiltro = (p) => [p.tipo === 'servico' ? 'composições' : p.tipo === 'insumo' ? 'insumos' : '', p.base !== 'todas' ? p.base : ''].filter(Boolean).join(' · ');
+async function desenharInicio() {
+  $('#c-pesquisas').innerHTML = HIST.pesquisas.length
+    ? HIST.pesquisas.map((p, k) => `<li><button type="button" data-repetir="${k}"><span class="linha-1">${esc(p.q)}</span>
+        <span class="linha-2">${esc(nomeFiltro(p) || 'composições e insumos, todas as bases')}</span></button></li>`).join('')
+    : '<li class="vazio-cartao">As pesquisas que você usar aparecem aqui, com os filtros escolhidos.</li>';
+  $('#c-pesquisas-rod').innerHTML = HIST.pesquisas.length ? '<button type="button" data-limpar-hist="pesquisas">Limpar pesquisas</button>' : '';
+  $('#c-abertos').innerHTML = HIST.abertos.length
+    ? HIST.abertos.map((x) => `<li><a href="#/${x.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(x.base)}/${esc(x.codigo)}">
+        <span class="linha-1">${esc(x.descricao)}</span><span class="linha-2">${x.tipo === 'servico' ? 'Composição' : 'Insumo'} ${esc(x.codigo)}/${esc(x.base)} · ${esc(x.unidade)}</span></a></li>`).join('')
+    : '<li class="vazio-cartao">Composições e insumos que você abrir ficam aqui, para voltar com um clique.</li>';
+  $('#c-abertos-rod').innerHTML = HIST.abertos.length ? '<button type="button" data-limpar-hist="abertos">Limpar lista</button>' : '';
+  try {
+    const orcs = (await api('/api/orcamentos')).slice(0, 4);
+    $('#c-orcamentos').innerHTML = orcs.length
+      ? orcs.map((o) => `<li><a href="#/orcamento/${o.id}"><span class="linha-1">${esc(o.nome)}</span><span class="valor-dir">${brl.format(o.total)}</span>
+          <span class="linha-2">${esc(nomeRef(o.referencia))} · ${o.qtd_itens} ${o.qtd_itens === 1 ? 'item' : 'itens'}</span></a></li>`).join('')
+      : '<li class="vazio-cartao">Nenhum orçamento ainda. <a class="link-acao" href="#/orcamentos">Criar o primeiro</a></li>';
+  } catch (_) { $('#c-orcamentos').innerHTML = '<li class="vazio-cartao">Não foi possível carregar os orçamentos.</li>'; }
+}
+
 // ---------- estados da tela e transições ----------
 const semMovimento = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 function transicao(fn) {
   // troca de estado com a View Transitions do navegador; sem suporte (ou sem movimento), troca direto
   if (!document.startViewTransition || semMovimento() || document.hidden) { fn(); return Promise.resolve(); }
-  return document.startViewTransition(fn).finished.catch(() => {});
+  // uma transição nova cancela a anterior; o navegador avisa com promessas rejeitadas, que aqui são esperadas
+  const t = document.startViewTransition(fn);
+  t.ready.catch(() => {}); t.updateCallbackDone.catch(() => {});
+  return t.finished.catch(() => {});
 }
 function aplicarEstado() {
   const naConsulta = (document.body.dataset.aba || 'consulta') === 'consulta';
   const temQ = estado.q.trim().length > 0;
   const ocioso = naConsulta && !temQ && !estado.atual;
   const mudou = document.body.classList.contains('ocioso') !== ocioso || document.body.classList.contains('buscando') !== (naConsulta && temQ);
+  if (ocioso && (mudou || !aplicarEstado.inicio)) { aplicarEstado.inicio = true; desenharInicio(); }
   const aplicar = () => {
     document.body.classList.toggle('ocioso', ocioso);
     document.body.classList.toggle('buscando', naConsulta && temQ);
@@ -175,6 +223,17 @@ async function buscar() {
   }
 }
 
+const PARTES = [['pct_mo', 'mão de obra', '--c-mo'], ['pct_mat', 'material', '--c-mat'], ['pct_equip', 'equipamento', '--c-equip'], ['pct_terc', 'serviço de terceiro', '--c-terc']];
+function divisaoCusto(it) {
+  // barrinha com a divisão do custo da composição, para comparar resultados sem abrir um por um
+  if (it.tipo !== 'servico' || it.pct_mo == null) return '';
+  const partes = PARTES.map(([k, n, cor]) => [n, it[k] || 0, cor]);
+  const dom = partes.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const desc = partes.filter((p) => p[1] >= 0.005).map((p) => `${p[0]} ${pct.format(p[1])}`).join(', ');
+  return `<span class="mini-barra" role="img" aria-label="Divisão do custo: ${esc(desc)}" title="${esc(desc)}">${partes.filter((p) => p[1] > 0)
+    .map((p) => `<i style="flex-grow:${p[1]};background:var(${p[2]})"></i>`).join('')}</span><span class="dom"><b>${pct.format(dom[1])}</b> ${esc(dom[0])}</span>`;
+}
+
 function trecho(item) {
   if (!item.trecho) return esc(item.descricao);
   return esc(item.trecho).replace(/\u0001/g, '<mark>').replace(/\u0002/g, '</mark>');
@@ -199,7 +258,8 @@ function desenharLista(r) {
       <span class="res-cod"><span class="tipo tipo-${it.tipo}">${ROTULO_TIPO[it.tipo]}</span>${esc(it.codigo)}/${esc(it.base)}</span>
       <span class="res-desc">${trecho(it)}</span>
       <span class="res-meta">${esc(meta.join(' · '))}</span>
-      <span class="res-preco">${it.preco == null ? 'sem preço' : brl.format(it.preco)}</span></button></li>`;
+      <span class="res-preco">${it.preco == null ? 'sem preço' : brl.format(it.preco)}</span>
+      <span class="res-div">${divisaoCusto(it)}</span></button></li>`;
   }).join('');
 }
 
@@ -248,6 +308,7 @@ async function rota() {
   try {
     const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qsMes()}`) : await api(`/api/insumo/${base}/${codigo}?${qsMes()}`);
     if (tipo === 'composicao') desenharComposicao(dados); else desenharInsumo(dados);
+    registrarAberto(dados, tipo === 'composicao' ? 'servico' : 'insumo');
     // a ficha começa visível: no celular volta ao topo; no computador só sobe se o começo ficou fora da tela
     if (window.innerWidth <= 900 || d.getBoundingClientRect().top < 70) window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' });
   } catch (e) {
@@ -426,6 +487,7 @@ $('#q').addEventListener('input', (e) => { estado.q = e.target.value; agendarBus
 $('#q').addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && estado.q) { e.preventDefault(); limparBusca(); return; }
   if (e.key === 'ArrowDown' || e.key === 'Enter') {
+    if (e.key === 'Enter') registrarPesquisa();
     const p = document.querySelector('.res'); if (p) { e.preventDefault(); if (e.key === 'Enter') p.click(); else p.focus(); }
   }
 });
@@ -435,7 +497,7 @@ function limparBusca() {
 $('#limpar').addEventListener('click', limparBusca);
 $('#lista').addEventListener('click', (e) => {
   const b = e.target.closest('.res'); if (!b) return;
-  const it = estado.itens[b.dataset.i]; if (it) abrir(it.tipo, it.base, it.codigo);
+  const it = estado.itens[b.dataset.i]; if (it) { registrarPesquisa(); abrir(it.tipo, it.base, it.codigo); }
 });
 $('#lista').addEventListener('keydown', (e) => {
   const b = e.target.closest('.res'); if (!b) return;
@@ -465,10 +527,15 @@ document.addEventListener('keydown', (e) => {
 });
 window.addEventListener('hashchange', rota);
 
-$('#sugestoes').innerHTML = '<span class="sugestoes-rotulo">Experimente</span>' + SUGESTOES.map((s) => `<button type="button">${esc(s)}</button>`).join('');
 document.addEventListener('click', (e) => {
-  const s = e.target.closest('#sugestoes button'); if (!s) return;
-  $('#q').value = estado.q = s.textContent; buscar(); $('#q').focus();
+  const s = e.target.closest('[data-repetir]'); if (!s) return;
+  const p = HIST.pesquisas[Number(s.dataset.repetir)]; if (!p) return;
+  definirFiltro('tipo', p.tipo); definirFiltro('base', p.base);
+  $('#q').value = estado.q = p.q; buscar(); $('#q').focus();
+});
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-limpar-hist]'); if (!b) return;
+  HIST[b.dataset.limparHist] = []; gravarHist(); desenharInicio();
 });
 const inicioHTML = $('#detalhe').innerHTML;
 carregarReferencia().then(() => { buscar(); rota(); });

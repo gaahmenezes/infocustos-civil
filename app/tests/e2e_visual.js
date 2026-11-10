@@ -19,7 +19,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   await p.click('#q');
   for (const ch of 'chap') { await p.keyboard.type(ch); await p.waitForTimeout(60); }
   await p.waitForFunction(() => document.querySelectorAll('.res').length > 0);
-  ok(await p.evaluate(() => document.body.classList.contains('buscando')), 'Ao digitar, a busca sobe e os resultados aparecem');
+  ok(await p.waitForFunction(() => document.body.classList.contains('buscando'), null, { timeout: 2000 }).then(() => true, () => false), 'Ao digitar, a busca sobe e os resultados aparecem');
   const n1 = norm(await p.textContent('#contagem'));
   await p.keyboard.type('isco parede'); await p.waitForTimeout(350);
   const n2 = norm(await p.textContent('#contagem'));

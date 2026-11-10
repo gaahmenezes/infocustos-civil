@@ -37,7 +37,11 @@ app = trocar(app, [
     ('href="#/composicao/${esc(u.base)}/${esc(u.codigo)}"', 'href="#c-${esc(u.base)}-${esc(u.codigo)}"'),
     ("const emVar = /^#\\/comparativo/.test(location.hash);", "const emVar = /^#comparativo/.test(location.hash);"),
     ("const emEnc = /^#\\/encargos/.test(location.hash);", "const emEnc = /^#encargos/.test(location.hash);"),
+    ("<a href=\"#/${x.tipo === 'servico' ? 'composicao' : 'insumo'}/${esc(x.base)}/${esc(x.codigo)}\">",
+     "<a href=\"#${x.tipo === 'servico' ? 'c' : 'i'}-${esc(x.base)}-${esc(x.codigo)}\">"),
+    ('<a href="#/orcamento/${o.id}">', '<a href="#orc-${o.id}">'),
 ], 'app.js')
+app = app.replace('href="#/orcamentos"', 'href="#orcamentos"')
 
 orc = (STATIC / 'orcamento.js').read_text(encoding='utf-8')
 orc = re.sub(r'async function req\(url, metodo = .GET., corpo\) \{.*?\n\}\n',
@@ -83,6 +87,8 @@ corpo = trocar(corpo, [
     ('<a id="exportar-busca" class="link-acao" href="#" download>Exportar resultado</a>',
      '<button type="button" id="exportar-busca" class="link-acao" data-copiar-lista>Copiar para o Excel</button>'),
 ], 'index.html')
+corpo = corpo.replace('href="#/orcamentos"', 'href="#orcamentos"').replace('href="#/"', 'href="#inicio"')
+assert 'href="#/' not in corpo, 'sobrou rota antiga no HTML'
 corpo += '''
   <dialog id="dlg-copiar" class="dialogo" aria-labelledby="dlg-copiar-t">
     <form method="dialog">

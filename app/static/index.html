@@ -32,6 +32,7 @@
     <div class="pesquisa-intro">
       <h1>O que você quer orçar?</h1>
       <p id="pesquisa-sub">Digite a descrição ou o código de uma composição ou de um insumo.</p>
+      <p class="selo-base" id="selo-base" hidden></p>
     </div>
     <form class="busca" id="form-busca" role="search" autocomplete="off">
       <label for="q" class="sr">Buscar composição ou insumo</label>
@@ -56,7 +57,22 @@
         <button type="button" role="radio" class="chip" data-v="SINAPI" aria-checked="false">SINAPI <span class="n"></span></button>
       </div>
     </div>
-    <div class="sugestoes" id="sugestoes"></div>
+    <div class="inicio-painel" id="inicio-painel" aria-label="Continuar de onde parou">
+      <section class="cartao" aria-labelledby="c-pesq-t">
+        <h2 id="c-pesq-t"><span class="faixa" aria-hidden="true"></span>Pesquisas recentes</h2>
+        <ul id="c-pesquisas"></ul>
+        <div class="rodape" id="c-pesquisas-rod"></div>
+      </section>
+      <section class="cartao" aria-labelledby="c-abertos-t">
+        <h2 id="c-abertos-t"><span class="faixa" aria-hidden="true"></span>Abertos recentemente</h2>
+        <ul id="c-abertos"></ul>
+        <div class="rodape" id="c-abertos-rod"></div>
+      </section>
+      <section class="cartao" aria-labelledby="c-orc-t">
+        <h2 id="c-orc-t"><span class="faixa" aria-hidden="true"></span>Seus orçamentos <a class="lado link-acao" href="#/orcamentos">Ver todos</a></h2>
+        <ul id="c-orcamentos"></ul>
+      </section>
+    </div>
   </section>
 
   <main class="area">

@@ -36,6 +36,7 @@ const LOCAL = (() => {
         d.itens = j.itens.map((a) => {
           const it = { tipo: a[0] === 0 ? 'servico' : 'insumo', base: BASES[a[1]], codigo: a[2], descricao: a[3], unidade: a[4], preco: a[5],
             grupo: a[6], subgrupo: a[7], categoria: a[8], usos: a[9], tem_composicao: a[10], marcador: a[11] };
+          if (a[12]) [it.pct_mo, it.pct_mat, it.pct_equip, it.pct_terc] = a[12];
           it._p = palavrasDe(it.descricao); it._z = semZero(it.codigo);
           d.porChave.set(`${it.tipo}|${it.base}|${it.codigo}`, it);
           if (it.tem_composicao) d.compExiste.add(`${it.base}|${it.codigo}`);
@@ -89,7 +90,8 @@ const LOCAL = (() => {
   }
   const destacar = (desc, termos) => desc.replace(/[\p{L}\p{N}]+/gu, (w) => (termos.some((t) => semAcento(w).startsWith(t)) ? `\u0001${w}\u0002` : w));
   const publico = (x, trecho) => ({ tipo: x.tipo, base: x.base, codigo: x.codigo, descricao: x.descricao, unidade: x.unidade, preco: x.preco,
-    grupo: x.grupo, subgrupo: x.subgrupo, categoria: x.categoria, usos: x.usos, tem_composicao: x.tem_composicao, marcador: x.marcador, trecho });
+    grupo: x.grupo, subgrupo: x.subgrupo, categoria: x.categoria, usos: x.usos, tem_composicao: x.tem_composicao, marcador: x.marcador,
+    pct_mo: x.pct_mo, pct_mat: x.pct_mat, pct_equip: x.pct_equip, pct_terc: x.pct_terc, trecho });
 
   async function busca(ref, q, base, tipo, limite) {
     const d = await dados(ref);

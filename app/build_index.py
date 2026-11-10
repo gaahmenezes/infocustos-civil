@@ -26,7 +26,8 @@ INSERT INTO historico SELECT 'insumo', base, codigo, referencia, preco FROM insu
 CREATE TABLE item_busca (
   id INTEGER PRIMARY KEY, tipo TEXT, base TEXT, codigo TEXT, referencia TEXT,
   descricao TEXT, unidade TEXT, preco REAL, categoria TEXT, grupo TEXT,
-  tem_composicao INTEGER DEFAULT 0, usos INTEGER DEFAULT 0
+  tem_composicao INTEGER DEFAULT 0, usos INTEGER DEFAULT 0,
+  pct_mo REAL, pct_mat REAL, pct_equip REAL, pct_terc REAL  -- divisão do custo da composição (0 a 1)
 );
 INSERT INTO item_busca (tipo, base, codigo, referencia, descricao, unidade, preco, categoria, grupo)
   SELECT 'servico', base, codigo, referencia, descricao, unidade, preco, tipo, grupo FROM servico;
@@ -47,6 +48,29 @@ CREATE TEMP TABLE uso AS
 CREATE INDEX temp.ix_uso ON uso(referencia, base, codigo, eh_servico);
 UPDATE item_busca SET usos = COALESCE((SELECT n FROM uso WHERE uso.referencia = item_busca.referencia
   AND uso.base = item_busca.base AND uso.codigo = item_busca.codigo AND uso.eh_servico = (item_busca.tipo = 'servico')), 0);
+
+-- divisão do custo: pelo resumo da composição; quando a base não traz o resumo (SINAPI no relatório da CEHOP), pelos itens
+CREATE TEMP TABLE div AS
+  SELECT c.base, c.codigo, c.referencia,
+    c.custo_equipamento AS e, c.custo_mao_de_obra + c.custo_encargo_social AS mo, c.custo_material AS mat, c.custo_servico_terceiro AS t
+  FROM composicao c
+  WHERE c.custo_equipamento + c.custo_mao_de_obra + c.custo_encargo_social + c.custo_material + c.custo_servico_terceiro > 0
+  UNION ALL
+  SELECT c.base, c.codigo, c.referencia,
+    SUM(CASE WHEN i.secao = 'EQUIPAMENTO' THEN i.custo_total ELSE 0 END),
+    SUM(CASE WHEN i.secao = 'MAO_DE_OBRA' THEN i.custo_total ELSE 0 END),
+    SUM(CASE WHEN i.secao IN ('MATERIAL', 'SERVICO_AUXILIAR') THEN i.custo_total ELSE 0 END),
+    SUM(CASE WHEN i.secao = 'SERVICO_TERCEIRO' THEN i.custo_total ELSE 0 END)
+  FROM composicao c JOIN composicao_item i ON i.composicao_base = c.base AND i.composicao = c.codigo AND i.referencia = c.referencia
+  WHERE c.custo_equipamento + c.custo_mao_de_obra + c.custo_encargo_social + c.custo_material + c.custo_servico_terceiro = 0
+  GROUP BY c.base, c.codigo, c.referencia;
+CREATE INDEX temp.ix_div ON div(base, codigo, referencia);
+UPDATE item_busca SET
+  pct_mo = (SELECT mo / (e + mo + mat + t) FROM div d WHERE d.base = item_busca.base AND d.codigo = item_busca.codigo AND d.referencia = item_busca.referencia AND e + mo + mat + t > 0),
+  pct_mat = (SELECT mat / (e + mo + mat + t) FROM div d WHERE d.base = item_busca.base AND d.codigo = item_busca.codigo AND d.referencia = item_busca.referencia AND e + mo + mat + t > 0),
+  pct_equip = (SELECT e / (e + mo + mat + t) FROM div d WHERE d.base = item_busca.base AND d.codigo = item_busca.codigo AND d.referencia = item_busca.referencia AND e + mo + mat + t > 0),
+  pct_terc = (SELECT t / (e + mo + mat + t) FROM div d WHERE d.base = item_busca.base AND d.codigo = item_busca.codigo AND d.referencia = item_busca.referencia AND e + mo + mat + t > 0)
+WHERE tipo = 'servico' AND tem_composicao = 1;
 
 CREATE VIRTUAL TABLE busca USING fts5(
   descricao, codigo, content='item_busca', content_rowid='id',

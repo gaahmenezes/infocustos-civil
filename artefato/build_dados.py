@@ -47,7 +47,8 @@ for m in meses:
             WHERE i.referencia = ? ORDER BY i.id''', (REF,)):
         t = 0 if r['tipo'] == 'servico' else 1
         itens.append([t, BASES.index(r['base']), r['codigo'], r['descricao'] or '', r['unidade'] or '', r['preco'], r['grupo'] or '',
-                      r['subgrupo'] or '', r['categoria'] or '', r['usos'] or 0, r['tem_composicao'] or 0, r['marcador'] or ''])
+                      r['subgrupo'] or '', r['categoria'] or '', r['usos'] or 0, r['tem_composicao'] or 0, r['marcador'] or '',
+                      [round(r[k], 4) for k in ('pct_mo', 'pct_mat', 'pct_equip', 'pct_terc')] if r['pct_mo'] is not None else 0])
         (desc_srv if t == 0 else desc_ins)[(r['base'], r['codigo'])] = r['descricao'] or ''
 
     usada_em = defaultdict(set)
