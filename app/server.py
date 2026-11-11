@@ -59,9 +59,15 @@ async def exigir_senha(request: Request, seguir):
 
 
 @app.api_route('/saude', methods=['GET', 'HEAD'])
-def saude():
-    """Resposta curta para o monitor que visita o site e não o deixa dormir."""
-    return PlainTextResponse('ok')
+def saude(teste: str = ''):
+    """Resposta curta para o monitor que visita o site e não o deixa dormir.
+    `?teste=busca` mede uma busca e o banco de orçamentos (só tempos e contagens, nenhum dado)."""
+    if teste != 'busca':
+        return PlainTextResponse('ok')
+    import time
+    t = time.perf_counter(); total = api_busca(q='al', limite=80)['total']; t_busca = time.perf_counter() - t
+    t = time.perf_counter(); n_orc = len(orcamento.listar()); t_orc = time.perf_counter() - t
+    return PlainTextResponse(f'busca al: {total} itens em {t_busca:.2f}s | orcamentos: {n_orc} em {t_orc:.2f}s | banco: {"postgres" if orcamento.banco_orc.POSTGRES else "sqlite"}')
 
 
 def conn():
@@ -137,7 +143,9 @@ def api_referencia(ref: Optional[str] = None):
 
 
 @app.get('/api/busca')
-def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int = Query(60, le=500), ref: Optional[str] = None):
+def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int = Query(60, le=500), ref: Optional[str] = None,
+              desde: int = Query(0, ge=0), ordem: str = 'usos'):
+    """Sem texto lista a base inteira do mês: `ordem=codigo` na ordem da tabela, `desde` para as páginas seguintes."""
     with conn() as c:
         r = mes(c, ref)
         filtros, args = ['i.referencia = ?'], [r['id']]
@@ -171,7 +179,9 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
         else:
             w = 'WHERE ' + ' AND '.join(filtros)
             total = c.execute(f'SELECT COUNT(*) FROM item_busca i {w}', args).fetchone()[0]
-            rows = c.execute(f'SELECT i.*, NULL AS trecho FROM item_busca i {w} ORDER BY i.usos DESC LIMIT ?', args + [limite]).fetchall()
+            ordenar = 'i.base, i.tipo DESC, i.codigo' if ordem == 'codigo' else 'i.usos DESC'
+            rows = c.execute(f'SELECT i.*, NULL AS trecho FROM item_busca i {w} ORDER BY {ordenar} LIMIT ? OFFSET ?',
+                             args + [limite, desde]).fetchall()
         return {'total': total, 'referencia': r['id'], 'grade': [dict(g) for g in grade],
                 'itens': [{k: x[k] for k in x.keys() if k != 'rel'} for x in rows]}
 
