@@ -1,11 +1,11 @@
 """Orçamentos: etapas, itens, BDI, curva ABC e exportação.
 
-Os orçamentos ficam num banco próprio (ORCAMENTOS_DB, padrão app/orcamentos.sqlite).
+Os orçamentos ficam num banco próprio: PostgreSQL se houver DATABASE_URL (site publicado);
+senão SQLite em ORCAMENTOS_DB (padrão app/orcamentos.sqlite).
 A base de preços (ORSE/SINAPI) é só leitura.
 """
 import io
 import os
-import sqlite3
 from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +17,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from pydantic import BaseModel, Field
+
+import banco_orc
 
 AQUI = Path(__file__).parent
 ORC_DB = os.environ.get('ORCAMENTOS_DB', str(AQUI / 'orcamentos.sqlite'))
@@ -30,29 +32,11 @@ def configurar(conn_base):
     global _base_conn
     _base_conn = conn_base
     with orc() as c:
-        c.executescript('''
-        PRAGMA journal_mode = WAL;
-        CREATE TABLE IF NOT EXISTS orcamento (
-          id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cliente TEXT DEFAULT '', local TEXT DEFAULT '',
-          referencia TEXT NOT NULL, bdi REAL NOT NULL DEFAULT 25.0, observacoes TEXT DEFAULT '',
-          criado_em TEXT, atualizado_em TEXT);
-        CREATE TABLE IF NOT EXISTS etapa (
-          id INTEGER PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
-          ordem INTEGER NOT NULL, titulo TEXT NOT NULL);
-        CREATE TABLE IF NOT EXISTS item (
-          id INTEGER PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
-          etapa_id INTEGER NOT NULL REFERENCES etapa(id) ON DELETE CASCADE, ordem INTEGER NOT NULL,
-          tipo TEXT NOT NULL, base TEXT NOT NULL, codigo TEXT NOT NULL, descricao TEXT, unidade TEXT,
-          quantidade REAL NOT NULL DEFAULT 0, custo_unit REAL NOT NULL DEFAULT 0, referencia TEXT);
-        CREATE INDEX IF NOT EXISTS ix_item_orc ON item(orcamento_id, etapa_id, ordem);
-        ''')
+        c.executescript(banco_orc.ESQUEMA_SQLITE)
 
 
 def orc():
-    c = sqlite3.connect(ORC_DB, check_same_thread=False)
-    c.row_factory = sqlite3.Row
-    c.execute('PRAGMA foreign_keys = ON')
-    return c
+    return banco_orc.conectar(ORC_DB)
 
 
 def agora():
@@ -525,6 +509,8 @@ def _reinserir(c, tabela, linha):
     if c.execute(f'SELECT 1 FROM {tabela} WHERE id = ?', (linha.get('id'),)).fetchone():
         cols.remove('id')
     cur = c.execute(f"INSERT INTO {tabela} ({', '.join(cols)}) VALUES ({', '.join('?' * len(cols))})", [linha[k] for k in cols])
+    if 'id' in cols:
+        c.ajustar_sequencia(tabela)
     return cur.lastrowid
 
 
@@ -560,7 +546,7 @@ def restaurar(d: Desfazer):
                 raise HTTPException(422, 'Nada para restaurar.')
             c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), oid))
             return calcular(c, oid)
-    except (sqlite3.IntegrityError, KeyError, TypeError):
+    except (*banco_orc.ErroIntegridade, KeyError, TypeError):
         raise HTTPException(422, 'Não foi possível desfazer: os dados não conferem.')
 
 

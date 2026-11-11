@@ -119,3 +119,10 @@ https://claude.ai/artifact/4RYzkGmFRxnGs3XV9EBjMM — mesma interface, rodando s
 - Banco PostgreSQL e autenticação para uso em equipe (publicação no Render).
 - Encargos detalhados de maio/2026, se for preciso. Significado do marcador "#" nos preços de insumos.
 - Composições próprias, relatórios no formato de edital, cronograma físico-financeiro.
+
+## Site publicado (Render, plano gratuito)
+
+- Build: `bash build.sh` · Start: `cd app && uvicorn server:app --host 0.0.0.0 --port $PORT`
+- `DATABASE_URL`: endereço de um PostgreSQL (ex.: Neon gratuito). Com ele os orçamentos ficam guardados; sem ele, usam SQLite local (apagado a cada publicação no Render).
+- `INFOCUSTOS_SENHA` (e opcionalmente `INFOCUSTOS_USUARIO`, padrão `infocustos`): liga a senha única do site.
+- `/saude` responde sem senha: aponte um monitor gratuito (cron-job.org, UptimeRobot) para ele a cada 10 min para o site não dormir.

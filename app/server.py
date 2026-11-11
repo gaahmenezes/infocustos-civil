@@ -6,16 +6,18 @@ Banco:  variável ORSE_DB ou ../dados/orse_sinapi.sqlite (todas as referências)
 Cada consulta trabalha com UM mês (parâmetro `ref`, padrão: o mais recente). Dados de meses
 diferentes só aparecem juntos em /api/comparativo.
 """
+import base64
 import io
 import os
+import secrets
 import re
 import sqlite3
 import unicodedata
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -30,6 +32,35 @@ SECOES = {
 }
 
 app = FastAPI(title='InfoCustos Civil')
+
+# Senha única do site publicado: só vale quando INFOCUSTOS_SENHA está definida (no computador local fica aberto).
+USUARIO = os.environ.get('INFOCUSTOS_USUARIO', 'infocustos')
+SENHA = os.environ.get('INFOCUSTOS_SENHA', '')
+LIVRES = {'/saude'}  # o monitor que mantém o site acordado entra sem senha
+
+
+def _autorizado(cabecalho: str) -> bool:
+    if not cabecalho.startswith('Basic '):
+        return False
+    try:
+        usuario, _, senha = base64.b64decode(cabecalho[6:]).decode('utf-8').partition(':')
+    except Exception:
+        return False
+    return secrets.compare_digest(usuario.encode(), USUARIO.encode()) & secrets.compare_digest(senha.encode(), SENHA.encode())
+
+
+@app.middleware('http')
+async def exigir_senha(request: Request, seguir):
+    if SENHA and request.url.path not in LIVRES and not _autorizado(request.headers.get('authorization', '')):
+        return Response('Acesso restrito ao InfoCustos Civil.', status_code=401,
+                        headers={'WWW-Authenticate': 'Basic realm="InfoCustos Civil", charset="UTF-8"'})
+    return await seguir(request)
+
+
+@app.api_route('/saude', methods=['GET', 'HEAD'])
+def saude():
+    """Resposta curta para o monitor que visita o site e não o deixa dormir."""
+    return PlainTextResponse('ok')
 
 
 def conn():
