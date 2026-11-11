@@ -94,7 +94,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   }
 
   // limpeza
-  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.waitForSelector('.pagina.orcamentos');
+  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.fill('#excluir-orc-conf', 'EXCLUIR'); await p.click('#excluir-orc-ok'); await p.waitForSelector('.pagina.orcamentos');
   ok(errs.length === 0, 'Sem erros de JavaScript ' + JSON.stringify(errs));
   await b.close();
 })();

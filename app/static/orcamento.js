@@ -74,9 +74,39 @@ function desenharCartoesOrc() {
       <span class="orc-c-rot">total com BDI de ${num2.format(o.bdi)}%</span>
       <span class="res-div">${o.divisao ? barraDivisao(o.divisao) : '<span class="dom">Ainda sem itens</span>'}</span>
       <span class="orc-c-meta">${esc(nomeRef(o.referencia))} · ${o.qtd_itens} ${o.qtd_itens === 1 ? 'item' : 'itens'} · alterado em ${dataFmt(o.atualizado_em)}</span>
-    </a></li>`).join('')
+    </a><button type="button" class="orc-c-excluir" data-excluir-orc="${o.id}" aria-label="Excluir o orçamento ${esc(o.nome)}" title="Excluir orçamento">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3" /></svg></button></li>`).join('')
     : `<li class="orc-nada">${vazio('lupa', 'Nenhum orçamento com esse nome', 'Confira a grafia ou limpe o filtro.')}</li>`;
 }
+
+// ---------- excluir orçamento: confirmação extra (digitar EXCLUIR) e, depois, ainda dá para desfazer ----------
+const EXC = { o: null };
+const palavraOk = () => $('#excluir-orc-conf').value.trim().toUpperCase() === 'EXCLUIR';
+function pedirExclusao(o) {
+  EXC.o = o;
+  const n = o.qtd_itens ?? (o.etapas || []).reduce((s, e) => s + e.itens.length, 0);
+  $('#excluir-orc-desc').innerHTML = `<b>${esc(o.nome)}</b><span>${esc([o.cliente, o.local].filter(Boolean).join(' · ') || 'Sem cliente e local')}</span>
+    <span>${n} ${n === 1 ? 'item' : 'itens'} · total ${brl.format(o.total)}</span>`;
+  $('#excluir-orc-conf').value = ''; $('#excluir-orc-erro').textContent = ''; $('#excluir-orc-ok').disabled = true;
+  $('#dlg-excluir-orc').showModal(); $('#excluir-orc-conf').focus();
+}
+$('#excluir-orc-conf').addEventListener('input', () => { $('#excluir-orc-ok').disabled = !palavraOk(); $('#excluir-orc-erro').textContent = ''; });
+$('#form-excluir-orc').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!palavraOk()) { $('#excluir-orc-erro').textContent = 'Digite EXCLUIR para confirmar.'; return; }
+  const o = EXC.o, bt = $('#excluir-orc-ok'); bt.disabled = true;
+  try {
+    const r = await req(`/api/orcamentos/${o.id}`, 'DELETE');
+    $('#dlg-excluir-orc').close();
+    if (location.hash === '#/orcamentos') window.rotaOrcamento(); else location.hash = '#/orcamentos';
+    avisarDesfazer(`Orçamento "${esc(o.nome)}" excluído.`, r && r.desfazer);
+  } catch (err) { $('#excluir-orc-erro').textContent = err.message; bt.disabled = false; }
+});
+document.addEventListener('click', (e) => {
+  const b = e.target.closest('[data-excluir-orc]'); if (!b) return;
+  e.preventDefault();
+  const o = LISTA.todos.find((x) => String(x.id) === b.dataset.excluirOrc); if (o) pedirExclusao(o);
+});
 
 function abrirNovoOrcamento() {
   const d = $('#dlg-novo-orc'), f = $('#form-novo');
@@ -202,10 +232,7 @@ function ligarCabecalho(o) {
   $('#orc-duplicar').addEventListener('click', async () => {
     const n = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST'); location.hash = rotaOrc(n.id); avisar('Orçamento duplicado.');
   });
-  $('#orc-excluir').addEventListener('click', async () => {
-    const r = await req(`/api/orcamentos/${o.id}`, 'DELETE'); location.hash = '#/orcamentos';
-    avisarDesfazer(`Orçamento "${esc(o.nome)}" excluído.`, r && r.desfazer);
-  });
+  $('#orc-excluir').addEventListener('click', () => pedirExclusao(o));
 }
 
 function desenharPlanilha(o) {

@@ -112,11 +112,11 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
 
   // ---------- desfazer exclusão do orçamento ----------
   await p.click('.voltar-lista'); await p.waitForSelector('.planilha');
-  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.waitForSelector('.pagina.orcamentos');
+  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.fill('#excluir-orc-conf', 'EXCLUIR'); await p.click('#excluir-orc-ok'); await p.waitForSelector('.pagina.orcamentos');
   ok(!(await p.textContent('#orc-lista, .vazio-estado')).includes('Etapa2 teste'), 'Orçamento excluído sai da lista');
   await p.click('[data-desfazer]'); await p.waitForSelector('.planilha');
   ok((await p.inputValue('#orc-nome')) === 'Etapa2 teste' && (await total()) === tAntes, 'Desfazer devolve o orçamento inteiro');
-  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.waitForSelector('.pagina.orcamentos');
+  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.fill('#excluir-orc-conf', 'EXCLUIR'); await p.click('#excluir-orc-ok'); await p.waitForSelector('.pagina.orcamentos');
   await p.evaluate(() => { try { localStorage.removeItem('infocustos-empresa'); localStorage.removeItem('infocustos-relatorio'); } catch (_) { /* ok */ } });
   ok(errs.length === 0, 'Sem erros de JavaScript ' + JSON.stringify(errs));
   await b.close();

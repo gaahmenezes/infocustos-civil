@@ -132,6 +132,19 @@
       </div>
     </form>
   </dialog>
+  <dialog id="dlg-excluir-orc" class="dialogo" aria-labelledby="excluir-orc-t" aria-describedby="excluir-orc-desc">
+    <form method="dialog" id="form-excluir-orc" autocomplete="off">
+      <h2 id="excluir-orc-t">Excluir este orçamento?</h2>
+      <div class="excluir-resumo" id="excluir-orc-desc"></div>
+      <p class="sub">Saem juntas todas as etapas e itens. Logo depois, o aviso na tela ainda permite desfazer; passado esse aviso, não há como recuperar.</p>
+      <label><span>Para confirmar, digite <b>EXCLUIR</b></span><input id="excluir-orc-conf" spellcheck="false" autocapitalize="characters" required></label>
+      <p class="erro-campo" id="excluir-orc-erro" role="alert"></p>
+      <div class="dlg-acoes">
+        <button type="button" class="botao" data-fechar>Cancelar</button>
+        <button type="submit" class="botao primario perigoso" id="excluir-orc-ok" disabled>Excluir orçamento</button>
+      </div>
+    </form>
+  </dialog>
   <dialog id="dlg-novo-orc" class="dialogo gaveta" aria-labelledby="novo-orc-t">
     <form id="form-novo" autocomplete="off">
       <header class="gaveta-cab">

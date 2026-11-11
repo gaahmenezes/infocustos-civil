@@ -100,7 +100,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   const ordem = await p.$$eval('tbody.etapa tr.item .cb-num', (c) => c.map((x) => x.textContent));
   ok(ordem.join() === '00165,00003,03310', 'Ao soltar, a ordem fica como a tela mostrava: ' + ordem.join(', '));
   ok(await p.$$eval('tbody.etapa tr', (t) => t.every((x) => !x.style.transform)), 'Depois de soltar, nenhuma linha fica deslocada');
-  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.waitForSelector('.pagina.orcamentos');
+  await p.click('.orc-barra .menu summary'); await p.click('#orc-excluir'); await p.fill('#excluir-orc-conf', 'EXCLUIR'); await p.click('#excluir-orc-ok'); await p.waitForSelector('.pagina.orcamentos');
 
   // ---------- luz e profundidade ----------
   if (await p.$('.orc-cartao')) {
