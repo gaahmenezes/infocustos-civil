@@ -73,7 +73,7 @@ class NovaEtapa(BaseModel):
 class NovoItem(BaseModel):
     etapa_id: Optional[int] = None
     tipo: Literal['servico', 'insumo']
-    base: Literal['ORSE', 'SINAPI']
+    base: Literal['ORSE', 'SINAPI', 'SICRO']
     codigo: str
     quantidade: float = Field(1.0, ge=0)
 
@@ -89,9 +89,19 @@ def ref_atual(b):
     return dict(b.execute('SELECT id, descricao FROM referencia ORDER BY id DESC LIMIT 1').fetchone())
 
 
+def mes_para_base(b, base, ref):
+    """Cada base tem o seu calendário. Se a base não tem o mês pedido, usa o mês dela mais próximo antes dele
+    (ou o primeiro que ela tiver): um orçamento de agosto com itens do SICRO usa o SICRO de julho."""
+    meses = [m for (m,) in b.execute('SELECT DISTINCT referencia FROM item_busca WHERE base = ? ORDER BY referencia', (base,))]
+    if not meses or ref in meses:
+        return ref
+    antes = [m for m in meses if m <= ref]
+    return antes[-1] if antes else meses[0]
+
+
 def preco_na_base(tipo, base, codigo, ref=None):
     with _base_conn() as b:
-        ref = ref or ref_atual(b)['id']
+        ref = mes_para_base(b, base, ref or ref_atual(b)['id'])
         if tipo == 'servico':
             r = b.execute('''SELECT s.codigo, s.descricao, s.unidade, COALESCE(c.custo_total, s.preco) AS preco
                 FROM servico s LEFT JOIN composicao c ON c.base = s.base AND c.codigo = s.codigo AND c.referencia = s.referencia

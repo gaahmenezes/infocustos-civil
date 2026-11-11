@@ -3,14 +3,15 @@
 Consulta da base de preços de obras de Sergipe (ORSE/CEHOP) e da SINAPI usada pela CEHOP:
 busca rápida, composição analítica em árvore, orçamento com BDI e curva ABC, e histórico de preços entre referências.
 
-Referências carregadas: **maio/2026** e **agosto/2026**.
+Bases carregadas (Sergipe): **ORSE** e **SINAPI** de maio/2026 e agosto/2026 (CEHOP) e **SICRO** de julho/2026 (DNIT).
+Cada base tem a sua data-base: a pesquisa procura todas juntas, cada uma no mês escolhido para ela.
 
 ## Rodar
 
 ```bash
 pip install -r requirements.txt
-gunzip -k dados/orse_sinapi_*.sqlite.gz                   # um banco por referência
-python3 extratores/juntar_referencias.py dados/orse_sinapi.sqlite dados/orse_sinapi_20*.sqlite
+gunzip -k dados/orse_sinapi_*.sqlite.gz dados/sicro_*.sqlite.gz   # um banco por base e referência
+python3 extratores/juntar_referencias.py dados/orse_sinapi.sqlite dados/orse_sinapi_20*.sqlite dados/sicro_20*.sqlite
 python3 app/build_index.py dados/orse_sinapi.sqlite          # busca + histórico de preços
 cd app
 uvicorn server:app --port 8000
@@ -27,6 +28,21 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
 | `app/` | Servidor (FastAPI + SQLite FTS5), interface (`static/`) e testes |
 | `artefato/` | Versão estática para teste no claude.ai (dados e orçamentos no navegador) |
 | `docs/` | Telas e um orçamento de exemplo exportado |
+
+## SICRO (DNIT)
+
+O DNIT publica um arquivo por estado e mês (ex.: `SE 07-2026.7z`) com as planilhas em Excel. Descompacte e rode:
+
+```bash
+python3 extratores/build_sicro.py "<pasta com os .xlsx>" dados/sicro_AAAA-MM.sqlite
+gzip -9 -k dados/sicro_AAAA-MM.sqlite                         # este .gz vai para o repositório
+python3 extratores/juntar_referencias.py dados/orse_sinapi.sqlite dados/orse_sinapi_20*.sqlite dados/sicro_20*.sqlite
+python3 app/build_index.py dados/orse_sinapi.sqlite
+```
+
+O leitor confere cada composição (soma das partes = custo do analítico = custo do sintético) e para se algo não fechar.
+Usa os preços sem desoneração, que são os das composições analíticas. O transporte (momento de transporte) não tem
+custo na tabela do DNIT: depende da distância de cada obra.
 
 ## Atualização mensal
 

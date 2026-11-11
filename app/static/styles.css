@@ -1631,3 +1631,52 @@ html.trocando-tema::view-transition-group(*):not(::view-transition-group(root)) 
 .vazio-estado svg .ac, .ap-ponto svg .ac { stroke: var(--acao); }
 .ap-ponto svg { background: var(--grafite); stroke: #F2F3F4; }
 html.trocando-tema::view-transition { pointer-events: none; }
+
+/* ---------- SICRO e data-base por base ---------- */
+:root { --sicro: #1F6A40; }
+.cb-SICRO { background: var(--sicro); color: #fff; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --sicro: #5FBF8A; } :root:not([data-theme="light"]) .cb-SICRO { color: #0B1A12; } }
+:root[data-theme="dark"] { --sicro: #5FBF8A; }
+:root[data-theme="dark"] .cb-SICRO { color: #0B1A12; }
+.sem-cod { color: var(--tinta-3); }
+.meses-rotulo .cb-base { font-size: 10.5px; padding: 2px 6px; border-radius: 4px; margin-left: 4px; vertical-align: 1px; }
+/* seletor de bases e datas-base (no topo, sobre o grafite) */
+.dt { position: relative; }
+.dt-campo { display: inline-flex; align-items: center; gap: 8px; min-height: 38px; max-width: min(46vw, 520px); padding: 4px 10px 4px 5px; border-radius: 11px;
+  border: 1px solid var(--grafite-linha); background: var(--grafite-2); color: #fff; font: inherit; cursor: pointer; transition: border-color var(--t-rapido); }
+.dt-campo:hover { border-color: #555B61; }
+.dt-campo:focus-visible { outline: none; box-shadow: var(--sombra-foco); border-color: var(--planta); }
+.dt-etqs { display: flex; gap: 5px; min-width: 0; overflow: hidden; }
+.dt-etq { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 3px; border-radius: 8px; background: rgb(255 255 255 / 0.07); font-size: 13px; font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dt-etq .cb-base { font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 5px; }
+.dt-vazio { font-size: 13px; color: var(--grafite-texto); padding: 0 6px; }
+.dt-campo .seta { width: 12px; height: 12px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; transition: transform 160ms var(--suave); }
+.dt-campo[aria-expanded="true"] .seta { transform: rotate(180deg); }
+.dt-painel { position: absolute; right: 0; top: calc(100% + 8px); z-index: 70; width: min(480px, calc(100vw - 24px)); padding: 16px 16px 14px; border-radius: 16px;
+  background: var(--superficie); color: var(--tinta); border: 1px solid var(--linha); box-shadow: var(--sombra-3, var(--sombra-2)); animation: entrar var(--t-medio) var(--suave) both; }
+.dt-painel[hidden] { display: none; }
+.dt-tit { margin: 0; font-size: 15px; font-weight: 700; }
+.dt-sub { margin: 3px 0 12px; font-size: 13px; line-height: 1.4; color: var(--tinta-2); }
+.dt-lista { display: grid; gap: 2px; border-top: 1px solid var(--linha); }
+.dt-linha { display: grid; grid-template-columns: minmax(0, 1fr) 212px; align-items: center; gap: 12px; padding: 10px 2px; border-bottom: 1px solid var(--linha); transition: opacity 140ms; }
+.dt-linha.fora .dt-mes { opacity: 0.45; }
+.dt-marca { display: flex; align-items: center; gap: 10px; min-height: 32px; cursor: pointer; }
+.dt-marca input { width: 18px; height: 18px; margin: 0; accent-color: var(--acao); flex: none; }
+.dt-marca .cb-base { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 5px; }
+.dt-orig { font-size: 12.5px; color: var(--tinta-2); }
+.dt-mes select { width: 100%; min-height: 36px; padding: 6px 30px 6px 10px; border-radius: 9px; border: 1px solid var(--linha); background-color: var(--superficie); color: var(--tinta); font: inherit; font-size: 14px; }
+.dt-mes select:disabled { cursor: not-allowed; }
+.dt-aviso { min-height: 18px; margin: 8px 0 4px; font-size: 13px; color: var(--perigo); }
+.dt-acoes { display: flex; flex-wrap: wrap; gap: 8px; }
+.dt-acoes .botao { min-height: 36px; padding: 7px 12px; font-size: 13.5px; }
+.dt-acoes .primario { margin-left: auto; padding-inline: 20px; }
+.dt-acoes .primario:disabled { opacity: 0.45; cursor: not-allowed; }
+@media (max-width: 760px) {
+  .dt-campo { max-width: 40vw; padding-right: 8px; gap: 4px; } .dt-etq:not(:first-child), .dt-m { display: none; }
+  .dt-etq { padding: 2px; background: none; }
+  .dt-etqs::after { content: attr(data-mais); font-size: 12.5px; font-weight: 700; align-self: center; }
+  .dt-painel { position: fixed; left: 12px; right: 12px; top: calc(var(--topo) + 6px); width: auto; }
+  .dt-linha { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .dt-acoes .primario { width: 100%; margin-left: 0; }
+}
+.chips .chip[hidden] { display: none; }

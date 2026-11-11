@@ -11,12 +11,14 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !m.text().includes('404') && errs.push(m.text()));
-  await p.goto(U); await p.waitForSelector('#mes-ref');
+  await p.goto(U); await p.waitForSelector('#dt-campo');
   ok(!(await p.$('#abertura')), 'Tela de abertura some quando a base carrega');
   ok(await p.$eval('.marca-simbolo .marca-degraus', (e) => !!e), 'Logotipo novo na barra');
 
   // ---------- comparar ----------
+  // duas composições da mesma base (ORSE), que têm insumos em comum para comparar
   await p.fill('#q', 'chapisco'); await p.waitForSelector('.res');
+  await p.click('.chips[data-filtro="base"] [data-v="ORSE"]'); await p.waitForFunction(() => [...document.querySelectorAll('.res .cb-base')].every((e) => e.textContent === 'ORSE'));
   await p.hover('.lista li:nth-child(1)'); await p.click('.lista li:nth-child(1) .cmp-bt');
   ok(await p.isVisible('#bandeja') && norm(await p.textContent('#bandeja')).includes('Escolha mais uma'), 'Uma composição marcada: bandeja pede mais uma');
   await p.click('.lista li:nth-child(2) .cmp-bt');

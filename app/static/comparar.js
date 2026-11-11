@@ -58,14 +58,15 @@ const difere = (vals) => { const v = vals.filter((x) => x != null); return v.len
 window.desenharComparar = async function (texto) {
   const d = $('#detalhe');
   const pedidos = texto.split(',').map((t) => { const k = t.indexOf('-'); return { base: t.slice(0, k), codigo: t.slice(k + 1) }; })
-    .filter((x) => (x.base === 'ORSE' || x.base === 'SINAPI') && /^\w+$/.test(x.codigo)).slice(0, CMP_MAX);
+    .filter((x) => BASES.includes(x.base) && /^\w+$/.test(x.codigo)).slice(0, CMP_MAX);
   if (pedidos.length < 2) {
     d.innerHTML = `<div class="pagina">${vazio('planilha', 'Escolha pelo menos duas composições', 'Na consulta, use o botão "Comparar" em cada resultado.', '<a class="botao primario" href="#/">Ir para a consulta</a>')}</div>`; return;
   }
   if (!d.querySelector('.comparar')) d.innerHTML = '<p class="carregando">Montando a comparação…</p>';
-  const res = await Promise.all(pedidos.map((x) => api(`/api/composicao/${x.base}/${x.codigo}?${qsMes()}`).then((c) => ({ c }), (e) => ({ erro: e.message, ...x }))));
+  const res = await Promise.all(pedidos.map((x) => api(`/api/composicao/${x.base}/${x.codigo}?${qsMesDe(x.base)}`).then((c) => ({ c }), (e) => ({ erro: e.message, ...x }))));
   const ok = res.filter((r) => r.c).map((r) => r.c), falhas = res.filter((r) => r.erro);
-  const mes = nomeRef(estado.mes);
+  // cada composição vem no mês da sua base
+  const mes = juntar([...new Set(ok.map((c) => `${c.base} ${nomeRef(c.referencia)}`))]);
   if (ok.length < 2) {
     d.innerHTML = `<div class="pagina">${vazio('planilha', 'Não deu para comparar', `${falhas.map((f) => `${esc(f.codigo)}/${esc(f.base)}: ${esc(f.erro)}`).join(' ')}`, '<a class="botao" href="#/">Voltar à consulta</a>')}</div>`; return;
   }
@@ -116,7 +117,7 @@ window.desenharComparar = async function (texto) {
   d.innerHTML = `<div class="pagina comparar">
     <header class="pag-cab">
       <div><a class="voltar-lista" href="#/"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Consulta</a>
-        <h1>Comparar composições</h1><p class="sub">Preços de <b>${esc(mes)}</b>, sem BDI. As diferenças aparecem em destaque.</p></div>
+        <h1>Comparar composições</h1><p class="sub">Data-base: <b>${esc(mes)}</b>, sem BDI. As diferenças aparecem em destaque.</p></div>
       <div class="segmentos" role="radiogroup" aria-label="O que mostrar" data-cmp-ver>
         <button type="button" role="radio" data-v="tudo" aria-checked="${!CMP_VER.soDif}">Todos os itens</button>
         <button type="button" role="radio" data-v="dif" aria-checked="${CMP_VER.soDif}">Só as diferenças</button></div>
@@ -130,7 +131,7 @@ window.desenharComparar = async function (texto) {
       <tbody><tr class="cmp-legenda"><th scope="row">Insumos e serviços</th>${ok.map(() => '<td class="num">coeficiente · custo (R$)</td>').join('')}</tr></tbody>
       ${corpo}
     </table></div>
-    <p class="fonte">Fonte: ORSE e SINAPI, referência ${esc(mes)}. Itens com o mesmo código ficam na mesma linha; as bases usam códigos próprios, então o mesmo material pode aparecer em linhas separadas.</p></section>
+    <p class="fonte">Fonte: ${esc(juntar([...new Set(ok.map((c) => c.base))]))}, ${esc(mes)}. Itens com o mesmo código ficam na mesma linha; as bases usam códigos próprios, então o mesmo material pode aparecer em linhas separadas.</p></section>
   </div>`;
   d.querySelector('[data-cmp-ver]').addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return; CMP_VER.soDif = b.dataset.v === 'dif'; window.desenharComparar(texto);

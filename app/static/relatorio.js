@@ -12,7 +12,17 @@ function cabecalhoFolha(emp, o) {
   return `<header class="folha-cab"><div class="folha-emp">${emp.logo ? `<img src="${emp.logo}" alt="">` : ''}<span>${esc(emp.nome || 'InfoCustos Civil')}</span></div>
     <div class="folha-orc"><b>${esc(o.nome)}</b><span>Data-base ${esc(nomeRef(o.referencia))} · BDI ${num2.format(o.bdi)}%</span></div></header>`;
 }
-const rodapeFolha = (o) => `<footer class="folha-rod"><span>Preços: ORSE e SINAPI, conforme os relatórios da CEHOP/SE, referência ${esc(nomeRef(o.referencia))}.</span><span>Emitido em ${hoje()} pelo InfoCustos Civil</span></footer>`;
+// bases usadas no orçamento e de onde vêm os preços de cada uma (o SICRO tem calendário próprio)
+const basesDoOrcamento = (o) => [...new Set(o.etapas.flatMap((e) => e.itens.map((i) => i.base)))].sort((a, b) => BASES.indexOf(a) - BASES.indexOf(b));
+function fontesDoOrcamento(o) {
+  const bases = basesDoOrcamento(o); if (!bases.length) return `Preços: referência ${nomeRef(o.referencia)}.`;
+  const partes = bases.map((b) => {
+    const meses = [...new Set(o.etapas.flatMap((e) => e.itens.filter((i) => i.base === b).map((i) => nomeRef(i.referencia || o.referencia))))];
+    return `${b} ${meses.join(', ')} (${b === 'SICRO' ? 'DNIT, Sergipe' : 'CEHOP/SE'})`;
+  });
+  return `Preços: ${juntar(partes)}.`;
+}
+const rodapeFolha = (o) => `<footer class="folha-rod"><span>${esc(fontesDoOrcamento(o))}</span><span>Emitido em ${hoje()} pelo InfoCustos Civil</span></footer>`;
 
 // faixa com a divisão do custo direto, na capa: o cliente vê de relance para onde vai o dinheiro
 function capaDivisao(o) {
@@ -34,7 +44,7 @@ function folhaCapa(emp, o) {
         ${o.cliente ? `<div><dt>Cliente</dt><dd>${esc(o.cliente)}</dd></div>` : ''}
         ${o.local ? `<div><dt>Local</dt><dd>${esc(o.local)}</dd></div>` : ''}
         <div><dt>Data-base dos preços</dt><dd>${esc(nomeRef(o.referencia))}</dd></div>
-        <div><dt>Bases de preços</dt><dd>ORSE e SINAPI</dd></div>
+        <div><dt>Bases de preços</dt><dd>${esc(juntar(basesDoOrcamento(o)) || 'ORSE e SINAPI')}</dd></div>
       </dl></div>
     ${capaDivisao(o)}
     <div class="capa-valores">

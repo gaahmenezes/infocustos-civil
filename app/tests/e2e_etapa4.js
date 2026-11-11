@@ -2,6 +2,9 @@
 // indicador das abas, esqueletos, moeda discreta e a tela de apresentação.
 // Uso: node e2e_etapa4.js [url]   (servidor em :8000 ou cópia do artefato em :8100)
 const { chromium } = require('playwright');
+
+// data-base: o seletor abre um quadro com o mês de cada base; ORSE e SINAPI mudam juntas aqui
+const mudarMes = async (p, m) => { await p.click('#dt-campo'); for (const b of ['ORSE', 'SINAPI']) await p.selectOption(`[data-dt-mes="${b}"]`, m); await p.click('[data-dt="aplicar"]'); await p.waitForTimeout(300); };
 const ok = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); if (!c) process.exitCode = 1; };
 const U = process.argv[2] || 'http://localhost:8000/';
 const art = U.includes('8100');
@@ -12,7 +15,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !m.text().includes('404') && errs.push(m.text()));
-  await p.goto(U); await p.waitForSelector('#mes-ref');
+  await p.goto(U); await p.waitForSelector('#dt-campo');
 
   // ---------- tela inicial limpa ----------
   ok(!(await p.isVisible('.area')) && !(await p.isVisible('#inicio')), 'Tela inicial: nada aparece abaixo dos cartões');
@@ -48,11 +51,11 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
     const v = new Set(); const fim = Date.now() + 2500;
     const olhar = () => { const n = document.querySelector('.preco-grande .num-grande'); if (n && n.dataset.anim) v.add(n.dataset.anim);
       if (Date.now() < fim) requestAnimationFrame(olhar); else ok2([...v]); };
-    const s = document.querySelector('#mes-ref'); s.value = '2026-05'; s.dispatchEvent(new Event('change', { bubbles: true })); olhar();
+    trocarMes('2026-05', 'ORSE'); olhar();
   }));
   const final = norm(await p.textContent('.preco-grande .num-grande'));
   ok(passos.length >= 3 && !(await p.$('.preco-grande [data-anim]')), `Ao trocar de mês, o preço conta até o valor novo (${passos.length} passos até ${final})`);
-  await p.selectOption('#mes-ref', '2026-08'); await p.waitForTimeout(700);
+  await mudarMes(p, '2026-08'); await p.waitForTimeout(700);
 
   // ---------- esqueleto no formato da ficha ----------
   const comAtraso = await ctx.newPage();

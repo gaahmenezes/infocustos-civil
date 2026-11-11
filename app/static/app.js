@@ -16,6 +16,10 @@ const SECOES = [
   ['MATERIAL', 'Material', '--c-mat'],
   ['SERVICO_TERCEIRO', 'Serviço de terceiro', '--c-terc'],
   ['SERVICO_AUXILIAR', 'Serviço auxiliar', '--c-equip'],
+  // SICRO (DNIT)
+  ['FIC', 'Fator de influência de chuvas', '--c-enc'],
+  ['TEMPO_FIXO', 'Tempo fixo (carga e descarga)', '--c-terc'],
+  ['TRANSPORTE', 'Momento de transporte', '--tinta-3'],
 ];
 const NOME_SECAO = Object.fromEntries(SECOES.map(([k, n]) => [k, n]));
 
@@ -130,50 +134,176 @@ function api(url) {
   return p;
 }
 function precarregar(tipo, base, codigo) {
-  const url = `/api/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}?${qsMes()}`;
+  const url = `/api/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}?${qsMesDe(base)}`;
   api(url).catch(() => {});
 }
 
-// ---------- mês de referência ----------
-// Cada mês é uma "aba" própria: tudo o que aparece na consulta é só daquele mês.
-try { estado.mes = localStorage.getItem('infocustos-mes') || null; } catch (_) { estado.mes = null; }
-const qsMes = () => (estado.mes ? `ref=${encodeURIComponent(estado.mes)}` : '');
+// ---------- data-base de cada base ----------
+// Cada base tem o seu calendário (ORSE e SINAPI vêm da CEHOP; o SICRO, do DNIT) e o seu mês escolhido.
+// Tudo o que aparece na consulta de uma base é só daquele mês dela.
+const BASES = ['ORSE', 'SINAPI', 'SICRO'];
+const NOME_BASE = { ORSE: 'ORSE', SINAPI: 'SINAPI', SICRO: 'SICRO' };
+const ORIGEM_BASE = { ORSE: 'CEHOP', SINAPI: 'CEHOP', SICRO: 'DNIT' };
+estado.meses = {};
+try {
+  estado.meses = JSON.parse(localStorage.getItem('infocustos-meses') || '{}') || {};
+  const antigo = localStorage.getItem('infocustos-mes');  // preferência de antes, quando havia um mês só
+  if (antigo && !estado.meses.ORSE) { estado.meses.ORSE = antigo; estado.meses.SINAPI = antigo; }
+} catch (_) { estado.meses = {}; }
+const gravarMeses = () => { try { localStorage.setItem('infocustos-meses', JSON.stringify(estado.meses)); localStorage.removeItem('infocustos-mes'); } catch (_) { /* sem armazenamento */ } };
+// base "em foco": a do filtro; com todas as bases, a ORSE (a principal)
+const baseFoco = () => (BASES.includes(estado.base) ? estado.base : 'ORSE');
+const refsQs = () => Object.entries(estado.meses).filter(([, m]) => m).map(([b, m]) => `${b}:${m}`).join(',');
+const qsMesDe = (base) => (estado.meses[base] ? `ref=${encodeURIComponent(estado.meses[base])}` : '');
+const qsMes = () => qsMesDe(baseFoco());
+const basesCarregadas = () => (estado.ref && estado.ref.bases ? Object.keys(estado.ref.bases) : ['ORSE', 'SINAPI']);
+const mesesDaBase = (b) => (estado.ref && estado.ref.bases && estado.ref.bases[b] ? estado.ref.bases[b].meses : []);
+// mês que um orçamento usa para cada base: o da data-base do orçamento, ou o mês da base mais próximo antes dele
+function mesParaBase(b, ref) {
+  const ids = mesesDaBase(b).map((m) => m.id); if (!ids.length || ids.includes(ref)) return ref;
+  const antes = ids.filter((m) => m <= ref); return antes.length ? antes[antes.length - 1] : ids[0];
+}
+const refsDoOrcamento = (o) => basesCarregadas().map((b) => `${b}:${mesParaBase(b, o.referencia)}`).join(',');
+const curto = (id) => nomeRef(id).replace(/^(\w{3})\w*\//, '$1/');
+
+// bases que entram na pesquisa (todas, por padrão); a escolha fica neste navegador
+try { estado.ativas = JSON.parse(localStorage.getItem('infocustos-bases') || 'null'); } catch (_) { estado.ativas = null; }
+const basesAtivas = () => basesCarregadas().filter((b) => !Array.isArray(estado.ativas) || !estado.ativas.length || estado.ativas.includes(b));
+const basesQs = () => basesAtivas().join(',');
 
 async function carregarReferencia() {
   let ref;
-  try { ref = await api(`/api/referencia?${qsMes()}`); }
+  try { ref = await api(`/api/referencia?${new URLSearchParams({ refs: refsQs(), bases: Array.isArray(estado.ativas) ? estado.ativas.join(',') : '' })}`); }
   catch (e) {
-    try { estado.mes = null; ref = await api('/api/referencia'); } catch (e2) { $('#referencia').textContent = 'Base indisponível'; return; }
+    try { estado.meses = {}; estado.ativas = null; ref = await api('/api/referencia'); } catch (e2) { $('#referencia').textContent = 'Base indisponível'; return; }
   }
-  estado.ref = ref; estado.mes = ref.id;
-  const n = (t, b) => (ref.totais.find((x) => x.tipo === t && x.base === b) || {}).n || 0;
-  // mais recente primeiro, que é o mês mais usado
-  const opcoes = [...ref.referencias].reverse().map((r) =>
-    `<option value="${esc(r.id)}"${r.id === ref.id ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}${r.id === ref.atual ? ' (mais recente)' : ''}</option>`).join('');
-  $('#referencia').innerHTML = `<label class="meses-rotulo" for="mes-ref">Mês de referência</label>
-    <select id="mes-ref" class="meses-lista">${opcoes}</select>
-    <span class="meses-total">${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} composições · ${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</span>`;
-  $('#pesquisa-sub').innerHTML = `Pesquise entre <b>${(n('servico', 'ORSE') + n('servico', 'SINAPI')).toLocaleString('pt-BR')} composições</b> e
-    <b>${(n('insumo', 'ORSE') + n('insumo', 'SINAPI')).toLocaleString('pt-BR')} insumos</b> da ORSE e da SINAPI, referência ${esc(ref.descricao.replace(/-1$/, ''))}.`;
-  $('#selo-base').hidden = false;
-  $('#selo-base').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>
-    <span>Preços de <b>${esc(ref.descricao.replace(/-1$/, ''))}</b> conferidos item a item com os relatórios da CEHOP</span>`;
+  estado.ref = ref; estado.meses = { ...(ref.refs || { ORSE: ref.id, SINAPI: ref.id }) }; gravarMeses();
+  estado.ativas = ref.ativas || basesCarregadas();
+  try { localStorage.setItem('infocustos-bases', JSON.stringify(estado.ativas)); } catch (_) { /* sem armazenamento */ }
+  estado.mes = estado.meses.ORSE || ref.id;
+  // filtro rápido de base: só aparecem as bases que estão na pesquisa
+  document.querySelectorAll('.chips[data-filtro="base"] .chip').forEach((c) => { if (c.dataset.v !== 'todas') c.hidden = !estado.ativas.includes(c.dataset.v); });
+  if (estado.base !== 'todas' && !estado.ativas.includes(estado.base)) definirFiltro('base', 'todas');
+  desenharDatas();
   if (!estado.q.trim()) contarFiltros(totaisDoMes());
 }
 
-async function trocarMes(id) {
-  if (id === estado.mes) return;
-  estado.mes = id;
-  try { localStorage.setItem('infocustos-mes', id); } catch (_) { /* sem armazenamento */ }
+// texto das datas: bases com o mesmo mês aparecem juntas ("ORSE e SINAPI agosto/2026 · SICRO julho/2026")
+function gruposDeData(lista = basesAtivas()) {
+  const g = [];
+  lista.forEach((b) => { const m = estado.meses[b]; const x = g.find((y) => y.mes === m); if (x) x.bases.push(b); else g.push({ mes: m, bases: [b] }); });
+  return g;
+}
+const juntar = (l) => (l.length > 1 ? `${l.slice(0, -1).join(', ')} e ${l[l.length - 1]}` : l[0] || '');
+
+// ---------- seletor de bases e datas-base ----------
+// O campo mostra uma etiqueta por base que está na pesquisa, com o mês dela. Ao abrir, cada base tem a sua caixa
+// (entra ou não na pesquisa) e o seu mês. As mudanças valem ao clicar em "Aplicar"; Esc ou clicar fora descarta.
+const RASC = { meses: {}, ativas: [] };
+function etiquetasDatas(ativas, meses) {
+  return ativas.length ? ativas.map((b) => `<span class="dt-etq"><span class="cb-base cb-${b}">${b}</span><span class="dt-m">${esc(curto(meses[b]))}</span></span>`).join('')
+    : '<span class="dt-vazio">Nenhuma base</span>';
+}
+function linhasPainel() {
+  const ref = estado.ref;
+  return basesCarregadas().map((b) => {
+    const on = RASC.ativas.includes(b);
+    const ops = [...mesesDaBase(b)].reverse().map((r) => `<option value="${esc(r.id)}"${r.id === RASC.meses[b] ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}${r.id === ref.bases[b].atual ? ' (mais recente)' : ''}</option>`).join('');
+    return `<div class="dt-linha${on ? '' : ' fora'}">
+      <label class="dt-marca"><input type="checkbox" data-dt-base="${b}"${on ? ' checked' : ''}>
+        <span class="cb-base cb-${b}">${b}</span><span class="dt-orig">${ORIGEM_BASE[b] === 'DNIT' ? 'DNIT' : 'CEHOP'} · Sergipe</span></label>
+      <label class="dt-mes"><span class="sr">Data-base do ${b}</span><select data-dt-mes="${b}"${on ? '' : ' disabled'}>${ops}</select></label></div>`;
+  }).join('');
+}
+function desenharDatas() {
+  const ref = estado.ref; if (!ref) return;
+  const n = (t, b) => (ref.totais.find((x) => x.tipo === t && x.base === b) || {}).n || 0;
+  const bases = basesAtivas();
+  const soma = (t) => bases.reduce((s, b) => s + n(t, b), 0);
+  const aberto = !!($('#dt-painel') && !$('#dt-painel').hidden);
+  $('#referencia').innerHTML = `<div class="dt">
+    <button type="button" class="dt-campo" id="dt-campo" aria-expanded="${aberto}" aria-controls="dt-painel" aria-label="Bases e datas-base da pesquisa: ${esc(bases.map((b) => `${b} ${nomeRef(estado.meses[b])}`).join(', '))}">
+      <span class="dt-etqs" data-mais="${bases.length > 1 ? ` +${bases.length - 1}` : ''}">${etiquetasDatas(bases, estado.meses)}</span>${SETA}</button>
+    <div class="dt-painel" id="dt-painel" role="dialog" aria-label="Bases e datas-base da pesquisa"${aberto ? '' : ' hidden'}></div></div>`;
+  if (aberto) abrirDatas(true);
+  $('#pesquisa-sub').innerHTML = `Pesquise entre <b>${soma('servico').toLocaleString('pt-BR')} composições</b> e
+    <b>${soma('insumo').toLocaleString('pt-BR')} insumos</b> ${esc(juntar(bases.map((b) => (b === 'SICRO' ? 'do ' : 'da ') + NOME_BASE[b])))}.`;
+  $('#selo-base').hidden = false;
+  $('#selo-base').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>
+    <span>${gruposDeData().map((x) => `${esc(juntar(x.bases))} de <b>${esc(nomeRef(x.mes))}</b>`).join(' · ')}, conferidos item a item com os relatórios ${
+      [...new Set(bases.map((b) => ORIGEM_BASE[b]))].map((o) => (o === 'DNIT' ? 'do DNIT' : 'da CEHOP')).join(' e ')}</span>`;
+}
+function desenharQuadroDatas() {
+  const p = $('#dt-painel'); if (!p) return;
+  const nenhuma = !RASC.ativas.length;
+  p.innerHTML = `<p class="dt-tit">Bases da pesquisa</p>
+    <p class="dt-sub">Marque as bases que entram na busca e escolha o mês de cada uma. Cada base tem o seu calendário.</p>
+    <div class="dt-lista">${linhasPainel()}</div>
+    <p class="dt-aviso" role="alert">${nenhuma ? 'Marque pelo menos uma base.' : ''}</p>
+    <div class="dt-acoes">
+      <button type="button" class="botao" data-dt="todas">Marcar todas</button>
+      <button type="button" class="botao" data-dt="nenhuma">Desmarcar todas</button>
+      <button type="button" class="botao" data-dt="recentes">Mais recentes</button>
+      <button type="button" class="botao primario" data-dt="aplicar"${nenhuma ? ' disabled' : ''}>Aplicar</button></div>`;
+}
+function abrirDatas(manter) {
+  const p = $('#dt-painel'); if (!p) return;
+  if (!manter) { RASC.meses = { ...estado.meses }; RASC.ativas = [...basesAtivas()]; }
+  desenharQuadroDatas(); p.hidden = false; $('#dt-campo').setAttribute('aria-expanded', 'true');
+  if (!manter) { const c = p.querySelector('input'); if (c) c.focus(); }
+}
+function fecharDatas(voltarFoco) {
+  const p = $('#dt-painel'); if (!p || p.hidden) return;
+  p.hidden = true; $('#dt-campo').setAttribute('aria-expanded', 'false'); if (voltarFoco) $('#dt-campo').focus();
+}
+async function aplicarDatas() {
+  if (!RASC.ativas.length) return;
+  const mudou = JSON.stringify(RASC.meses) !== JSON.stringify(estado.meses) || RASC.ativas.join() !== basesAtivas().join();
+  fecharDatas(true);
+  if (!mudou) return;
+  estado.meses = { ...RASC.meses }; estado.ativas = [...RASC.ativas]; gravarMeses();
   await carregarReferencia();
   buscar(); rota();
-  avisar && avisar(`Mostrando os preços de ${esc(nomeRef(id))}.`);
+  avisar && avisar(`Pesquisando em ${esc(gruposDeData().map((x) => `${juntar(x.bases)} de ${nomeRef(x.mes)}`).join(' · '))}.`);
+}
+async function trocarMes(id, base) {
+  // atalhos ("Ver em <mês>", paleta): troca o mês de uma base e a inclui na pesquisa
+  const b = base || 'ORSE';
+  if (!id || (id === estado.meses[b] && basesAtivas().includes(b))) return;
+  estado.meses[b] = id; if (Array.isArray(estado.ativas) && !estado.ativas.includes(b)) estado.ativas.push(b);
+  gravarMeses();
+  await carregarReferencia();
+  buscar(); rota();
+  avisar && avisar(`${esc(b)}: mostrando os preços de ${esc(nomeRef(id))}.`);
 }
 document.addEventListener('click', (e) => {
-  const b = e.target.closest('[data-mes]'); if (b) trocarMes(b.dataset.mes);  // botões "Ver em <mês>"
+  const b = e.target.closest('[data-mes]'); if (b) { trocarMes(b.dataset.mes, b.dataset.baseMes); return; }  // botões "Ver em <mês>"
+  if (e.target.closest('#dt-campo')) { if ($('#dt-painel').hidden) abrirDatas(); else fecharDatas(); return; }
+  const a = e.target.closest('[data-dt]');
+  if (a) {
+    const k = a.dataset.dt;
+    if (k === 'todas') RASC.ativas = [...basesCarregadas()];
+    if (k === 'nenhuma') RASC.ativas = [];
+    if (k === 'recentes') basesCarregadas().forEach((x) => { RASC.meses[x] = estado.ref.bases[x].atual; });
+    if (k === 'aplicar') { aplicarDatas(); return; }
+    desenharQuadroDatas(); const f = $(`#dt-painel [data-dt="${k}"]`); if (f) f.focus(); return;
+  }
+  const p = $('#dt-painel');
+  if (p && !p.hidden && !e.target.closest('.dt')) fecharDatas();
 });
 document.addEventListener('change', (e) => {
-  if (e.target.id === 'mes-ref') trocarMes(e.target.value);
+  const t = e.target;
+  if (t.dataset && t.dataset.dtBase) {
+    const b = t.dataset.dtBase;
+    RASC.ativas = basesCarregadas().filter((x) => (x === b ? t.checked : RASC.ativas.includes(x)));
+    desenharQuadroDatas(); const f = $(`#dt-painel [data-dt-base="${b}"]`); if (f) f.focus();
+  }
+  if (t.dataset && t.dataset.dtMes) RASC.meses[t.dataset.dtMes] = t.value;
+});
+document.addEventListener('keydown', (e) => {
+  const p = $('#dt-painel');
+  if (e.key === 'Escape' && p && !p.hidden) { e.preventDefault(); fecharDatas(true); }
+  if (e.key === 'Enter' && p && !p.hidden && e.target.closest('#dt-painel') && e.target.tagName !== 'BUTTON') { e.preventDefault(); aplicarDatas(); }
 });
 
 // ---------- referências e histórico ----------
@@ -285,10 +415,10 @@ function contarFiltros(grade) {
   const doTipo = (x) => estado.tipo === 'todos' || x.tipo === estado.tipo;
   const n = {
     tipo: { todos: soma(daBase), servico: soma((x) => daBase(x) && x.tipo === 'servico'), insumo: soma((x) => daBase(x) && x.tipo === 'insumo') },
-    base: { todas: soma(doTipo), ORSE: soma((x) => doTipo(x) && x.base === 'ORSE'), SINAPI: soma((x) => doTipo(x) && x.base === 'SINAPI') },
+    base: { todas: soma(doTipo), ...Object.fromEntries(BASES.map((b) => [b, soma((x) => doTipo(x) && x.base === b)])) },
   };
   document.querySelectorAll('.chips').forEach((grupo) => grupo.querySelectorAll('.chip').forEach((c) => {
-    const v = n[grupo.dataset.filtro][c.dataset.v];
+    const v = n[grupo.dataset.filtro][c.dataset.v] || 0;
     c.querySelector('.n').textContent = grade ? v.toLocaleString('pt-BR') : '';
     c.classList.toggle('zero', !!grade && v === 0);
   }));
@@ -306,7 +436,7 @@ const PAGINA = 100;
 async function buscar() {
   const q = estado.q.trim();
   aplicarEstado();
-  $('#exportar-busca').href = `/api/exportar/busca.xlsx?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, ref: estado.mes || '' })}`;
+  $('#exportar-busca').href = `/api/exportar/busca.xlsx?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, refs: refsQs(), bases: basesQs() })}`;
   if (!q && !estado.explorar) {
     // nada digitado: nenhuma composição aparece
     ++seq; estado.itens = []; $('#lista').innerHTML = ''; $('#contagem').textContent = '';
@@ -319,7 +449,7 @@ async function buscar() {
   clearTimeout(tAguardo); tAguardo = setTimeout(() => lista.classList.add('aguardando'), 160);
   try {
     // sem texto (ver toda a base): a tabela do mês em ordem de código
-    const r = await api(`/api/busca?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, limite: q ? 80 : PAGINA, ref: estado.mes || '', ordem: q ? 'usos' : 'codigo' })}`);
+    const r = await api(`/api/busca?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, limite: q ? 80 : PAGINA, refs: refsQs(), bases: basesQs(), ordem: q ? 'usos' : 'codigo' })}`);
     if (meu !== seq) return;
     estado.itens = r.itens;
     // sem texto, os números dos filtros são o tamanho da base do mês
@@ -405,7 +535,7 @@ async function mostrarMais(bt) {
   const meu = seq, desde = estado.itens.length;
   bt.disabled = true; bt.textContent = 'Carregando…';
   try {
-    const r = await api(`/api/busca?${new URLSearchParams({ q: '', base: estado.base, tipo: estado.tipo, limite: PAGINA, desde, ref: estado.mes || '', ordem: 'codigo' })}`);
+    const r = await api(`/api/busca?${new URLSearchParams({ q: '', base: estado.base, tipo: estado.tipo, limite: PAGINA, desde, refs: refsQs(), bases: basesQs(), ordem: 'codigo' })}`);
     if (meu !== seq) return;
     estado.itens = estado.itens.concat(r.itens);
     bt.closest('li').outerHTML = linhasLista(r.itens, desde) + maisLista(r);
@@ -456,7 +586,7 @@ async function rota() {
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
   if (emVar) { desenharComparativo(); return; }
   if (emEnc) { desenharEncargos(); return; }
-  const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI)\/(\w+)/);
+  const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI|SICRO)\/(\w+)/);
   if (!m) {
     estado.atual = null;
     document.body.classList.remove('ver-detalhe');
@@ -472,7 +602,7 @@ async function rota() {
   const d = $('#detalhe');
   const semEsqueleto = comEsqueleto(d, esqueletoFicha());
   try {
-    const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qsMes()}`) : await api(`/api/insumo/${base}/${codigo}?${qsMes()}`);
+    const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qsMesDe(base)}`) : await api(`/api/insumo/${base}/${codigo}?${qsMesDe(base)}`);
     semEsqueleto();
     // o código e o preço viajam do resultado clicado até o lugar deles na ficha (ou de uma ficha para a outra)
     const origem = window.innerWidth > 900 && !d.querySelector('.ficha:not(.esq-ficha)') && document.querySelector('.res[aria-current="true"]');
@@ -489,9 +619,9 @@ async function rota() {
     if (window.innerWidth <= 900 || d.getBoundingClientRect().top < 70) window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' });
   } catch (e) {
     semEsqueleto();
-    const outros = ((estado.ref && estado.ref.referencias) || []).filter((r) => r.id !== estado.mes);
+    const outros = mesesDaBase(base).filter((r) => r.id !== estado.meses[base]);
     d.innerHTML = `${botaoVoltar()}<div class="erro"><b>Não foi possível abrir ${esc(codigo)}/${esc(base)}.</b><br>${esc(e.message)}
-      ${outros.length ? `<div class="acoes" style="margin-top:12px">${outros.map((r) => `<button type="button" class="botao" data-mes="${esc(r.id)}">Ver em ${esc(r.descricao.replace(/-1$/, ''))}</button>`).join('')}</div>` : ''}</div>`;
+      ${outros.length ? `<div class="acoes" style="margin-top:12px">${outros.map((r) => `<button type="button" class="botao" data-mes="${esc(r.id)}" data-base-mes="${esc(base)}">Ver em ${esc(r.descricao.replace(/-1$/, ''))}</button>`).join('')}</div>` : ''}</div>`;
   }
 }
 
@@ -539,7 +669,7 @@ function linhaItem(i, total, nivel = 0, cor = '--tinta-2') {
     : '';
   const cls = nivel ? `filho" style="--nivel:${nivel}` : '';
   return `<tr class="${cls}">
-    <td class="cod">${exp}${codLink(i.eh_servico ? 'servico' : 'insumo', i.base, i.codigo)}</td>
+    <td class="cod">${exp}${i.codigo ? codLink(i.eh_servico ? 'servico' : 'insumo', i.base, i.codigo) : '<span class="sem-cod" aria-label="sem código">—</span>'}</td>
     <td class="desc">${esc(i.descricao)}</td>
     <td class="col-unit">${esc(i.unidade)}</td>
     <td class="num col-coef">${coef(i.qtd)}</td>
@@ -566,12 +696,12 @@ function desenharComposicao(c) {
   const corpo = grupos.map(([k, nome, cor, itens]) => {
     const soma = itens.reduce((s, i) => s + (i.custo_total || 0), 0);
     const nota = k === 'MAO_DE_OBRA' && c.encargo_social ? `<span class="nota">com encargo social de ${num2.format(c.encargo_social)}%</span>` : '';
-    const notaDnit = dnit && (k === 'EQUIPAMENTO' || k === 'MAO_DE_OBRA') ? `<span class="nota">custo horário da equipe</span>` : '';
+    const notaDnit = dnit && (k === 'EQUIPAMENTO' || k === 'MAO_DE_OBRA') ? `<span class="nota">custo horário da equipe</span>` : k === 'TRANSPORTE' ? '<span class="nota">custo conforme a distância da obra</span>' : '';
     return `<tbody data-secao="${k}">
       <tr class="secao"><td colspan="7"><button type="button" class="secao-bt" aria-expanded="true" style="--cor:var(${cor})">
         <span class="tri"></span><span class="ponto"></span>${nome} <span class="nota">${itens.length} ${itens.length === 1 ? 'item' : 'itens'}</span>${nota}${notaDnit}
         <span class="soma">${brl.format(soma)}</span></button></td></tr>
-      ${itens.map((i) => linhaItem(i, dnit && k !== 'SERVICO_AUXILIAR' ? 0 : total, 0, cor)).join('')}
+      ${itens.map((i) => linhaItem(i, dnit && (k === 'EQUIPAMENTO' || k === 'MAO_DE_OBRA') ? 0 : total, 0, cor)).join('')}
     </tbody>`;
   }).join('');
   const ref = estado.ref ? estado.ref.descricao.replace('-1', '') : '';
@@ -599,7 +729,8 @@ function desenharComposicao(c) {
       ${corpo}
     </table>
     ${dnit ? '<p class="fonte">No modelo DNIT, equipamentos e mão de obra formam o custo horário da equipe, que é dividido pela produção da equipe. Serviços auxiliares entram por unidade.</p>' : ''}
-    <p class="fonte">Fonte: ${esc(c.base)}, referência ${esc(ref)}. Valores em R$, sem BDI.</p>
+    ${c.base === 'SICRO' ? `<p class="fonte">SICRO: o FIC (fator de influência de chuvas) incide sobre o custo de execução. O momento de transporte não tem custo na tabela do DNIT: depende da distância de cada obra, definida no projeto. Preços sem desoneração.</p>` : ''}
+    <p class="fonte">Fonte: ${esc(c.base)}${c.base === 'SICRO' ? ' (DNIT), Sergipe' : ''}, referência ${esc(nomeRef(c.referencia) || ref)}. Valores em R$, sem BDI.</p>
   </article>`;
   if (dnit) ajustarDnit(c);
   contarPreco(`c|${c.base}|${c.codigo}`, total);
@@ -634,7 +765,7 @@ async function expandir(bt) {
   }
   bt.disabled = true;
   try {
-    const sub = await api(`/api/composicao/${bt.dataset.base}/${bt.dataset.cod}?ref=${encodeURIComponent((estado.comp && estado.comp.referencia) || estado.mes || '')}`);
+    const sub = await api(`/api/composicao/${bt.dataset.base}/${bt.dataset.cod}?ref=${encodeURIComponent((estado.comp && estado.comp.referencia) || estado.meses[bt.dataset.base] || '')}`);
     const nivel = Number(bt.dataset.nivel);
     const cab = `<tr class="filho" style="--nivel:${nivel}"><td class="cod"></td><td class="desc" colspan="6"><span class="rotulo-sub">Composição de ${esc(sub.codigo)}/${esc(sub.base)}, por ${esc(sub.unidade)}: ${brl.format(sub.custo_total)}</span></td></tr>`;
     tr.insertAdjacentHTML('afterend', cab + sub.itens.map((i) => linhaItem(i, sub.custo_total, nivel)).join(''));
@@ -762,17 +893,22 @@ carregarReferencia().then(() => { buscar(); rota(); focoInicial(); }).finally(()
 const CMP = { de: null, para: null, tipo: 'servico', base: 'todas', sentido: 'alta', q: '' };
 let tCmp = 0;
 const bloco = (rotulo, valor, nota, cor) => `<div class="bloco"${cor ? ` style="--cor:var(${cor})"` : ''}><span class="bloco-rotulo">${rotulo}</span><b>${valor}</b>${nota ? `<span class="bloco-nota">${nota}</span>` : ''}</div>`;
+document.addEventListener('click', (e) => { if (e.target.closest('[data-cmp-base-todas]')) { CMP.base = 'todas'; CMP.de = null; CMP.para = null; desenharComparativo(); } });
 async function desenharComparativo() {
   const d = $('#detalhe');
-  const meses = (estado.ref && estado.ref.referencias) || [];
-  if (meses.length < 2) {
-    d.innerHTML = `<div class="pagina">${vazio('calendario', 'Só há um mês carregado', 'Quando outro mês de referência for carregado, esta aba compara os preços entre eles.')}</div>`; return;
-  }
-  CMP.de = CMP.de || meses[meses.length - 2].id; CMP.para = CMP.para || meses[meses.length - 1].id;
+  // o servidor escolhe o par de meses (os dois últimos de uma mesma base) e diz quais meses a base filtrada tem
   const semEsq = d.querySelector('.comparativo') ? () => {} : comEsqueleto(d, `<div class="pagina"><section class="ficha">${esqueletoTabela(12)}</section></div>`);
   let r;
-  try { r = await api(`/api/comparativo?${new URLSearchParams({ ...CMP, limite: 150 })}`); semEsq(); }
+  const pedido = Object.fromEntries(Object.entries({ ...CMP, limite: 150 }).filter(([, v]) => v !== null && v !== undefined));
+  try { r = await api(`/api/comparativo?${new URLSearchParams(pedido)}`); semEsq(); }
   catch (e) { semEsq(); d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  const meses = r.referencias || [];
+  if (!r.de) {
+    const qual = CMP.base !== 'todas' ? `O ${CMP.base} tem` : 'Há';
+    d.innerHTML = `<div class="pagina comparativo">${vazio('calendario', `${qual} só um mês carregado`, 'Quando outro mês desta base for carregado, esta aba compara os preços entre eles.',
+      CMP.base !== 'todas' ? '<button type="button" class="botao" data-cmp-base-todas>Ver todas as bases</button>' : '')}</div>`; return;
+  }
+  CMP.de = r.de.id; CMP.para = r.para.id;
   const rs = r.resumo, de = nomeRef(r.de.id), para = nomeRef(r.para.id);
   const parte = (n) => pct.format(rs.comparados ? (n || 0) / rs.comparados : 0);
   const seg = (campo, opcoes) => `<div class="segmentos" role="radiogroup" data-cmp="${campo}">${opcoes.map(([v, n]) =>
@@ -797,7 +933,7 @@ async function desenharComparativo() {
       ${bloco(`Só em ${esc(para)}`, (rs.novos || 0).toLocaleString('pt-BR'), `${(rs.retirados || 0).toLocaleString('pt-BR')} só em ${esc(de)}`, '--acao')}
     </div>
     <section class="ficha">
-      <div class="var-filtros">${seg('tipo', [['servico', 'Composições'], ['insumo', 'Insumos']])}${seg('base', [['todas', 'Todas as bases'], ['ORSE', 'ORSE'], ['SINAPI', 'SINAPI']])}${seg('sentido', [['alta', 'Maiores altas'], ['baixa', 'Maiores quedas']])}
+      <div class="var-filtros">${seg('tipo', [['servico', 'Composições'], ['insumo', 'Insumos']])}${seg('base', [['todas', 'Todas as bases'], ...basesCarregadas().map((b) => [b, b])])}${seg('sentido', [['alta', 'Maiores altas'], ['baixa', 'Maiores quedas']])}
         <input id="cmp-q" class="cmp-q" type="search" placeholder="Filtrar por descrição ou código" value="${esc(CMP.q)}" aria-label="Filtrar itens do comparativo"></div>
       <div id="cmp-item"></div>
       ${linhas ? `<div class="tabela-rola"><table class="planilha"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">${esc(de)}</th><th class="num">${esc(para)}</th><th class="num">Variação</th></tr></thead>
@@ -807,7 +943,9 @@ async function desenharComparativo() {
     </section>
   </div>`;
   d.querySelectorAll('[data-cmp]').forEach((g) => g.addEventListener('click', (e) => {
-    const b = e.target.closest('button'); if (!b) return; CMP[g.dataset.cmp] = b.dataset.v; desenharComparativo();
+    const b = e.target.closest('button'); if (!b) return; CMP[g.dataset.cmp] = b.dataset.v;
+    if (g.dataset.cmp === 'base') { CMP.de = null; CMP.para = null; }  // cada base tem os seus meses: o servidor escolhe o par dela
+    desenharComparativo();
   }));
   $('#cmp-de').addEventListener('change', (e) => { CMP.de = e.target.value; desenharComparativo(); });
   $('#cmp-para').addEventListener('change', (e) => { CMP.para = e.target.value; desenharComparativo(); });
@@ -835,7 +973,7 @@ async function historicoDoItem(tipo, base, codigo) {
 async function desenharEncargos() {
   const d = $('#detalhe');
   let r;
-  try { r = await api(`/api/encargos?${qsMes()}`); } catch (e) { d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  try { r = await api(`/api/encargos?${qsMesDe('ORSE')}`); } catch (e) { d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
   const mesNome = nomeRef(r.referencia.id);
   const quadro = (tipo, titulo, nota) => {
     const e = r[tipo];

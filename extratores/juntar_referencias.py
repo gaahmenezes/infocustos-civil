@@ -1,6 +1,6 @@
 """Junta os bancos mensais (orse_sinapi_AAAA-MM.sqlite) num banco único com todas as referências.
 
-Uso: python3 juntar_referencias.py dados/orse_sinapi.sqlite dados/orse_sinapi_2026-05.sqlite dados/orse_sinapi_2026-08.sqlite ...
+Uso: python3 juntar_referencias.py dados/orse_sinapi.sqlite dados/orse_sinapi_2026-05.sqlite dados/sicro_2026-07.sqlite ...
 
 Cada tabela já traz a coluna `referencia`, então as linhas de meses diferentes convivem sem conflito.
 Depois rode app/build_index.py no banco único para recriar o índice de busca e o histórico.
@@ -31,12 +31,20 @@ primeiro.close()
 for caminho in origens:
     con.execute('ATTACH DATABASE ? AS o', (caminho,))
     ref = con.execute('SELECT id, descricao FROM o.referencia').fetchone()
-    if con.execute('SELECT 1 FROM referencia WHERE id = ?', (ref[0],)).fetchone():
-        raise SystemExit(f'A referência {ref[0]} aparece em mais de um arquivo.')
     tem = {t for (t,) in con.execute("SELECT name FROM o.sqlite_master WHERE type = 'table'")}
+    # o mesmo mês pode vir em arquivos diferentes (ORSE/SINAPI num, SICRO noutro), desde que cada base apareça uma vez
+    bases = {b for (b,) in con.execute('SELECT DISTINCT base FROM o.servico UNION SELECT DISTINCT base FROM o.insumo')}
+    repetidas = {b for (b,) in con.execute('SELECT DISTINCT base FROM servico WHERE referencia = ? UNION SELECT DISTINCT base FROM insumo WHERE referencia = ?', (ref[0], ref[0]))} & bases
+    if repetidas:
+        raise SystemExit(f'A referência {ref[0]} da base {", ".join(sorted(repetidas))} aparece em mais de um arquivo.')
     cols_ref = [c[1] for c in con.execute('PRAGMA o.table_info(referencia)')]
     cols = [c for c in REF_COLUNAS if c in cols_ref]
-    con.execute(f"INSERT INTO referencia ({', '.join(cols)}) SELECT {', '.join(cols)} FROM o.referencia")
+    if con.execute('SELECT 1 FROM referencia WHERE id = ?', (ref[0],)).fetchone():
+        # mês já existe: completa só os encargos que faltarem
+        for c in cols[2:]:
+            con.execute(f'UPDATE referencia SET {c} = COALESCE({c}, (SELECT {c} FROM o.referencia)) WHERE id = ?', (ref[0],))
+    else:
+        con.execute(f"INSERT INTO referencia ({', '.join(cols)}) SELECT {', '.join(cols)} FROM o.referencia")
     for t in TABELAS[1:]:
         if t in tem:
             con.execute(f'INSERT INTO {t} SELECT * FROM o.{t}')

@@ -25,8 +25,9 @@
   const aviso = setTimeout(() => { $('#acordando').hidden = false; }, 2500);
   fetch('/api/entrada').then((r) => r.json()).then((d) => {
     clearTimeout(aviso); $('#acordando').hidden = true;
+    d.nbases = (d.bases || []).length;
     document.querySelectorAll('[data-n]').forEach((el) => contar(el, d[el.dataset.n] || 0));
-    $('#rot-mes').textContent = d.meses === 1 ? `mês de referência (${d.mes})` : `meses de referência, até ${d.mes}`;
+    if (d.bases && d.bases.length) $('#rot-mes').textContent = `bases de preços: ${d.bases.join(', ')}`;
   }).catch(() => { clearTimeout(aviso); });
 
   $('#olho').addEventListener('click', (e) => {

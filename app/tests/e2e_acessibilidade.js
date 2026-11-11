@@ -11,7 +11,7 @@ const detalhe = process.argv.includes('--detalhe');
   for (const tema of ['light', 'dark']) {
     const p = await b.newPage({ viewport: { width: 1366, height: 900 }, colorScheme: tema });
     const telas = [
-      ['início', async () => { await p.goto(U); await p.waitForSelector('#mes-ref'); await p.waitForTimeout(400); }],
+      ['início', async () => { await p.goto(U); await p.waitForSelector('#dt-campo'); await p.waitForTimeout(400); }],
       ['busca + composição', async () => { await p.fill('#q', 'chapisco'); await p.waitForSelector('.res'); await p.click('.res'); await p.waitForSelector('.arvore'); await p.waitForTimeout(400); }],
       ['insumo', async () => { await p.goto(U + '#/insumo/SINAPI/01379'); await p.waitForSelector('.uso'); await p.waitForTimeout(300); }],
       ['comparar', async () => { await p.goto(U + '#/comparar/ORSE-03310,ORSE-03311'); await p.waitForSelector('.cmp-tabela'); await p.waitForTimeout(300); }],

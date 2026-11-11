@@ -29,7 +29,8 @@ from openpyxl.utils import get_column_letter
 
 AQUI = Path(__file__).parent
 DB = os.environ.get('ORSE_DB', str(AQUI.parent / 'dados' / 'orse_sinapi.sqlite'))
-BASES = {'ORSE', 'SINAPI'}
+BASES = {'ORSE', 'SINAPI', 'SICRO'}
+ORDEM_BASES = ['ORSE', 'SINAPI', 'SICRO']
 SECOES = {
     'MAO_DE_OBRA': 'Mão de obra', 'MATERIAL': 'Material', 'EQUIPAMENTO': 'Equipamento',
     'SERVICO_TERCEIRO': 'Serviço de terceiro', 'SERVICO_AUXILIAR': 'Serviço auxiliar',
@@ -95,9 +96,11 @@ def tela_entrar(request: Request):
 def api_entrada():
     """Números da base para a tela de entrada (só contagens do mês mais recente)."""
     with conn() as c:
-        r = referencia_atual(c)
-        tot = dict(c.execute('SELECT tipo, COUNT(*) FROM item_busca WHERE referencia = ? GROUP BY 1', (r['id'],)).fetchall())
-        return {'mes': nome_mes(r), 'composicoes': tot.get('servico', 0), 'insumos': tot.get('insumo', 0), 'meses': len(referencias(c))}
+        escolha = ler_refs(c)  # cada base no seu mês mais recente
+        cond, args = filtro_meses(escolha)
+        tot = dict(c.execute(f'SELECT tipo, COUNT(*) FROM item_busca i WHERE {cond} GROUP BY 1', args).fetchall())
+        return {'mes': nome_mes(referencia_atual(c)), 'composicoes': tot.get('servico', 0), 'insumos': tot.get('insumo', 0),
+                'meses': len(referencias(c)), 'bases': [b for b in ORDEM_BASES if b in escolha]}
 
 
 @app.post('/api/entrar')
@@ -160,6 +163,55 @@ def nome_mes(r):
     return r['descricao'].removesuffix('-1')
 
 
+# ---------- cada base tem os seus meses (ORSE e SINAPI vêm juntas da CEHOP; o SICRO vem do DNIT, noutro calendário) ----------
+_MESES_BASE = {}
+
+
+def meses_da_base(c):
+    """{base: [meses em ordem]} — o banco é só leitura, então basta ler uma vez."""
+    if not _MESES_BASE:
+        for b, ref in c.execute('SELECT DISTINCT base, referencia FROM item_busca ORDER BY referencia'):
+            _MESES_BASE.setdefault(b, []).append(ref)
+    return _MESES_BASE
+
+
+def mes_da_base(c, base, ref: Optional[str]):
+    """Mês pedido para uma base; sem mês, o mais recente dela. Mês que a base não tem é erro (com os meses que ela tem)."""
+    meses = meses_da_base(c).get(base, [])
+    if not meses:
+        raise HTTPException(404, f'A base {base} não está carregada.')
+    alvo = ref or meses[-1]
+    if alvo not in meses:
+        nomes = {r['id']: nome_mes(r) for r in referencias(c)}
+        raise HTTPException(404, f'A base {base} não tem o mês {nomes.get(alvo, alvo)}. Meses do {base}: ' + ', '.join(nomes.get(m, m) for m in meses) + '.')
+    return next(r for r in referencias(c) if r['id'] == alvo)
+
+
+def ler_refs(c, refs: str = '', ref: Optional[str] = None, bases: str = ''):
+    """Mês de cada base. `refs` = "ORSE:2026-08,SICRO:2026-07"; base sem mês indicado usa `ref` (se ela o tiver) ou o mais recente dela.
+    `bases` = "ORSE,SICRO" limita às bases escolhidas para a pesquisa (vazio: todas)."""
+    pedido = dict(x.split(':', 1) for x in (refs or '').split(',') if ':' in x)
+    todos = {m for v in meses_da_base(c).values() for m in v}
+    for m in [ref, *pedido.values()]:
+        if m and m not in todos:
+            mes(c, m)  # erro com a lista dos meses carregados
+    so = {x.strip().upper() for x in (bases or '').split(',') if x.strip()} & set(meses_da_base(c))
+    escolha = {}
+    for b, meses in meses_da_base(c).items():
+        if so and b not in so:
+            continue
+        m = pedido.get(b)
+        escolha[b] = m if m in meses else ref if ref in meses else meses[-1]
+    return escolha
+
+
+def filtro_meses(escolha, base='todas', alias='i'):
+    """Condição SQL: cada base no seu mês (ou só a base filtrada)."""
+    bases = [base.upper()] if base.upper() in escolha else list(escolha)
+    cond = ' OR '.join(f'({alias}.base = ? AND {alias}.referencia = ?)' for _ in bases)
+    return f'({cond})', [v for b in bases for v in (b, escolha[b])]
+
+
 def checar_base(base):
     base = base.upper()
     if base not in BASES:
@@ -194,32 +246,41 @@ def montar_fts(q):
 
 # ---------- consulta (um mês) ----------
 @app.get('/api/referencia')
-def api_referencia(ref: Optional[str] = None):
+def api_referencia(ref: Optional[str] = None, refs: str = '', bases: str = ''):
+    """Meses de cada base e o tamanho de cada uma no mês escolhido. `ref` (mês principal: ORSE/SINAPI) segue valendo."""
     with conn() as c:
-        r = mes(c, ref)
-        tot = c.execute('SELECT tipo, base, COUNT(*) n FROM item_busca WHERE referencia = ? GROUP BY 1, 2', (r['id'],)).fetchall()
+        todas_bases = ler_refs(c, refs, ref)
+        escolha = ler_refs(c, refs, ref, bases)
+        principal = todas_bases.get('ORSE') or next(iter(todas_bases.values()))
+        r = mes(c, principal)
+        cond, args = filtro_meses(escolha)
+        tot = c.execute(f'SELECT tipo, base, COUNT(*) n FROM item_busca i WHERE {cond} GROUP BY 1, 2', args).fetchall()
         tem_enc = {row[0] for row in c.execute('SELECT DISTINCT tipo FROM encargo WHERE referencia = ?', (r['id'],))}
-        return r | {'totais': [dict(t) for t in tot], 'referencias': referencias(c), 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
-                    'encargos_detalhados': sorted(tem_enc)}
+        todas = referencias(c)
+        bases = {b: {'meses': [x for x in todas if x['id'] in meses], 'atual': meses[-1]}
+                 for b, meses in sorted(meses_da_base(c).items(), key=lambda kv: ORDEM_BASES.index(kv[0]) if kv[0] in ORDEM_BASES else 99)}
+        return r | {'totais': [dict(t) for t in tot], 'referencias': todas, 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
+                    'encargos_detalhados': sorted(tem_enc), 'bases': bases, 'refs': todas_bases, 'ativas': list(escolha)}
 
 
 @app.get('/api/busca')
 def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int = Query(60, le=500), ref: Optional[str] = None,
-              desde: int = Query(0, ge=0), ordem: str = 'usos'):
-    """Sem texto lista a base inteira do mês: `ordem=codigo` na ordem da tabela, `desde` para as páginas seguintes."""
+              desde: int = Query(0, ge=0), ordem: str = 'usos', refs: str = '', bases: str = ''):
+    """Cada base é procurada no seu mês (`refs`). Sem texto lista a base inteira: `ordem=codigo` na ordem da tabela, `desde` para as páginas seguintes."""
     with conn() as c:
-        r = mes(c, ref)
-        filtros, args = ['i.referencia = ?'], [r['id']]
-        if base.upper() in BASES:
-            filtros.append('i.base = ?'); args.append(base.upper())
+        escolha = ler_refs(c, refs, ref, bases)
+        r = mes(c, escolha.get(base.upper()) or escolha.get('ORSE') or next(iter(escolha.values())))
+        cond_todas, args_todas = filtro_meses(escolha)          # para os números dos filtros (todas as bases)
+        cond, args0 = filtro_meses(escolha, base)
+        filtros, args = [cond], list(args0)
         if tipo in ('servico', 'insumo'):
             filtros.append('i.tipo = ?'); args.append(tipo)
         q = q.strip()
         grade = []  # contagem por tipo × base para o termo, sem os filtros de tipo/base (para os números dos filtros)
         if re.fullmatch(r'\d{1,7}', q):
             cond = '(i.codigo = ? OR ltrim(i.codigo, "0") = ltrim(?, "0") OR i.codigo LIKE ?)'
-            grade = c.execute(f'SELECT i.tipo, i.base, COUNT(*) n FROM item_busca i WHERE i.referencia = ? AND {cond} GROUP BY 1, 2',
-                              [r['id'], q, q, q + '%']).fetchall()
+            grade = c.execute(f'SELECT i.tipo, i.base, COUNT(*) n FROM item_busca i WHERE {cond_todas} AND {cond} GROUP BY 1, 2',
+                              args_todas + [q, q, q + '%']).fetchall()
             w = ' AND '.join(filtros + [cond])
             rows = c.execute(f'''SELECT i.*, NULL AS trecho FROM item_busca i WHERE {w}
                 ORDER BY (ltrim(i.codigo,'0') = ltrim(?,'0')) DESC, i.tipo DESC, i.codigo LIMIT ?''',
@@ -229,8 +290,8 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
             fts = montar_fts(q)
             if not fts:
                 return {'total': 0, 'itens': [], 'referencia': r['id']}
-            grade = c.execute('''SELECT i.tipo, i.base, COUNT(*) n FROM busca CROSS JOIN item_busca i ON i.id = busca.rowid
-                WHERE busca MATCH ? AND i.referencia = ? GROUP BY 1, 2''', [fts, r['id']]).fetchall()
+            grade = c.execute(f'''SELECT i.tipo, i.base, COUNT(*) n FROM busca CROSS JOIN item_busca i ON i.id = busca.rowid
+                WHERE busca MATCH ? AND {cond_todas} GROUP BY 1, 2''', [fts] + args_todas).fetchall()
             w = ' AND '.join(['busca MATCH ?'] + filtros)
             base_sql = f'FROM busca CROSS JOIN item_busca i ON i.id = busca.rowid WHERE {w}'
             total = c.execute(f'SELECT COUNT(*) {base_sql}', [fts] + args).fetchone()[0]
@@ -243,7 +304,7 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
             ordenar = 'i.base, i.tipo DESC, i.codigo' if ordem == 'codigo' else 'i.usos DESC'
             rows = c.execute(f'SELECT i.*, NULL AS trecho FROM item_busca i {w} ORDER BY {ordenar} LIMIT ? OFFSET ?',
                              args + [limite, desde]).fetchall()
-        return {'total': total, 'referencia': r['id'], 'grade': [dict(g) for g in grade],
+        return {'total': total, 'referencia': r['id'], 'refs': escolha, 'grade': [dict(g) for g in grade],
                 'itens': [{k: x[k] for k in x.keys() if k != 'rel'} for x in rows]}
 
 
@@ -266,7 +327,7 @@ def ler_composicao(c, base, codigo, ref):
 def api_composicao(base: str, codigo: str, ref: Optional[str] = None):
     base = checar_base(base)
     with conn() as c:
-        r = mes(c, ref)
+        r = mes_da_base(c, base, ref)
         d = ler_composicao(c, base, codigo, r['id'])
         if not d:
             raise HTTPException(404, f'A composição {codigo}/{base} não existe em {nome_mes(r)}.')
@@ -279,7 +340,7 @@ def api_composicao(base: str, codigo: str, ref: Optional[str] = None):
 def api_insumo(base: str, codigo: str, limite: int = Query(100, le=2000), ref: Optional[str] = None):
     base = checar_base(base)
     with conn() as c:
-        r = mes(c, ref)
+        r = mes_da_base(c, base, ref)
         ins = c.execute('SELECT * FROM insumo WHERE base = ? AND codigo = ? AND referencia = ?', (base, codigo, r['id'])).fetchone()
         if not ins:
             raise HTTPException(404, f'O insumo {codigo}/{base} não existe em {nome_mes(r)}.')
@@ -317,10 +378,16 @@ def api_encargos(ref: Optional[str] = None):
 def api_comparativo(de: Optional[str] = None, para: Optional[str] = None, base: str = 'todas', tipo: str = 'servico',
                     sentido: str = 'alta', q: str = '', limite: int = Query(150, le=1000)):
     with conn() as c:
-        refs = referencias(c)
+        meses = meses_da_base(c)
+        validos = set(meses.get(base.upper(), [])) if base.upper() in BASES else {m for v in meses.values() for m in v}
+        refs = [x for x in referencias(c) if x['id'] in validos]
         if len(refs) < 2:
             return {'de': None, 'para': refs[-1], 'referencias': refs, 'resumo': None, 'itens': []}
-        a = mes(c, de or refs[-2]['id']); b = mes(c, para or refs[-1]['id'])
+        ids = [x['id'] for x in refs]
+        # sem meses indicados: os dois últimos de uma mesma base (a que tiver o mês mais recente entre as que têm dois ou mais)
+        pares = [v[-2:] for b2, v in meses.items() if len(v) >= 2 and (base.upper() not in BASES or b2 == base.upper())]
+        padrao = max(pares, key=lambda v: v[-1]) if pares else [ids[-2], ids[-1]]
+        a = mes(c, de if de in ids else padrao[0]); b = mes(c, para if para in ids else padrao[1])
         if a['id'] == b['id']:
             raise HTTPException(422, 'Escolha dois meses diferentes para comparar.')
         tipo = tipo if tipo in ('servico', 'insumo') else 'servico'
@@ -357,9 +424,10 @@ def api_comparativo_item(tipo: str, base: str, codigo: str):
     """Preço do item em cada mês carregado."""
     base = checar_base(base)
     with conn() as c:
+        meses = set(meses_da_base(c).get(base, []))
         linhas = [dict(x) for x in c.execute('''SELECT r.id AS referencia, r.descricao, h.preco FROM referencia r
             LEFT JOIN historico h ON h.referencia = r.id AND h.tipo = ? AND h.base = ? AND h.codigo = ? ORDER BY r.id''',
-                                             (tipo, base, codigo))]
+                                             (tipo, base, codigo)) if x['referencia'] in meses]
         if all(x['preco'] is None for x in linhas) and not c.execute('SELECT 1 FROM item_busca WHERE tipo = ? AND base = ? AND codigo = ?',
                                                                     (tipo, base, codigo)).fetchone():
             raise HTTPException(404, f'{codigo}/{base} não existe em nenhum mês carregado.')
@@ -414,7 +482,7 @@ def _escrever_itens(ws, c, comp, linha, nivel, expandir):
 def exportar_composicao(base: str, codigo: str, expandir: bool = True, ref: Optional[str] = None):
     base = checar_base(base)
     with conn() as c:
-        r = mes(c, ref)
+        r = mes_da_base(c, base, ref)
         comp = ler_composicao(c, base, codigo, r['id'])
         if not comp:
             raise HTTPException(404, f'A composição {codigo}/{base} não existe em {nome_mes(r)}.')
@@ -439,12 +507,13 @@ def exportar_composicao(base: str, codigo: str, expandir: bool = True, ref: Opti
 
 
 @app.get('/api/exportar/busca.xlsx')
-def exportar_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', ref: Optional[str] = None):
-    res = api_busca(q=q, base=base, tipo=tipo, limite=500, ref=ref)
+def exportar_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', ref: Optional[str] = None, refs: str = '', bases: str = ''):
+    res = api_busca(q=q, base=base, tipo=tipo, limite=500, ref=ref, refs=refs, desde=0, ordem='usos', bases=bases)
     with conn() as c:
-        r = mes(c, res['referencia'])
+        nomes = {x['id']: nome_mes(x) for x in referencias(c)}
+    datas = ', '.join(f'{b} {nomes.get(m, m)}' for b, m in res['refs'].items() if base.upper() in ('TODAS', b))
     wb = Workbook(); ws = wb.active; ws.title = 'Resultado'
-    ws['A1'] = f"Busca: {q or '(todos)'}  |  Base: {base}  |  Tipo: {tipo}  |  Referência: {r['descricao']}"
+    ws['A1'] = f"Busca: {q or '(todos)'}  |  Base: {base}  |  Tipo: {tipo}  |  Data-base: {datas}"
     ws['A1'].font = Font(bold=True)
     _cab(ws, 3, ['Tipo', 'Base', 'Código', 'Descrição', 'Un.', 'Preço (R$)', 'Grupo', 'Usado em'], [9, 8, 10, 80, 7, 14, 34, 10])
     for k, x in enumerate(res['itens'], 4):
@@ -454,7 +523,7 @@ def exportar_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', ref: O
             if j == 6:
                 cel.number_format = '#,##0.00'
     ws.freeze_panes = 'A4'; ws.auto_filter.ref = f'A3:H{3 + len(res["itens"])}'
-    return _xlsx(wb, f"busca_{r['id']}.xlsx")
+    return _xlsx(wb, f"busca_{res['referencia']}.xlsx")
 
 
 import orcamento  # noqa: E402
@@ -470,7 +539,7 @@ def manifesto():
     icone = lambda n, uso='any': {'src': f'/static/icones/icone-{n}.png', 'sizes': f'{n}x{n}', 'type': 'image/png', 'purpose': uso}
     return JSONResponse({
         'name': 'InfoCustos Civil', 'short_name': 'InfoCustos', 'lang': 'pt-BR',
-        'description': 'Consulta de preços ORSE e SINAPI, composições e orçamentos de obra.',
+        'description': 'Consulta de preços ORSE, SINAPI e SICRO, composições e orçamentos de obra.',
         'start_url': '/', 'scope': '/', 'display': 'standalone', 'background_color': '#17191C', 'theme_color': '#17191C',
         'icons': [icone(192), icone(512), {'src': '/static/icones/icone-mascara-512.png', 'sizes': '512x512', 'type': 'image/png', 'purpose': 'maskable'}],
     }, media_type='application/manifest+json')

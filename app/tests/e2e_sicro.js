@@ -1,0 +1,38 @@
+// SICRO: ficha, orçamento, relatório e comparativo. Usa o servidor local na porta 8000; argumento: pasta das capturas.
+const { chromium } = require('playwright'); const OUT = process.argv[2], U = 'http://localhost:8000';
+let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); c ? ok++ : falha++; };
+(async () => { const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1366, height: 900 } }); const erros = []; p.on('pageerror', (e) => erros.push(e.message));
+  await p.goto(U + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForSelector('#dt-campo');
+  v((await p.textContent('#pesquisa-sub')).includes('do SICRO'), 'Texto da tela inicial inclui o SICRO: ' + (await p.textContent('#pesquisa-sub')).replace(/\s+/g, ' ').trim());
+  v((await p.textContent('#selo-base')).includes('SICRO de julho/2026'), 'Selo: ' + (await p.textContent('#selo-base')).replace(/\s+/g, ' ').trim());
+  await p.fill('#q', 'concreto'); await p.waitForSelector('.res'); await p.waitForTimeout(500);
+  await p.click('.chips[data-filtro="base"] [data-v="SICRO"]'); await p.waitForTimeout(700);
+  v((await p.$$eval('.res .cb-base', (x) => [...new Set(x.map((e) => e.textContent))])).join() === 'SICRO', 'Filtro rápido SICRO mostra só o SICRO: ' + await p.textContent('.chips[data-filtro="base"] [data-v="SICRO"]'));
+  await p.screenshot({ path: OUT + '/sc_filtro.png' });
+  await p.click('.chips[data-filtro="base"] [data-v="todas"]'); await p.waitForTimeout(400);
+  await p.goto(U + '/#/composicao/SICRO/0308308'); await p.waitForSelector('.arvore');
+  const secoes = await p.$$eval('.secao-bt', (x) => x.map((e) => e.textContent.replace(/\s+/g, ' ').trim().slice(0, 40)));
+  v(secoes.some((t) => t.startsWith('Fator de influência')) && secoes.some((t) => t.startsWith('Tempo fixo')) && secoes.some((t) => t.startsWith('Momento de transporte')), 'Ficha SICRO mostra FIC, tempo fixo e transporte: ' + secoes.join(' | '));
+  v((await p.textContent('.preco-grande')).includes('5.130,30'), 'Preço da composição igual ao relatório do DNIT (R$ 5.130,30)');
+  v((await p.textContent('.ficha')).includes('julho/2026'), 'Ficha mostra a data-base do SICRO');
+  await p.screenshot({ path: OUT + '/sc_ficha.png', fullPage: true });
+  await p.click('.segmentos[data-vista] [data-v=fluxo]'); await p.waitForSelector('#fluxo .fx-f'); await p.waitForTimeout(1200); await p.locator('.fluxo-caixa').screenshot({ path: OUT + '/sc_fluxo.png' });
+  await p.click('.segmentos[data-vista] [data-v=tabela]');
+  await p.click('.arvore .expandir'); await p.waitForSelector('.arvore tr.filho'); v(true, 'Atividade auxiliar se desdobra na tabela');
+  // orçamento com item do SICRO
+  const o = await (await p.request.post(U + '/api/orcamentos', { data: { nome: 'Ponte teste', referencia: '2026-08' } })).json();
+  const r1 = await p.request.post(U + `/api/orcamentos/${o.id}/itens`, { data: { tipo: 'servico', base: 'SICRO', codigo: '0308308', quantidade: 2 } });
+  const r2 = await p.request.post(U + `/api/orcamentos/${o.id}/itens`, { data: { tipo: 'servico', base: 'ORSE', codigo: '00003', quantidade: 10 } });
+  const oo = await r2.json(); const it = oo.etapas[0].itens; v(r1.ok() && it.find((i) => i.base === 'SICRO').referencia === '2026-07' && it.find((i) => i.base === 'ORSE').referencia === '2026-08', 'Orçamento de agosto aceita item do SICRO com o preço de julho (mês do SICRO)');
+  await p.goto(U + `/#/orcamento/${o.id}/relatorio`); await p.waitForSelector('.folha-capa');
+  v((await p.textContent('.capa-dados')).includes('ORSE e SICRO') && (await p.textContent('.folha-rod')).includes('SICRO julho/2026 (DNIT'), 'Relatório cita as bases e o mês de cada uma: ' + (await p.textContent('.folha-rod')).slice(0, 120));
+  await p.request.delete(U + `/api/orcamentos/${o.id}`);
+  await p.goto(U + '/#/comparativo'); await p.waitForSelector('.comparativo table', { timeout: 15000 });
+  v((await p.inputValue('#cmp-de')) === '2026-05' && (await p.inputValue('#cmp-para')) === '2026-08', 'Comparativo abre em maio → agosto (dois meses da mesma base)');
+  await p.click('[data-cmp=base] [data-v=SICRO]'); await p.waitForSelector('[data-cmp-base-todas]');
+  v((await p.textContent('.comparativo')).includes('O SICRO tem só um mês'), 'SICRO no comparativo: avisa que só há um mês');
+  await p.click('[data-cmp-base-todas]'); await p.waitForSelector('.comparativo table'); v(true, 'Volta para todas as bases');
+  const m = await b.newPage({ viewport: { width: 390, height: 800 } }); await m.goto(U + '/'); await m.waitForSelector('#dt-campo', { state: 'attached' }); await m.waitForTimeout(600); await m.screenshot({ path: OUT + '/sc_cel.png' });
+  v(await m.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Celular sem rolagem lateral');
+  v(!erros.length, 'Sem erros de JavaScript ' + JSON.stringify(erros));
+  console.log(`\n${ok} OK, ${falha} falhas`); await b.close(); process.exitCode = falha ? 1 : 0; })();

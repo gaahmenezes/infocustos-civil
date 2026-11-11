@@ -66,7 +66,7 @@ function desenharCartoesOrc() {
   const soma = vis.reduce((t, o) => t + o.total, 0);
   $('#orc-resumo').innerHTML = LISTA.todos.length
     ? `<b>${vis.length}</b> ${vis.length === 1 ? 'orçamento' : 'orçamentos'}${termo ? ` de ${LISTA.todos.length}` : ''} · <b>${brl.format(soma)}</b> no total, com BDI`
-    : 'Monte a planilha da obra com os preços da ORSE e da SINAPI.';
+    : 'Monte a planilha da obra com os preços da ORSE, da SINAPI e do SICRO.';
   const ul = $('#orc-lista'); if (!ul) return;
   ul.innerHTML = vis.length ? vis.map((o) => `<li><a class="orc-cartao" href="${rotaOrc(o.id)}">
       <span class="orc-c-nome">${esc(o.nome)}</span>
@@ -113,7 +113,7 @@ function abrirNovoOrcamento() {
   const d = $('#dlg-novo-orc'), f = $('#form-novo');
   f.reset(); $('#novo-orc-erro').textContent = '';
   f.elements.referencia.innerHTML = [...((estado.ref && estado.ref.referencias) || [])].reverse().map((r) =>
-    `<option value="${esc(r.id)}"${r.id === estado.mes ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}</option>`).join('');
+    `<option value="${esc(r.id)}"${r.id === (estado.meses.ORSE || estado.mes) ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}</option>`).join('');
   d.showModal(); f.elements.nome.focus();
 }
 document.addEventListener('click', (e) => {
@@ -383,7 +383,7 @@ function ligarBuscaInline(inp) {
     const q = inp.value.trim(); if (q.length < 2) { fechar(); return; }
     t = setTimeout(async () => {
       const meu = ++seqLocal;
-      const r = await req(`/api/busca?${new URLSearchParams({ q, limite: 8, ref: ORC.atual.referencia })}`);
+      const r = await req(`/api/busca?${new URLSearchParams({ q, limite: 8, ref: ORC.atual.referencia, refs: refsDoOrcamento(ORC.atual) })}`);
       if (meu !== seqLocal) return;
       itens = r.itens.filter((x) => x.preco != null);
       ul.innerHTML = itens.length ? itens.map((x, k) => `<li data-k="${k}"><span class="res-cod">${codigoBase(x.codigo, x.base)}<span class="tipo tipo-${x.tipo}">${x.tipo === 'servico' ? 'Composição' : 'Insumo'}</span></span>
@@ -482,7 +482,7 @@ $('#form-adicionar').addEventListener('submit', async (e) => {
     let oid = $('#dlg-orc').value, etapa = Number($('#dlg-etapa').value) || null;
     if (oid === 'novo') {
       const nome = $('#dlg-novo').value.trim(); if (!nome) { $('#dlg-erro').textContent = 'Dê um nome ao novo orçamento.'; return; }
-      const o = await req('/api/orcamentos', 'POST', { nome, bdi: 25, referencia: estado.mes }); oid = o.id; etapa = o.etapas[0].id;
+      const o = await req('/api/orcamentos', 'POST', { nome, bdi: 25, referencia: estado.meses.ORSE || estado.mes }); oid = o.id; etapa = o.etapas[0].id;
     }
     const n = await req(`/api/orcamentos/${oid}/itens`, 'POST', { etapa_id: etapa, tipo: dlgItem.tipo, base: dlgItem.base, codigo: dlgItem.codigo, quantidade: q });
     lembrar(n.id); dlg.close();

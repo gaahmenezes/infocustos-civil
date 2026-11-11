@@ -17,7 +17,7 @@ function acoesDaPaleta() {
     { grupo: 'Ir para', rotulo: 'Apresentação do InfoCustos Civil', dica: 'o que o sistema faz', acao: ir('#/apresentacao') },
     { grupo: 'Ações', rotulo: temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro', dica: 'aparência', acao: () => $('#tema').click() },
     ...(estado.ref && estado.ref.protegido ? [{ grupo: 'Ações', rotulo: 'Sair', dica: 'encerrar a sessão neste navegador', acao: () => fetch('/api/sair', { method: 'POST' }).finally(() => { location.href = '/entrar'; }) }] : []),
-    ...meses.filter((m) => m.id !== estado.mes).map((m) => ({ grupo: 'Mês de referência', rotulo: `Ver preços de ${m.descricao.replace(/-1$/, '')}`, dica: 'trocar o mês', acao: () => trocarMes(m.id) })),
+    ...basesCarregadas().flatMap((b) => mesesDaBase(b).filter((m) => m.id !== estado.meses[b]).map((m) => ({ grupo: 'Data-base', rotulo: `${b}: ver preços de ${m.descricao.replace(/-1$/, '')}`, dica: 'trocar o mês desta base', acao: () => trocarMes(m.id, b) }))),
   ];
 }
 
@@ -40,9 +40,9 @@ async function filtrarPaleta() {
   PAL.itens = [...(termo ? [] : acoes.slice(0, 1)), ...orcs, ...(termo ? acoes : acoes.slice(1))]; PAL.sel = 0; desenharPaleta();
   if (q.length < 2) return;
   try {
-    const r = await api(`/api/busca?${new URLSearchParams({ q, base: 'todas', tipo: 'todos', limite: 6, ref: estado.mes || '' })}`);
+    const r = await api(`/api/busca?${new URLSearchParams({ q, base: 'todas', tipo: 'todos', limite: 6, refs: refsQs(), bases: basesQs() })}`);
     if (meu !== PAL.seq) return;
-    const itens = r.itens.map((x) => ({ grupo: `Composições e insumos de ${nomeRef(estado.mes)}`, rotulo: x.descricao, codigo: x.codigo, base: x.base,
+    const itens = r.itens.map((x) => ({ grupo: 'Composições e insumos', rotulo: x.descricao, codigo: x.codigo, base: x.base,
       dicaHtml: `${x.preco == null ? 'sem preço' : brl.format(x.preco)}${x.unidade ? `<span class="un">${unid(x.unidade)}</span>` : ''}`,
       acao: () => abrir(x.tipo, x.base, x.codigo) }));
     // itens da base primeiro: é o que mais se procura

@@ -309,13 +309,22 @@ const LOCAL = (() => {
     const u = new URL(url, 'http://local'); const p = u.pathname.split('/').filter(Boolean).slice(1); const qs = u.searchParams;
     const M = metodo.toUpperCase();
     const [r0, r1, r2_, r3] = p;
+    // versão de teste: só ORSE e SINAPI, que vêm juntas da CEHOP e usam o mesmo mês (o da ORSE)
+    const mesPedido = () => { const r = Object.fromEntries((qs.get('refs') || '').split(',').filter((x) => x.includes(':')).map((x) => x.split(':')));
+      return mes(r.ORSE || r.SINAPI || qs.get('ref')); };
+    const ativas = () => { const l = (qs.get('bases') || '').split(',').filter((b) => BASES.includes(b)); return l.length ? l : BASES; };
     if (r0 === 'referencia') {
-      const m = mes(qs.get('ref')); const d = await dados(m.id);
+      const m = mesPedido(); const d = await dados(m.id);
+      const meses = MESES.map(({ encargos, ...x }) => x), atual = MESES[MESES.length - 1].id;
+      const extra = { bases: Object.fromEntries(BASES.map((b) => [b, { meses, atual }])), refs: Object.fromEntries(BASES.map((b) => [b, m.id])), ativas: ativas() };
       const n = (t, b) => d.itens.filter((x) => x.tipo === t && x.base === b).length;
       return { ...m, referencias: MESES.map(({ encargos, ...x }) => x), atual: MESES[MESES.length - 1].id,
-        totais: [['insumo', 'ORSE'], ['insumo', 'SINAPI'], ['servico', 'ORSE'], ['servico', 'SINAPI']].map(([t, b]) => ({ tipo: t, base: b, n: n(t, b) })) };
+        totais: [['insumo', 'ORSE'], ['insumo', 'SINAPI'], ['servico', 'ORSE'], ['servico', 'SINAPI']].filter(([, b]) => extra.ativas.includes(b)).map(([t, b]) => ({ tipo: t, base: b, n: n(t, b) })), ...extra };
     }
-    if (r0 === 'busca') return busca(mes(qs.get('ref')).id, qs.get('q'), qs.get('base'), qs.get('tipo'), Math.min(Number(qs.get('limite') || 60), 500));
+    if (r0 === 'busca') {
+      const so = ativas(), base = so.length === 1 ? so[0] : qs.get('base');
+      return busca(mesPedido().id, qs.get('q'), base, qs.get('tipo'), Math.min(Number(qs.get('limite') || 60), 500));
+    }
     if (r0 === 'composicao') {
       if (!BASES.includes(r1)) throw erro(404, 'Base não encontrada. Use ORSE ou SINAPI.');
       const m = mes(qs.get('ref'));

@@ -29,14 +29,14 @@ function apIrParaCena(k) {
 }
 
 async function apDados() {
-  if (AP.dados && AP.dados.mes === estado.mes) return AP.dados;
-  const buscar1 = (q, tipo = 'servico') => api(`/api/busca?${new URLSearchParams({ q, base: 'todas', tipo, limite: 3, ref: estado.mes || '' })}`).then((r) => r.itens.filter((x) => x.preco != null));
+  if (AP.dados && AP.dados.mes === refsQs()) return AP.dados;
+  const buscar1 = (q, tipo = 'servico') => api(`/api/busca?${new URLSearchParams({ q, base: 'todas', tipo, limite: 3, refs: refsQs() })}`).then((r) => r.itens.filter((x) => x.preco != null));
   const [chap, alv, pint] = await Promise.all([buscar1('chapisco parede'), buscar1('alvenaria bloco ceramico'), buscar1('pintura acrilica')]);
   const linhas = [[alv[0], 420], [chap[0], 840], [pint[0], 840]].filter((x) => x[0]).map(([it, qtd]) => ({ ...it, qtd, total: Math.round(qtd * it.preco * 1.25 * 100) / 100 }));
   // divisão do custo calculada com a divisão real de cada composição da cena
   const custo = linhas.reduce((s, l) => s + l.qtd * l.preco, 0) || 1;
   const div = Object.fromEntries(['mo', 'mat', 'equip', 'terc'].map((k) => [k, linhas.reduce((s, l) => s + l.qtd * l.preco * (l[`pct_${k}`] || 0), 0) / custo]));
-  AP.dados = { mes: estado.mes, busca: chap.slice(0, 3), linhas, div, total: linhas.reduce((s, l) => s + l.total, 0) };
+  AP.dados = { mes: refsQs(), busca: chap.slice(0, 3), linhas, div, total: linhas.reduce((s, l) => s + l.total, 0) };
   return AP.dados;
 }
 
@@ -95,7 +95,7 @@ window.desenharApresentacao = async function () {
   const n = (t) => ref ? ref.totais.filter((x) => x.tipo === t).reduce((s, x) => s + x.n, 0) : 0;
   const mes = nomeRef(estado.mes), meses = ref ? ref.referencias.length : 0;
   const pontos = [
-    ['lupa', 'Busca que acompanha a digitação', 'Composições e insumos da ORSE e da SINAPI juntos ou isolados, com a unidade e a divisão do custo já no resultado.'],
+    ['lupa', 'Busca que acompanha a digitação', 'Composições e insumos da ORSE, da SINAPI e do SICRO juntos ou isolados, cada base na sua data-base, com a unidade e a divisão do custo já no resultado.'],
     ['folha', 'Composição aberta até o insumo', 'Coeficientes, custos e o peso de cada item. Serviços auxiliares se desdobram na mesma tabela.'],
     ['planilha', 'Comparação lado a lado', 'Até três composições na mesma tela, com o menor preço indicado e as diferenças em destaque.'],
     ['grafico', 'Orçamento que se explica', 'Custo por etapa, curva ABC e divisão entre mão de obra e material. Itens mudam de ordem arrastando.'],
@@ -107,7 +107,7 @@ window.desenharApresentacao = async function () {
     <div class="ap-trilho${rolando ? ' rolando' : ''}">
     <section class="ap-heroi">
       <div class="ap-texto">
-        <p class="ap-olho"><span></span>Preços ORSE e SINAPI de ${esc(mes)}</p>
+        <p class="ap-olho"><span></span>${gruposDeData().map((x) => `${esc(juntar(x.bases))} de ${esc(nomeRef(x.mes))}`).join(' · ')}</p>
         <h1>Do preço à proposta,<br><em>sem perder o fio.</em></h1>
         <p class="ap-sub">Consulte as bases, abra cada composição até o insumo, monte o orçamento e saia com o relatório pronto. Tudo numa tela limpa, no computador ou no celular.</p>
         <div class="ap-acoes"><a class="botao primario ap-cta" href="#/">Começar a orçar</a><a class="botao ap-sec" href="#/orcamentos">Ver orçamentos</a></div>
