@@ -5,3 +5,5 @@ app/orcamentos.sqlite*
 dados/*.sqlite
 artefato/saida/
 final/
+.neon
+node_modules/
