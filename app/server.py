@@ -175,6 +175,23 @@ def meses_da_base(c):
     return _MESES_BASE
 
 
+_FONTES = {}
+
+
+def fonte_de(c, base, ref):
+    """De onde vêm os preços de uma base num mês: ORSE e SINAPI pelo programa da CEHOP, SINAPI pelos relatórios da CAIXA
+    (insumos com origem C/CR/AS) ou SICRO pelo DNIT."""
+    if (base, ref) not in _FONTES:
+        if base == 'SICRO':
+            f = 'DNIT'
+        elif base == 'SINAPI' and c.execute("SELECT 1 FROM insumo WHERE base = 'SINAPI' AND referencia = ? AND marcador IN ('C', 'CR', 'AS') LIMIT 1", (ref,)).fetchone():
+            f = 'CAIXA'
+        else:
+            f = 'CEHOP'
+        _FONTES[(base, ref)] = f
+    return _FONTES[(base, ref)]
+
+
 def mes_da_base(c, base, ref: Optional[str]):
     """Mês pedido para uma base; sem mês, o mais recente dela. Mês que a base não tem é erro (com os meses que ela tem)."""
     meses = meses_da_base(c).get(base, [])
@@ -257,7 +274,7 @@ def api_referencia(ref: Optional[str] = None, refs: str = '', bases: str = ''):
         tot = c.execute(f'SELECT tipo, base, COUNT(*) n FROM item_busca i WHERE {cond} GROUP BY 1, 2', args).fetchall()
         tem_enc = {row[0] for row in c.execute('SELECT DISTINCT tipo FROM encargo WHERE referencia = ?', (r['id'],))}
         todas = referencias(c)
-        bases = {b: {'meses': [x for x in todas if x['id'] in meses], 'atual': meses[-1]}
+        bases = {b: {'meses': [x for x in todas if x['id'] in meses], 'atual': meses[-1], 'fontes': {m: fonte_de(c, b, m) for m in meses}}
                  for b, meses in sorted(meses_da_base(c).items(), key=lambda kv: ORDEM_BASES.index(kv[0]) if kv[0] in ORDEM_BASES else 99)}
         return r | {'totais': [dict(t) for t in tot], 'referencias': todas, 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
                     'encargos_detalhados': sorted(tem_enc), 'bases': bases, 'refs': todas_bases, 'ativas': list(escolha)}
@@ -331,6 +348,7 @@ def api_composicao(base: str, codigo: str, ref: Optional[str] = None):
         d = ler_composicao(c, base, codigo, r['id'])
         if not d:
             raise HTTPException(404, f'A composição {codigo}/{base} não existe em {nome_mes(r)}.')
+        d['fonte'] = fonte_de(c, base, r['id'])
         d['usada_em'] = c.execute('''SELECT COUNT(DISTINCT composicao_base || composicao) FROM composicao_item
             WHERE base = ? AND codigo = ? AND eh_servico = 1 AND referencia = ?''', (base, d['codigo'], r['id'])).fetchone()[0]
         return d
@@ -385,8 +403,9 @@ def api_comparativo(de: Optional[str] = None, para: Optional[str] = None, base: 
             return {'de': None, 'para': refs[-1], 'referencias': refs, 'resumo': None, 'itens': []}
         ids = [x['id'] for x in refs]
         # sem meses indicados: os dois últimos de uma mesma base (a que tiver o mês mais recente entre as que têm dois ou mais)
-        pares = [v[-2:] for b2, v in meses.items() if len(v) >= 2 and (base.upper() not in BASES or b2 == base.upper())]
-        padrao = max(pares, key=lambda v: v[-1]) if pares else [ids[-2], ids[-1]]
+        pares = [(b2, v[-2:]) for b2, v in meses.items() if len(v) >= 2 and (base.upper() not in BASES or b2 == base.upper())]
+        # prefere dois meses da mesma fonte (sem misturar método de cálculo); entre esses, o par mais recente
+        padrao = max(pares, key=lambda x: (fonte_de(c, x[0], x[1][0]) == fonte_de(c, x[0], x[1][1]), x[1][1]))[1] if pares else [ids[-2], ids[-1]]
         a = mes(c, de if de in ids else padrao[0]); b = mes(c, para if para in ids else padrao[1])
         if a['id'] == b['id']:
             raise HTTPException(422, 'Escolha dois meses diferentes para comparar.')
@@ -416,7 +435,14 @@ def api_comparativo(de: Optional[str] = None, para: Optional[str] = None, base: 
             JOIN item_busca i ON i.tipo = h1.tipo AND i.base = h1.base AND i.codigo = h1.codigo AND i.referencia = h2.referencia
             WHERE h1.referencia = ? AND {' AND '.join(filtros)} AND h1.preco > 0 AND h2.preco IS NOT NULL{extra}
             ORDER BY variacao {ordem} LIMIT ?''', jargs + eargs + [limite]).fetchall()
-        return {'de': a, 'para': b, 'referencias': refs, 'resumo': resumo, 'itens': [dict(x) for x in rows]}
+        aviso = None
+        if base.upper() in ('SINAPI', 'TODAS') and fonte_de(c, 'SINAPI', a['id']) != fonte_de(c, 'SINAPI', b['id']):
+            fa, fb = fonte_de(c, 'SINAPI', a['id']), fonte_de(c, 'SINAPI', b['id'])
+            aviso = (f"A SINAPI de {nome_mes(a)} vem {'dos relatórios da CAIXA' if fa == 'CAIXA' else 'do programa da CEHOP'} e a de {nome_mes(b)}, "
+                     f"{'dos relatórios da CAIXA' if fb == 'CAIXA' else 'do programa da CEHOP'}. Parte da diferença é de método, não de preço: "
+                     "a CEHOP abre as composições até os insumos e aplica os encargos sociais na composição; a CAIXA publica a mão de obra já com encargos "
+                     "e mantém as composições auxiliares.")
+        return {'de': a, 'para': b, 'referencias': refs, 'resumo': resumo, 'itens': [dict(x) for x in rows], 'aviso': aviso}
 
 
 @app.get('/api/comparativo/item/{tipo}/{base}/{codigo}')

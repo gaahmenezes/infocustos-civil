@@ -3,7 +3,8 @@
 Consulta da base de preços de obras de Sergipe (ORSE/CEHOP) e da SINAPI usada pela CEHOP:
 busca rápida, composição analítica em árvore, orçamento com BDI e curva ABC, e histórico de preços entre referências.
 
-Bases carregadas (Sergipe): **ORSE** e **SINAPI** de maio/2026 e agosto/2026 (CEHOP) e **SICRO** de julho/2026 (DNIT).
+Bases carregadas (Sergipe): **ORSE** de maio/2026 e agosto/2026 e **SINAPI** de maio/2026 e agosto/2026 (programa da CEHOP);
+**SINAPI** de setembro/2026 (relatórios da CAIXA); **SICRO** de julho/2026 (DNIT).
 Cada base tem a sua data-base: a pesquisa procura todas juntas, cada uma no mês escolhido para ela.
 
 ## Rodar
@@ -28,6 +29,23 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
 | `app/` | Servidor (FastAPI + SQLite FTS5), interface (`static/`) e testes |
 | `artefato/` | Versão estática para teste no claude.ai (dados e orçamentos no navegador) |
 | `docs/` | Telas e um orçamento de exemplo exportado |
+
+## SINAPI pelos relatórios da CAIXA
+
+A CAIXA publica os PDFs de todos os estados. Para Sergipe bastam quatro: `SINAPI_Preco_Ref_Insumos_SE_AAAAMM.pdf`,
+`SINAPI_Custo_Ref_Composicoes_SE_AAAAMM.pdf`, `SINAPI_Analitico_Ref_Composicoes_AAAAMM.pdf` (nacional) e
+`SINAPI_Preco_Ref_Insumos_SP_AAAAMM.pdf` (preço atribuído de São Paulo). Com os quatro numa pasta:
+
+```bash
+python3 extratores/build_sinapi_caixa.py "<pasta>" SE dados/sinapi_AAAA-MM.sqlite dados/orse_sinapi.sqlite
+gzip -9 -k dados/sinapi_AAAA-MM.sqlite
+```
+
+O último argumento (banco atual) só serve para herdar o tipo de cada insumo (material, mão de obra...), que o relatório
+da CAIXA não traz. O leitor confere a soma dos itens de cada composição com o custo oficial do estado.
+Regras do cálculo oficial reproduzidas: insumo sem preço coletado no estado usa o preço de São Paulo (AS); composição
+auxiliar sem custo publicado tem o custo calculado pelos itens dela. Diferença em relação aos meses vindos da CEHOP:
+a composição fica como a CAIXA publica (com composições auxiliares) e a mão de obra já vem com os encargos sociais.
 
 ## SICRO (DNIT)
 

@@ -1680,3 +1680,4 @@ html.trocando-tema::view-transition { pointer-events: none; }
   .dt-acoes .primario { width: 100%; margin-left: 0; }
 }
 .chips .chip[hidden] { display: none; }
+.aviso-fonte { margin: 0 0 14px; padding: 12px 14px; border-radius: var(--raio); border: 1px solid var(--planta-borda, var(--linha)); background: var(--planta-claro, var(--superficie-2)); font-size: 14px; line-height: 1.45; color: var(--tinta); }

@@ -89,6 +89,16 @@ def ref_atual(b):
     return dict(b.execute('SELECT id, descricao FROM referencia ORDER BY id DESC LIMIT 1').fetchone())
 
 
+def ultimo_por_base(b):
+    """Mês mais recente de cada base (cada uma tem o seu calendário)."""
+    return dict(b.execute('SELECT base, MAX(referencia) FROM item_busca GROUP BY base').fetchall())
+
+
+def ref_principal(b):
+    """Data-base padrão de um orçamento: o mês mais recente da ORSE (a base principal); sem ORSE, o mais recente de todos."""
+    return ultimo_por_base(b).get('ORSE') or ref_atual(b)['id']
+
+
 def mes_para_base(b, base, ref):
     """Cada base tem o seu calendário. Se a base não tem o mês pedido, usa o mês dela mais próximo antes dele
     (ou o primeiro que ela tiver): um orçamento de agosto com itens do SICRO usa o SICRO de julho."""
@@ -198,11 +208,16 @@ def calcular(c, oid):
     o['referencias_itens'] = refs_itens
     with _base_conn() as b:
         atual = ref_atual(b)
+        ultimos = ultimo_por_base(b)
+        principal = ref_principal(b)
         nomes = {r['id']: r['descricao'] for r in b.execute('SELECT id, descricao FROM referencia')}
         o['divisao'] = dividir_custo(b, itens, o['referencia'])
     o['referencia_atual'] = atual
     o['referencia_descricao'] = nomes.get(o['referencia'], o['referencia'])
-    o['desatualizado'] = any(r < atual['id'] for r in refs_itens) or (not itens and o['referencia'] < atual['id'])
+    # desatualizado: algum item tem mês mais antigo que o mais recente da base dele (a SINAPI chegar a setembro não
+    # torna velho um item da ORSE de agosto, se a ORSE ainda não tem setembro)
+    o['desatualizado'] = (any(i['referencia'] and i['referencia'] < ultimos.get(i['base'], i['referencia']) for i in itens)
+                          or (not itens and o['referencia'] < principal))
     for e in etapas:
         e['peso'] = (e['total'] / total) if total else 0
     return o
@@ -281,7 +296,7 @@ def listar():
 @router.post('/orcamentos', status_code=201)
 def criar(d: NovoOrcamento):
     with _base_conn() as b:
-        ref = d.referencia or ref_atual(b)['id']
+        ref = d.referencia or ref_principal(b)
         if not b.execute('SELECT 1 FROM referencia WHERE id = ?', (ref,)).fetchone():
             raise HTTPException(404, f'O mês {ref} não está carregado.')
     with orc() as c:
@@ -580,7 +595,7 @@ def _simular(c, oid, ref=None):
             nt = r2(i['quantidade'] * r2(p['preco'] * fator))
             novo_total += nt
             linhas.append({'id': i['id'], 'numero': i['numero'], 'codigo': i['codigo'], 'base': i['base'], 'descricao': i['descricao'],
-                           'unidade': i['unidade'], 'quantidade': i['quantidade'], 'de_referencia': i['referencia'],
+                           'unidade': i['unidade'], 'quantidade': i['quantidade'], 'de_referencia': i['referencia'], 'para_referencia': p['referencia'],
                            'custo_unit_antes': i['custo_unit'], 'custo_unit_depois': p['preco'], 'total_antes': i['total'], 'total_depois': nt,
                            'variacao': (p['preco'] / i['custo_unit'] - 1) if i['custo_unit'] else None})
     linhas.sort(key=lambda l: -abs(l['total_depois'] - l['total_antes']))
@@ -602,7 +617,8 @@ def atualizar(oid: int, referencia: Optional[str] = None):
         sim = _simular(c, oid, referencia)
         ref = sim['referencia']
         for l in sim['itens']:
-            c.execute('UPDATE item SET custo_unit = ?, referencia = ? WHERE id = ?', (l['custo_unit_depois'], ref, l['id']))
+            # cada item fica com o mês de onde veio o preço dele (a base pode não ter o mês pedido: usa o mais próximo dela)
+            c.execute('UPDATE item SET custo_unit = ?, referencia = ? WHERE id = ?', (l['custo_unit_depois'], l['para_referencia'], l['id']))
         c.execute('UPDATE orcamento SET referencia = ?, atualizado_em = ? WHERE id = ?', (ref, agora(), oid))
         o = calcular(c, oid)
         o['atualizacao'] = {'referencia': ref, 'total_antes': sim['total_antes'], 'itens_atualizados': len(sim['itens']),

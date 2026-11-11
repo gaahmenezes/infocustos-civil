@@ -144,6 +144,9 @@ function precarregar(tipo, base, codigo) {
 const BASES = ['ORSE', 'SINAPI', 'SICRO'];
 const NOME_BASE = { ORSE: 'ORSE', SINAPI: 'SINAPI', SICRO: 'SICRO' };
 const ORIGEM_BASE = { ORSE: 'CEHOP', SINAPI: 'CEHOP', SICRO: 'DNIT' };
+// origem dos preços de uma base num mês (a SINAPI pode vir do programa da CEHOP ou dos relatórios da CAIXA)
+const origemDe = (b, mes) => (estado.ref && estado.ref.bases && estado.ref.bases[b] && estado.ref.bases[b].fontes && estado.ref.bases[b].fontes[mes]) || ORIGEM_BASE[b];
+const textoOrigem = (o) => ({ DNIT: 'do DNIT', CAIXA: 'da CAIXA', CEHOP: 'da CEHOP' }[o] || '');
 estado.meses = {};
 try {
   estado.meses = JSON.parse(localStorage.getItem('infocustos-meses') || '{}') || {};
@@ -211,7 +214,7 @@ function linhasPainel() {
     const ops = [...mesesDaBase(b)].reverse().map((r) => `<option value="${esc(r.id)}"${r.id === RASC.meses[b] ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}${r.id === ref.bases[b].atual ? ' (mais recente)' : ''}</option>`).join('');
     return `<div class="dt-linha${on ? '' : ' fora'}">
       <label class="dt-marca"><input type="checkbox" data-dt-base="${b}"${on ? ' checked' : ''}>
-        <span class="cb-base cb-${b}">${b}</span><span class="dt-orig">${ORIGEM_BASE[b] === 'DNIT' ? 'DNIT' : 'CEHOP'} · Sergipe</span></label>
+        <span class="cb-base cb-${b}">${b}</span><span class="dt-orig" data-dt-orig="${b}">${origemDe(b, RASC.meses[b])} · Sergipe</span></label>
       <label class="dt-mes"><span class="sr">Data-base do ${b}</span><select data-dt-mes="${b}"${on ? '' : ' disabled'}>${ops}</select></label></div>`;
   }).join('');
 }
@@ -231,7 +234,7 @@ function desenharDatas() {
   $('#selo-base').hidden = false;
   $('#selo-base').innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5 10 17 19 7" /></svg>
     <span>${gruposDeData().map((x) => `${esc(juntar(x.bases))} de <b>${esc(nomeRef(x.mes))}</b>`).join(' · ')}, conferidos item a item com os relatórios ${
-      [...new Set(bases.map((b) => ORIGEM_BASE[b]))].map((o) => (o === 'DNIT' ? 'do DNIT' : 'da CEHOP')).join(' e ')}</span>`;
+      juntar([...new Set(bases.map((b) => origemDe(b, estado.meses[b])))].map(textoOrigem))}</span>`;
 }
 function desenharQuadroDatas() {
   const p = $('#dt-painel'); if (!p) return;
@@ -298,7 +301,10 @@ document.addEventListener('change', (e) => {
     RASC.ativas = basesCarregadas().filter((x) => (x === b ? t.checked : RASC.ativas.includes(x)));
     desenharQuadroDatas(); const f = $(`#dt-painel [data-dt-base="${b}"]`); if (f) f.focus();
   }
-  if (t.dataset && t.dataset.dtMes) RASC.meses[t.dataset.dtMes] = t.value;
+  if (t.dataset && t.dataset.dtMes) {
+    RASC.meses[t.dataset.dtMes] = t.value;
+    const o = $(`#dt-painel [data-dt-orig="${t.dataset.dtMes}"]`); if (o) o.textContent = `${origemDe(t.dataset.dtMes, t.value)} · Sergipe`;
+  }
 });
 document.addEventListener('keydown', (e) => {
   const p = $('#dt-painel');
@@ -394,10 +400,14 @@ function aplicarEstado() {
   const ocioso = naConsulta && !temQ && !estado.atual && !estado.comparando;
   const mudou = document.body.classList.contains('ocioso') !== ocioso || document.body.classList.contains('buscando') !== (naConsulta && temQ);
   if (ocioso && (mudou || !aplicarEstado.inicio)) { aplicarEstado.inicio = true; desenharInicio(); }
+  // a troca pode ficar para o próximo quadro (transição animada): recalcula na hora de aplicar, para não usar um estado velho
+  // (ex.: sair do comparativo direto para um item não pode deixar a tela no estado inicial, sem a ficha)
   const aplicar = () => {
-    document.body.classList.toggle('ocioso', ocioso);
-    document.body.classList.toggle('buscando', naConsulta && temQ);
-    $('#limpar').hidden = !temQ;
+    const naC = (document.body.dataset.aba || 'consulta') === 'consulta';
+    const tq = estado.q.trim().length > 0 || estado.explorar;
+    document.body.classList.toggle('ocioso', naC && !tq && !estado.atual && !estado.comparando);
+    document.body.classList.toggle('buscando', naC && tq);
+    $('#limpar').hidden = !tq;
   };
   if (mudou) transicao(aplicar); else aplicar();
 }
@@ -730,7 +740,8 @@ function desenharComposicao(c) {
     </table>
     ${dnit ? '<p class="fonte">No modelo DNIT, equipamentos e mão de obra formam o custo horário da equipe, que é dividido pela produção da equipe. Serviços auxiliares entram por unidade.</p>' : ''}
     ${c.base === 'SICRO' ? `<p class="fonte">SICRO: o FIC (fator de influência de chuvas) incide sobre o custo de execução. O momento de transporte não tem custo na tabela do DNIT: depende da distância de cada obra, definida no projeto. Preços sem desoneração.</p>` : ''}
-    <p class="fonte">Fonte: ${esc(c.base)}${c.base === 'SICRO' ? ' (DNIT), Sergipe' : ''}, referência ${esc(nomeRef(c.referencia) || ref)}. Valores em R$, sem BDI.</p>
+    <p class="fonte">Fonte: ${esc(c.base)}${c.fonte === 'DNIT' ? ' (DNIT), Sergipe' : c.fonte === 'CAIXA' ? ' (relatórios da CAIXA), Aracaju/SE, sem desoneração' : c.fonte === 'CEHOP' ? ' (programa ORSE da CEHOP)' : ''}, referência ${esc(nomeRef(c.referencia) || ref)}. Valores em R$, sem BDI.</p>
+    ${c.fonte === 'CAIXA' ? '<p class="fonte">SINAPI da CAIXA: a composição aparece como a CAIXA publica, com composições auxiliares (abra o + para ver os itens). Insumo sem preço coletado em Sergipe usa o preço de São Paulo (AS), como no cálculo oficial.</p>' : ''}
   </article>`;
   if (dnit) ajustarDnit(c);
   contarPreco(`c|${c.base}|${c.codigo}`, total);
@@ -909,6 +920,7 @@ async function desenharComparativo() {
       CMP.base !== 'todas' ? '<button type="button" class="botao" data-cmp-base-todas>Ver todas as bases</button>' : '')}</div>`; return;
   }
   CMP.de = r.de.id; CMP.para = r.para.id;
+  const avisoFonte = r.aviso ? `<p class="aviso-fonte" role="note"><b>Atenção:</b> ${esc(r.aviso)}</p>` : '';
   const rs = r.resumo, de = nomeRef(r.de.id), para = nomeRef(r.para.id);
   const parte = (n) => pct.format(rs.comparados ? (n || 0) / rs.comparados : 0);
   const seg = (campo, opcoes) => `<div class="segmentos" role="radiogroup" data-cmp="${campo}">${opcoes.map(([v, n]) =>
@@ -926,6 +938,7 @@ async function desenharComparativo() {
         <p class="sub">Variação de preço de cada item entre dois meses. Fora desta aba, cada mês aparece sozinho.</p></div>
       <div class="cmp-meses"><label>De ${sel('cmp-de', CMP.de)}</label><span aria-hidden="true">→</span><label>Para ${sel('cmp-para', CMP.para)}</label></div>
     </header>
+    ${avisoFonte}
     <div class="blocos">
       ${bloco('Subiram', (rs.subiram || 0).toLocaleString('pt-BR'), `${parte(rs.subiram)} dos ${rs.comparados.toLocaleString('pt-BR')} comparados`, '--alta')}
       ${bloco('Desceram', (rs.desceram || 0).toLocaleString('pt-BR'), `${parte(rs.desceram)} dos comparados`, '--baixa')}

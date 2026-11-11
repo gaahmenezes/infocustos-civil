@@ -32,8 +32,8 @@ def dump(rel, obj):
 
 c = sqlite3.connect(DB)
 c.row_factory = sqlite3.Row
-# só os meses que têm ORSE/SINAPI (o SICRO tem calendário próprio e não entra na versão de teste)
-meses = [dict(r) for r in c.execute("SELECT * FROM referencia WHERE id IN (SELECT DISTINCT referencia FROM servico WHERE base IN ('ORSE', 'SINAPI')) ORDER BY id")]
+# só os meses da CEHOP (ORSE e SINAPI juntas); SICRO e SINAPI da CAIXA têm calendário próprio e não entram na versão de teste
+meses = [dict(r) for r in c.execute("SELECT * FROM referencia WHERE id IN (SELECT DISTINCT referencia FROM servico WHERE base = 'ORSE') ORDER BY id")]
 for m in meses:
     m['encargos'] = {t: [dict(r) for r in c.execute('SELECT grupo, item, descricao, valor FROM encargo WHERE referencia = ? AND tipo = ? ORDER BY grupo, item = grupo DESC, item',
                                                   (m['id'], t))] for t in ('horista', 'mensalista')}

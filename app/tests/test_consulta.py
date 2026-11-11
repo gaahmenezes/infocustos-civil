@@ -52,7 +52,9 @@ def test_cada_mes_mostra_so_os_seus_precos():
     b = c.get('/api/busca', params={'q': '00003', 'tipo': 'servico', 'base': 'ORSE', 'ref': '2026-05'}).json()
     assert b['referencia'] == '2026-05' and b['itens'][0]['preco'] == 4.90 and 'preco_anterior' not in b['itens'][0]
     assert c.get('/api/insumo/SINAPI/06111', params={'ref': '2026-05'}).json()['preco'] == 7.37
-    assert c.get('/api/insumo/SINAPI/06111').json()['preco'] == 7.90
+    assert c.get('/api/insumo/SINAPI/06111', params={'ref': '2026-08'}).json()['preco'] == 7.90
+    # setembro vem da CAIXA, que publica a mão de obra já com os encargos sociais (15,58 = salário com 111,51%)
+    assert c.get('/api/insumo/SINAPI/06111').json()['preco'] == 15.58
 
 
 def test_mes_inexistente():
@@ -63,7 +65,7 @@ def test_mes_inexistente():
 def test_item_que_saiu_da_base_so_existe_no_seu_mes():
     assert c.get('/api/composicao/SINAPI/103335', params={'ref': '2026-05'}).status_code == 200
     r = c.get('/api/composicao/SINAPI/103335')
-    assert r.status_code == 404 and 'agosto/2026' in r.json()['detail']
+    assert r.status_code == 404 and 'setembro/2026' in r.json()['detail']
 
 
 def test_encargos_de_agosto():
