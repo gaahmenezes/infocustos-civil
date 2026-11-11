@@ -6,7 +6,7 @@ const R = (h) => {
   const m = h.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI)\/(\w+)$/);
   return U + (m ? '#' + (m[1] === 'composicao' ? 'c' : 'i') + '-' + m[2] + '-' + m[3] : h.replace('#/', '#'));
 };
-const OUT = process.argv[2];
+const OUT = process.argv[2] || require('os').tmpdir();  // capturas de tela: pasta indicada ou a temporária do sistema
 const norm = (t) => t.replace(/\s+/g, ' ');
 (async () => {
   const b = await chromium.launch();

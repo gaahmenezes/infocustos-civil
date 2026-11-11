@@ -1,7 +1,7 @@
 const { chromium } = require('playwright');
 const ok = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); if (!c) process.exitCode = 1; };
 const U = process.argv[3] || 'http://localhost:8000/';
-const OUT = process.argv[2];
+const OUT = process.argv[2] || require('os').tmpdir();  // capturas de tela: pasta indicada ou a temporária do sistema
 const art = U.includes('8100');
 const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
 (async () => {
