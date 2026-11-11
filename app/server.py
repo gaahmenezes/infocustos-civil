@@ -74,12 +74,13 @@ def saude(teste: str = ''):
         for _ in range(2):
             t = time.perf_counter(); c.execute(sql).fetchone(); mesma.append(time.perf_counter() - t)
         c.close()
-        return PlainTextResponse(f'cpu {cpu:.2f}s | conexao nova {novas[0]:.2f}s {novas[1]:.2f}s | mesma conexao {mesma[0]:.2f}s {mesma[1]:.2f}s')
+        return PlainTextResponse(f'sqlite {sqlite3.sqlite_version} | cpu {cpu:.2f}s | conexao nova {novas[0]:.2f}s {novas[1]:.2f}s | mesma conexao {mesma[0]:.2f}s {mesma[1]:.2f}s')
     if teste != 'busca':
         return PlainTextResponse('ok')
     t = time.perf_counter(); total = api_busca(q='al', limite=80)['total']; t_busca = time.perf_counter() - t
+    t = time.perf_counter(); api_busca(q='chapisco', limite=80); t_busca2 = time.perf_counter() - t
     t = time.perf_counter(); n_orc = len(orcamento.listar()); t_orc = time.perf_counter() - t
-    return PlainTextResponse(f'busca al: {total} itens em {t_busca:.2f}s | orcamentos: {n_orc} em {t_orc:.2f}s | banco: {"postgres" if orcamento.banco_orc.POSTGRES else "sqlite"}')
+    return PlainTextResponse(f'busca al: {total} itens em {t_busca:.2f}s | chapisco {t_busca2:.2f}s | orcamentos: {n_orc} em {t_orc:.2f}s | banco: {"postgres" if orcamento.banco_orc.POSTGRES else "sqlite"}')
 
 
 def conn():
@@ -180,10 +181,10 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
             fts = montar_fts(q)
             if not fts:
                 return {'total': 0, 'itens': [], 'referencia': r['id']}
-            grade = c.execute('''SELECT i.tipo, i.base, COUNT(*) n FROM busca JOIN item_busca i ON i.id = busca.rowid
+            grade = c.execute('''SELECT i.tipo, i.base, COUNT(*) n FROM busca CROSS JOIN item_busca i ON i.id = busca.rowid
                 WHERE busca MATCH ? AND i.referencia = ? GROUP BY 1, 2''', [fts, r['id']]).fetchall()
             w = ' AND '.join(['busca MATCH ?'] + filtros)
-            base_sql = f'FROM busca JOIN item_busca i ON i.id = busca.rowid WHERE {w}'
+            base_sql = f'FROM busca CROSS JOIN item_busca i ON i.id = busca.rowid WHERE {w}'
             total = c.execute(f'SELECT COUNT(*) {base_sql}', [fts] + args).fetchone()[0]
             cand = c.execute(f'''SELECT i.*, highlight(busca, 0, '\u0001', '\u0002') AS trecho, bm25(busca, 1.0, 4.0) AS rel {base_sql}
                 ORDER BY rel LIMIT 400''', [fts] + args).fetchall()
