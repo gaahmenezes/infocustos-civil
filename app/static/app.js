@@ -19,7 +19,7 @@ const SECOES = [
 ];
 const NOME_SECAO = Object.fromEntries(SECOES.map(([k, n]) => [k, n]));
 
-const estado = { q: '', base: 'todas', tipo: 'todos', itens: [], atual: null, ref: null };
+const estado = { q: '', base: 'todas', tipo: 'todos', itens: [], atual: null, ref: null, explorar: false };
 
 // ---------- endereços das telas ----------
 const rotaItem = (tipo, base, codigo) => `#/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}`;
@@ -227,7 +227,8 @@ function transicao(fn) {
 }
 function aplicarEstado() {
   const naConsulta = (document.body.dataset.aba || 'consulta') === 'consulta';
-  const temQ = estado.q.trim().length > 0;
+  // "Ver toda a base" mostra a lista mesmo sem nada digitado
+  const temQ = estado.q.trim().length > 0 || estado.explorar;
   const ocioso = naConsulta && !temQ && !estado.atual && !estado.comparando;
   const mudou = document.body.classList.contains('ocioso') !== ocioso || document.body.classList.contains('buscando') !== (naConsulta && temQ);
   if (ocioso && (mudou || !aplicarEstado.inicio)) { aplicarEstado.inicio = true; desenharInicio(); }
@@ -269,11 +270,12 @@ function esqueleto() {
   $('#lista').innerHTML = Array.from({ length: 6 }, () => '<li class="esq" aria-hidden="true"><i></i><i></i><i></i></li>').join('');
 }
 
+const PAGINA = 100;
 async function buscar() {
   const q = estado.q.trim();
   aplicarEstado();
   $('#exportar-busca').href = `/api/exportar/busca.xlsx?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, ref: estado.mes || '' })}`;
-  if (!q) {
+  if (!q && !estado.explorar) {
     // nada digitado: nenhuma composição aparece
     ++seq; estado.itens = []; $('#lista').innerHTML = ''; $('#contagem').textContent = '';
     contarFiltros(totaisDoMes());
@@ -284,11 +286,14 @@ async function buscar() {
   if (!lista.children.length) esqueleto();
   clearTimeout(tAguardo); tAguardo = setTimeout(() => lista.classList.add('aguardando'), 160);
   try {
-    const r = await api(`/api/busca?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, limite: 80, ref: estado.mes || '' })}`);
+    // sem texto (ver toda a base): a tabela do mês em ordem de código
+    const r = await api(`/api/busca?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, limite: q ? 80 : PAGINA, ref: estado.mes || '', ordem: q ? 'usos' : 'codigo' })}`);
     if (meu !== seq) return;
     estado.itens = r.itens;
-    contarFiltros(r.grade);
+    // sem texto, os números dos filtros são o tamanho da base do mês
+    contarFiltros(q ? r.grade : totaisDoMes());
     desenharLista(r);
+    if (!q) { const rol = lista.closest('.resultados') || lista; rol.scrollTop = 0; lista.scrollTop = 0; }
   } catch (e) {
     if (meu === seq) { $('#contagem').textContent = e.message; lista.innerHTML = ''; }
   } finally {
@@ -341,7 +346,17 @@ function desenharLista(r) {
       ? `Há ${outros.toLocaleString('pt-BR')} resultados com os outros filtros.` : 'Tente menos palavras ou só o começo delas.'}</li>`;
     return;
   }
-  lista.innerHTML = r.itens.map((it, i) => {
+  lista.innerHTML = linhasLista(r.itens, 0) + maisLista(r);
+}
+function maisLista(r) {
+  // a base inteira chega em páginas: o botão traz as próximas, na mesma ordem
+  const falta = r.total - estado.itens.length;
+  return !estado.q.trim() && falta > 0
+    ? `<li class="mais-li"><button type="button" class="botao" id="mais-base">Mostrar mais ${Math.min(PAGINA, falta).toLocaleString('pt-BR')} <span class="n">de ${falta.toLocaleString('pt-BR')} restantes</span></button></li>` : '';
+}
+function linhasLista(itens, inicio) {
+  return itens.map((it, k) => {
+    const i = inicio + k;
     const meta = [it.grupo || (it.tipo === 'insumo' ? it.categoria : ''),
       it.tipo === 'insumo' && it.usos ? `em ${it.usos.toLocaleString('pt-BR')} composições` : ''].filter(Boolean);
     const atual = estado.atual && estado.atual.base === it.base && estado.atual.codigo === it.codigo && estado.atual.tipo === it.tipo;
@@ -354,6 +369,23 @@ function desenharLista(r) {
         ? `<button type="button" class="cmp-bt" data-comparar="${esc(it.base)}|${esc(it.codigo)}" data-desc="${esc(it.descricao)}" aria-pressed="${window.estaComparando ? window.estaComparando(it.base, it.codigo) : false}" title="Comparar esta composição com outras">Comparar</button>` : ''}</li>`;
   }).join('');
 }
+async function mostrarMais(bt) {
+  const meu = seq, desde = estado.itens.length;
+  bt.disabled = true; bt.textContent = 'Carregando…';
+  try {
+    const r = await api(`/api/busca?${new URLSearchParams({ q: '', base: estado.base, tipo: estado.tipo, limite: PAGINA, desde, ref: estado.mes || '', ordem: 'codigo' })}`);
+    if (meu !== seq) return;
+    estado.itens = estado.itens.concat(r.itens);
+    bt.closest('li').outerHTML = linhasLista(r.itens, desde) + maisLista(r);
+    $('#contagem').innerHTML = $('#contagem').innerHTML.replace(/mostrando [\d.]+/, `mostrando ${estado.itens.length.toLocaleString('pt-BR')}`);
+    const novo = $(`#lista .res[data-i="${desde}"]`); if (novo) novo.focus({ preventScroll: true });
+  } catch (e) { bt.disabled = false; bt.textContent = `Não foi possível carregar (${e.message}). Tentar de novo`; }
+}
+$('#lista').addEventListener('click', (e) => { const b = e.target.closest('#mais-base'); if (b) mostrarMais(b); });
+function verBase() {
+  estado.explorar = true; estado.q = ''; $('#q').value = ''; buscar();
+}
+document.addEventListener('click', (e) => { if (e.target.closest('[data-ver-base]')) { e.preventDefault(); verBase(); } });
 
 function marcarAtual() {
   document.querySelectorAll('.res').forEach((b) => {
@@ -616,14 +648,14 @@ function desenharInsumo(i) {
 $('#form-busca').addEventListener('submit', (e) => { e.preventDefault(); buscar(); });
 $('#q').addEventListener('input', (e) => { estado.q = e.target.value; agendarBusca(); });
 $('#q').addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && estado.q) { e.preventDefault(); limparBusca(); return; }
+  if (e.key === 'Escape' && (estado.q || estado.explorar)) { e.preventDefault(); limparBusca(); return; }
   if (e.key === 'ArrowDown' || e.key === 'Enter') {
     if (e.key === 'Enter') registrarPesquisa();
     const p = document.querySelector('.res'); if (p) { e.preventDefault(); if (e.key === 'Enter') p.click(); else p.focus(); }
   }
 });
 function limparBusca() {
-  estado.q = ''; $('#q').value = ''; buscar(); $('#q').focus();
+  estado.q = ''; estado.explorar = false; $('#q').value = ''; buscar(); $('#q').focus();
 }
 $('#limpar').addEventListener('click', limparBusca);
 $('#lista').addEventListener('click', (e) => {
@@ -643,7 +675,7 @@ document.querySelectorAll('.chips').forEach((g) => g.addEventListener('click', (
   const b = e.target.closest('.chip'); if (!b) return;
   g.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
   estado[g.dataset.filtro] = b.dataset.v;
-  if (estado.q.trim()) buscar(); else contarFiltros(totaisDoMes());
+  if (estado.q.trim() || estado.explorar) buscar(); else contarFiltros(totaisDoMes());
 }));
 $('#detalhe').addEventListener('click', (e) => {
   const sb = e.target.closest('.secao-bt');

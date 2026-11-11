@@ -62,9 +62,21 @@ async def exigir_senha(request: Request, seguir):
 def saude(teste: str = ''):
     """Resposta curta para o monitor que visita o site e não o deixa dormir.
     `?teste=busca` mede uma busca e o banco de orçamentos (só tempos e contagens, nenhum dado)."""
+    import time
+    if teste == 'disco':
+        # onde está a demora: processador, abrir o banco a cada consulta ou ler o arquivo
+        t = time.perf_counter(); sum(i * i for i in range(1_000_000)); cpu = time.perf_counter() - t
+        sql = "SELECT COUNT(*) FROM busca WHERE busca MATCH 'al*'"
+        novas = []
+        for _ in range(2):
+            t = time.perf_counter(); c = conn(); c.execute(sql).fetchone(); c.close(); novas.append(time.perf_counter() - t)
+        c = conn(); mesma = []
+        for _ in range(2):
+            t = time.perf_counter(); c.execute(sql).fetchone(); mesma.append(time.perf_counter() - t)
+        c.close()
+        return PlainTextResponse(f'cpu {cpu:.2f}s | conexao nova {novas[0]:.2f}s {novas[1]:.2f}s | mesma conexao {mesma[0]:.2f}s {mesma[1]:.2f}s')
     if teste != 'busca':
         return PlainTextResponse('ok')
-    import time
     t = time.perf_counter(); total = api_busca(q='al', limite=80)['total']; t_busca = time.perf_counter() - t
     t = time.perf_counter(); n_orc = len(orcamento.listar()); t_orc = time.perf_counter() - t
     return PlainTextResponse(f'busca al: {total} itens em {t_busca:.2f}s | orcamentos: {n_orc} em {t_orc:.2f}s | banco: {"postgres" if orcamento.banco_orc.POSTGRES else "sqlite"}')
