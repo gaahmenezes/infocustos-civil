@@ -7,6 +7,7 @@ const lembrar = (id) => { ORC.ultimo = id; try { localStorage.setItem('orc-ultim
 
 async function req(url, metodo = 'GET', corpo) {
   const r = await fetch(url, { method: metodo, headers: corpo ? { 'Content-Type': 'application/json' } : {}, body: corpo ? JSON.stringify(corpo) : undefined });
+  if (r.status === 401) { sessaoEncerrada(); throw new Error('Sessão encerrada.'); }
   if (r.status === 204) return null;
   const j = await r.json().catch(() => ({}));
   if (!r.ok) {
@@ -282,12 +283,40 @@ function desenharPlanilha(o) {
   ligarPlanilha(o);
 }
 
+// refaz os totais do orçamento no navegador, com a mesma conta e os mesmos arredondamentos do servidor
+const arred2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
+function recalcular(o, mudar, manter) {
+  const n = structuredClone(o), fator = 1 + n.bdi / 100;
+  let custo = 0, total = 0, qtd = 0;
+  n.etapas.forEach((e, ne) => {
+    if (manter) e.itens = e.itens.filter(manter);
+    e.itens.forEach((i, ni) => {
+      if (mudar) mudar(i);
+      i.numero = `${ne + 1}.${ni + 1}`;
+      i.preco_unit = arred2(i.custo_unit * fator); i.custo_total = arred2(i.quantidade * i.custo_unit); i.total = arred2(i.quantidade * i.preco_unit);
+    });
+    e.custo_total = arred2(e.itens.reduce((s, i) => s + i.custo_total, 0)); e.total = arred2(e.itens.reduce((s, i) => s + i.total, 0));
+    custo += e.custo_total; total += e.total; qtd += e.itens.length;
+  });
+  n.custo_total = arred2(custo); n.total = arred2(total); n.valor_bdi = arred2(total - custo); n.qtd_itens = qtd;
+  n.etapas.forEach((e) => { e.peso = n.total ? e.total / n.total : 0; });
+  return n;
+}
+
 function ligarPlanilha(o) {
   const corpo = $('#orc-corpo');
   const atualizar = (n, jaMedido) => {
     const foco = document.activeElement && { ...document.activeElement.dataset };
     const deslizar = jaMedido || medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
     return abrirOrcamento(n.id, n).then(() => { deslizar(); restaurarFoco(foco); });
+  };
+  // resposta do servidor a uma mudança já mostrada: se bate com o previsto, a tela só é refeita depois que os números
+  // terminam de contar (para trazer a divisão do custo atualizada); se não bate, corrige na hora
+  const confirmar = (n, previsto) => {
+    if (n.total !== previsto.total || n.custo_total !== previsto.custo_total) return atualizar(n);
+    const visto = ORC.atual; ORC.atual = n;
+    setTimeout(() => { if (ORC.atual === n && document.body.contains(corpo)) atualizar(n); else if (ORC.atual === visto) ORC.atual = n; }, 480);
+    return Promise.resolve();
   };
   window.ligarArrastar(corpo, o, atualizar);
   corpo.addEventListener('change', async (e) => {
@@ -296,7 +325,11 @@ function ligarPlanilha(o) {
       if (t.classList.contains('qtd')) {
         const v = lerNum(t.value);
         if (!(v >= 0)) { avisar('Digite uma quantidade válida, como 12,5.'); t.value = ''; return; }
-        atualizar(await req(`/api/itens/${t.dataset.item}`, 'PATCH', { quantidade: v }));
+        // a tela mostra o resultado na hora, com a mesma conta do servidor; a resposta dele confirma (ou desfaz, se falhar)
+        const antes = ORC.atual, previsto = recalcular(antes, (i) => { if (String(i.id) === t.dataset.item) i.quantidade = v; });
+        atualizar(previsto);
+        try { confirmar(await req(`/api/itens/${t.dataset.item}`, 'PATCH', { quantidade: v }), previsto); }
+        catch (err) { await atualizar(antes); avisar(`${esc(err.message)} A quantidade voltou ao valor anterior.`); }
       } else if (t.classList.contains('etapa-titulo') && t.value.trim()) {
         ORC.atual = await req(`/api/etapas/${t.dataset.etapa}`, 'PATCH', { titulo: t.value.trim() });
       }
@@ -311,8 +344,11 @@ function ligarPlanilha(o) {
     try {
       const a = b.dataset.acao;
       if (a === 'item-excluir') {
-        const r = await req(`/api/itens/${id}`, 'DELETE'); await atualizar(r);
-        avisarDesfazer('Item excluído.', r.desfazer);
+        // a linha sai na hora; se o servidor recusar, ela volta
+        const antes = ORC.atual, previsto = recalcular(antes, null, (i) => String(i.id) !== id);
+        atualizar(previsto);
+        try { const r = await req(`/api/itens/${id}`, 'DELETE'); confirmar(r, previsto); avisarDesfazer('Item excluído.', r.desfazer); }
+        catch (err) { await atualizar(antes); avisar(`${esc(err.message)} O item não foi excluído.`); }
       }
       if (a === 'etapa-excluir') {
         const et = o.etapas.find((x) => String(x.id) === id);

@@ -14,6 +14,16 @@ function cabecalhoFolha(emp, o) {
 }
 const rodapeFolha = (o) => `<footer class="folha-rod"><span>Preços: ORSE e SINAPI, conforme os relatórios da CEHOP/SE, referência ${esc(nomeRef(o.referencia))}.</span><span>Emitido em ${hoje()} pelo InfoCustos Civil</span></footer>`;
 
+// faixa com a divisão do custo direto, na capa: o cliente vê de relance para onde vai o dinheiro
+function capaDivisao(o) {
+  const dv = o.divisao; if (!dv) return '';
+  const partes = [['Mão de obra', dv.mo, '--c-mo'], ['Material', dv.mat, '--c-mat'], ['Equipamento', dv.equip, '--c-equip'], ['Serviço de terceiro', dv.terc, '--c-terc']].filter((p) => p[1] > 0.0005);
+  if (!partes.length) return '';
+  return `<div class="capa-divisao"><span class="capa-rotulo">Composição do custo direto</span>
+    <div class="capa-barra" role="img" aria-label="${esc(partes.map((p) => `${p[0]} ${pct.format(p[1])}`).join(', '))}">${partes.map((p) => `<i style="flex-grow:${p[1]};background:var(${p[2]})"></i>`).join('')}</div>
+    <ul>${partes.map((p) => `<li style="--cor:var(${p[2]})"><b>${pct.format(p[1])}</b>${p[0]}</li>`).join('')}</ul></div>`;
+}
+
 function folhaCapa(emp, o) {
   const contato = [emp.cnpj ? `CNPJ ${emp.cnpj}` : '', emp.endereco, emp.contato].filter(Boolean).map(esc).join(' · ');
   return `<section class="folha folha-capa">
@@ -26,6 +36,7 @@ function folhaCapa(emp, o) {
         <div><dt>Data-base dos preços</dt><dd>${esc(nomeRef(o.referencia))}</dd></div>
         <div><dt>Bases de preços</dt><dd>ORSE e SINAPI</dd></div>
       </dl></div>
+    ${capaDivisao(o)}
     <div class="capa-valores">
       <div><span>Custo direto</span><b>${brl.format(o.custo_total)}</b></div>
       <div><span>BDI de ${num2.format(o.bdi)}%</span><b>${brl.format(o.valor_bdi)}</b></div>

@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Entrar — InfoCustos Civil</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0B0C0D">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23F5B800'/%3E%3Cpath d='M7 25.5v-7h6v-5.5h6V7.5h6v18z' fill='%2317191C'/%3E%3C/svg%3E">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="stylesheet" href="/static/entrar.css">
+</head>
+<body>
+  <div class="planta" aria-hidden="true"></div>
+  <div class="clarao" aria-hidden="true"></div>
+  <main class="palco">
+    <section class="lado-marca">
+      <a class="marca" href="/entrar" aria-label="InfoCustos Civil">
+        <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#F5B800" /><path class="degraus" d="M7 25.5v-7h6v-5.5h6V7.5h6v18z" fill="#17191C" /></svg>
+        <span>InfoCustos <b>Civil</b></span>
+      </a>
+      <h1>Do preço de tabela<br>ao orçamento <em>pronto</em>.</h1>
+      <p class="chamada">Composições e insumos da ORSE e da SINAPI, mês a mês, com orçamento, curva ABC e relatório.</p>
+      <dl class="numeros" id="numeros" aria-live="off">
+        <div><dt>composições</dt><dd data-n="composicoes">—</dd></div>
+        <div><dt>insumos</dt><dd data-n="insumos">—</dd></div>
+        <div><dt id="rot-mes">meses de referência</dt><dd data-n="meses">—</dd></div>
+      </dl>
+    </section>
+
+    <section class="cartao" id="cartao" aria-labelledby="t-entrar">
+      <h2 id="t-entrar">Entrar</h2>
+      <p class="sub">Acesso restrito. Digite a senha do sistema.</p>
+      <form id="form" novalidate>
+        <label for="senha">Senha</label>
+        <div class="campo" id="campo">
+          <svg class="cadeado" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="9.5" rx="2.5" /><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5" /></svg>
+          <input id="senha" name="senha" type="password" autocomplete="current-password" autofocus required aria-describedby="erro">
+          <button type="button" class="olho" id="olho" aria-label="Mostrar a senha" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z" /><circle cx="12" cy="12" r="2.8" /><path class="risco" d="M4 4l16 16" /></svg>
+          </button>
+        </div>
+        <p class="erro" id="erro" role="alert"></p>
+        <button type="submit" class="entrar" id="entrar">
+          <span class="rot">Entrar</span>
+          <span class="girando" aria-hidden="true"></span>
+          <svg class="visto" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.5 12.5 10 17 18.5 7.5" /></svg>
+        </button>
+      </form>
+      <p class="acordando" id="acordando" hidden>O servidor estava em repouso e está acordando. Pode levar até um minuto.</p>
+    </section>
+  </main>
+  <footer class="rodape">Produto independente, sem vínculo com a CEHOP ou a CAIXA. Fonte dos preços: ORSE (CEHOP/SE) e SINAPI.</footer>
+  <div class="cortina" id="cortina" aria-hidden="true"></div>
+  <script src="/static/entrar.js"></script>
+</body>
+</html>

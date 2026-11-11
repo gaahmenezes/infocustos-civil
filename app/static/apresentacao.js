@@ -5,6 +5,28 @@
 const AP = { cena: 0, t: [], dados: null, vivo: false };
 const apEspera = (ms) => new Promise((ok) => { AP.t.push(setTimeout(ok, ms)); });
 const apParar = () => { AP.t.forEach(clearTimeout); AP.t = []; };
+// em tela grande, a rolagem conduz a demonstração: o herói fica preso e cada trecho da descida mostra uma cena
+const apRolagem = () => window.innerWidth >= 1000 && window.innerHeight >= 700 && !semMovimento();
+function apCenaDaRolagem() {
+  const tr = $('.ap-trilho.rolando'); if (!tr) return null;
+  const q = tr.getBoundingClientRect(), topo = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topo')) || 0;
+  const curso = q.height - (window.innerHeight - topo);
+  const p = curso > 0 ? Math.min(0.999, Math.max(0, (topo - q.top) / curso)) : 0;
+  tr.style.setProperty('--ap-p', p.toFixed(4));
+  return Math.floor(p * CENAS.length);
+}
+let apQuadro = 0;
+window.addEventListener('scroll', () => {
+  if (!AP.vivo || apQuadro) return;
+  apQuadro = requestAnimationFrame(() => { apQuadro = 0; const k = apCenaDaRolagem(); if (k != null && k !== AP.cena && AP.dados) apMostrar(k, false); });
+}, { passive: true });
+function apIrParaCena(k) {
+  const tr = $('.ap-trilho.rolando'); if (!tr) { apMostrar(k, false); return; }
+  const topo = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topo')) || 0;
+  const curso = tr.offsetHeight - (window.innerHeight - topo);
+  window.scrollTo({ top: tr.getBoundingClientRect().top + window.scrollY - topo + curso * ((k + 0.15) / CENAS.length), behavior: 'auto' });
+  if (k !== AP.cena) apMostrar(k, false);
+}
 
 async function apDados() {
   if (AP.dados && AP.dados.mes === estado.mes) return AP.dados;
@@ -80,7 +102,9 @@ window.desenharApresentacao = async function () {
     ['relogio', 'Cada mês no seu lugar', 'A consulta mostra um mês por vez. A variação de preços fica numa aba própria, só para comparar.'],
     ['calendario', 'Relatório com a sua marca', 'Capa, resumo, planilha, curva ABC e composições analíticas em PDF, com nome e logotipo da empresa.'],
   ];
+  const rolando = apRolagem();
   d.innerHTML = `<div class="apresentacao">
+    <div class="ap-trilho${rolando ? ' rolando' : ''}">
     <section class="ap-heroi">
       <div class="ap-texto">
         <p class="ap-olho"><span></span>Preços ORSE e SINAPI de ${esc(mes)}</p>
@@ -95,12 +119,14 @@ window.desenharApresentacao = async function () {
           <div class="ap-abas" role="tablist" aria-label="Cenas da demonstração">${CENAS.map((c, k) => `<button type="button" role="tab" aria-selected="${k === 0}" data-cena="${k}">${c.nome}</button>`).join('')}</div></div>
         <div class="ap-palco" id="ap-palco" role="tabpanel"><div class="ap-carregando">${osso('60%', 18)}${osso('100%', 54)}${osso('100%', 54)}${osso('100%', 54)}</div></div>
       </div>
+      ${rolando ? '<p class="ap-role" aria-hidden="true"><span class="ap-role-barra"><i></i></span>Role a página para ver as três cenas</p>' : ''}
     </section>
+    </div>
     <section class="ap-pontos" aria-label="O que o sistema faz">${pontos.map(([ic, t, x]) => `<article class="ap-ponto"><svg viewBox="0 0 48 48" aria-hidden="true">${ICONES[ic]}</svg><h2>${t}</h2><p>${x}</p></article>`).join('')}</section>
     <p class="ap-nota">Os preços vêm dos relatórios publicados pela CEHOP/SE e são conferidos item a item a cada mês. O InfoCustos Civil é um produto independente: não é um site da CEHOP nem da CAIXA.</p>
   </div>`;
-  d.querySelector('.ap-abas').addEventListener('click', (e) => { const b = e.target.closest('[data-cena]'); if (b) apMostrar(Number(b.dataset.cena), false); });
+  d.querySelector('.ap-abas').addEventListener('click', (e) => { const b = e.target.closest('[data-cena]'); if (b) apIrParaCena(Number(b.dataset.cena)); });
   try { await apDados(); } catch (_) { const j = d.querySelector('.ap-janela'); if (j) j.remove(); return; }
-  if (document.body.contains($('#ap-palco'))) apMostrar(0, true);
+  if (document.body.contains($('#ap-palco'))) apMostrar(0, !rolando);
 };
 window.sairDaApresentacao = () => { AP.vivo = false; apParar(); };

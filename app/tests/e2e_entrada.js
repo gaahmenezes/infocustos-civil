@@ -1,0 +1,32 @@
+// Tela de entrada. Precisa de um servidor com senha: INFOCUSTOS_SENHA=obra123 uvicorn server:app --port 8001
+const { chromium } = require('playwright'); const OUT = process.argv[2], U = 'http://localhost:8001';
+let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); c ? ok++ : falha++; };
+(async () => { const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1366, height: 860 } }); const erros = []; p.on('pageerror', (e) => erros.push(e.message));
+  let dialogo = false; p.on('dialog', () => { dialogo = true; });
+  const r = await p.goto(U + '/#/orcamentos');
+  v(p.url().includes('/entrar'), 'Sem sessão, o site leva à tela de entrada: ' + p.url());
+  v(!(r.headers()['www-authenticate']), 'Sem a caixinha de senha do navegador');
+  await p.waitForFunction(() => /\d{2}\.\d{3}/.test(document.querySelector('[data-n="composicoes"]').textContent)); await p.waitForTimeout(1300);
+  v((await p.textContent('[data-n="composicoes"]')) === '18.327', 'Números da base contam até o valor: ' + await p.textContent('#numeros'));
+  await p.screenshot({ path: OUT + '/login.png' });
+  const api = await p.request.get(U + '/api/orcamentos'); v(api.status() === 401, 'API sem sessão responde 401');
+  await p.fill('#senha', 'errada'); await p.click('#entrar'); await p.waitForSelector('.campo.errado');
+  v((await p.textContent('#erro')) === 'Senha incorreta.', 'Senha errada: campo treme e avisa');
+  await p.screenshot({ path: OUT + '/login_erro.png' });
+  await p.click('#olho'); v(await p.getAttribute('#senha', 'type') === 'text', 'Botão do olho mostra a senha');
+  await p.fill('#senha', 'obra123'); await p.keyboard.press('Enter');
+  await p.waitForSelector('#entrar.certo'); await p.waitForTimeout(700); await p.screenshot({ path: OUT + '/login_cortina.png' });
+  await p.waitForURL((u) => !u.pathname.includes('entrar')); await p.waitForSelector('.pagina, #q');
+  v(p.url().endsWith('/#/orcamentos'), 'Depois de entrar, volta para onde a pessoa queria ir: ' + p.url());
+  await p.waitForTimeout(900); v(!(await p.$('#abertura')), 'A cortina de chegada se recolhe e some');
+  const ck = (await p.context().cookies()).find((c) => c.name === 'infocustos_sessao'); v(ck && ck.httpOnly && ck.sameSite === 'Lax', 'Sessão em cookie protegido (HttpOnly)');
+  await p.reload(); await p.waitForSelector('.pagina, #q'); v(!p.url().includes('entrar'), 'Recarregar mantém a sessão');
+  await p.goto(U + '/entrar'); v(!p.url().includes('entrar'), 'Quem já entrou não vê a tela de entrada de novo');
+  // sessão encerrada no meio do uso
+  await p.context().clearCookies(); await p.goto(U + '/'); v(p.url().includes('/entrar'), 'Sem o cookie, volta à entrada');
+  for (let i = 0; i < 6; i++) await p.request.post(U + '/api/entrar', { data: { senha: 'x' } });
+  const t = await p.request.post(U + '/api/entrar', { data: { senha: 'x' } }); v(t.status() === 429, 'Muitas senhas erradas seguidas: o servidor pede para aguardar (' + (await t.json()).detail + ')');
+  v(!dialogo && !erros.length, 'Sem erros de JavaScript ' + JSON.stringify(erros));
+  const m = await b.newPage({ viewport: { width: 390, height: 800 } }); await m.goto(U + '/entrar'); await m.waitForTimeout(1500); await m.screenshot({ path: OUT + '/login_cel.png' });
+  v(await m.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'No celular, sem rolagem lateral');
+  console.log(`\n${ok} OK, ${falha} falhas`); await b.close(); process.exitCode = falha ? 1 : 0; })();

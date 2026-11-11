@@ -7,11 +7,14 @@ Cada consulta trabalha com UM mês (parâmetro `ref`, padrão: o mais recente). 
 diferentes só aparecem juntos em /api/comparativo.
 """
 import base64
+import hashlib
+import hmac
 import io
 import os
 import secrets
 import re
 import sqlite3
+import time
 import unicodedata
 from pathlib import Path
 from typing import Optional
@@ -19,6 +22,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
@@ -34,13 +38,28 @@ SECOES = {
 app = FastAPI(title='InfoCustos Civil')
 
 # Senha única do site publicado: só vale quando INFOCUSTOS_SENHA está definida (no computador local fica aberto).
+# Quem acerta a senha na tela de entrada recebe um cookie assinado; nada de caixinha de senha do navegador.
 USUARIO = os.environ.get('INFOCUSTOS_USUARIO', 'infocustos')
 SENHA = os.environ.get('INFOCUSTOS_SENHA', '')
-# entram sem senha: o monitor que mantém o site acordado e o manifesto/ícones, que o navegador busca sem enviar a senha
-LIVRES = {'/saude', '/manifest.webmanifest'}
+COOKIE, VALIDADE = 'infocustos_sessao', 30 * 24 * 3600
+# entram sem senha: a tela de entrada e o que ela usa, o monitor que mantém o site acordado e o manifesto/ícones
+LIVRES = {'/saude', '/manifest.webmanifest', '/entrar', '/api/entrar', '/api/entrada',
+          '/static/entrar.css', '/static/entrar.js'}
+_tentativas = {}  # ip -> (quantas erradas, até quando esperar)
 
 
-def _autorizado(cabecalho: str) -> bool:
+def _assinar(validade: int) -> str:
+    chave = hashlib.sha256(('sessao:' + SENHA).encode()).digest()
+    return hmac.new(chave, str(validade).encode(), hashlib.sha256).hexdigest()
+
+
+def _sessao_valida(valor: str) -> bool:
+    validade, _, assinatura = (valor or '').partition('.')
+    return validade.isdigit() and int(validade) > time.time() and secrets.compare_digest(assinatura, _assinar(int(validade)))
+
+
+def _basic_valido(cabecalho: str) -> bool:
+    # continua aceito para scripts e testes; o navegador não é mais convidado a usá-lo
     if not cabecalho.startswith('Basic '):
         return False
     try:
@@ -52,10 +71,58 @@ def _autorizado(cabecalho: str) -> bool:
 
 @app.middleware('http')
 async def exigir_senha(request: Request, seguir):
-    if SENHA and request.url.path not in LIVRES and not request.url.path.startswith('/static/icones/') and not _autorizado(request.headers.get('authorization', '')):
-        return Response('Acesso restrito ao InfoCustos Civil.', status_code=401,
-                        headers={'WWW-Authenticate': 'Basic realm="InfoCustos Civil", charset="UTF-8"'})
-    return await seguir(request)
+    caminho = request.url.path
+    if (not SENHA or caminho in LIVRES or caminho.startswith('/static/icones/')
+            or _sessao_valida(request.cookies.get(COOKIE, '')) or _basic_valido(request.headers.get('authorization', ''))):
+        return await seguir(request)
+    if request.method == 'GET' and not caminho.startswith(('/api/', '/static/')):
+        return RedirectResponse('/entrar', status_code=303)  # página: vai para a tela de entrada
+    return JSONResponse({'detail': 'Sessão encerrada. Entre de novo.'}, status_code=401)
+
+
+class Entrada(BaseModel):
+    senha: str = ''
+
+
+@app.get('/entrar')
+def tela_entrar(request: Request):
+    if not SENHA or _sessao_valida(request.cookies.get(COOKIE, '')):
+        return RedirectResponse('/', status_code=303)
+    return FileResponse(AQUI / 'static' / 'entrar.html', headers={'Cache-Control': 'no-store'})
+
+
+@app.get('/api/entrada')
+def api_entrada():
+    """Números da base para a tela de entrada (só contagens do mês mais recente)."""
+    with conn() as c:
+        r = referencia_atual(c)
+        tot = dict(c.execute('SELECT tipo, COUNT(*) FROM item_busca WHERE referencia = ? GROUP BY 1', (r['id'],)).fetchall())
+        return {'mes': nome_mes(r), 'composicoes': tot.get('servico', 0), 'insumos': tot.get('insumo', 0), 'meses': len(referencias(c))}
+
+
+@app.post('/api/entrar')
+def api_entrar(d: Entrada, request: Request):
+    ip = (request.headers.get('x-forwarded-for', '').split(',')[0].strip() or (request.client.host if request.client else '?'))
+    erradas, espera = _tentativas.get(ip, (0, 0))
+    if espera > time.time():
+        raise HTTPException(429, f'Muitas tentativas. Aguarde {int(espera - time.time()) + 1} s e tente de novo.')
+    if not SENHA or secrets.compare_digest(d.senha.encode(), SENHA.encode()):
+        _tentativas.pop(ip, None)
+        validade = int(time.time()) + VALIDADE
+        r = JSONResponse({'ok': True})
+        r.set_cookie(COOKIE, f'{validade}.{_assinar(validade)}', max_age=VALIDADE, httponly=True, samesite='lax',
+                     secure=request.headers.get('x-forwarded-proto', request.url.scheme) == 'https')
+        return r
+    erradas += 1
+    # a partir da 5ª senha errada seguida, cada nova tentativa espera mais (até 5 min)
+    _tentativas[ip] = (erradas, time.time() + min(300, 2 ** (erradas - 4)) if erradas >= 5 else 0)
+    time.sleep(0.4)
+    raise HTTPException(401, 'Senha incorreta.')
+
+
+@app.post('/api/sair')
+def api_sair():
+    r = JSONResponse({'ok': True}); r.delete_cookie(COOKIE); return r
 
 
 @app.api_route('/saude', methods=['GET', 'HEAD'])
@@ -132,7 +199,7 @@ def api_referencia(ref: Optional[str] = None):
         r = mes(c, ref)
         tot = c.execute('SELECT tipo, base, COUNT(*) n FROM item_busca WHERE referencia = ? GROUP BY 1, 2', (r['id'],)).fetchall()
         tem_enc = {row[0] for row in c.execute('SELECT DISTINCT tipo FROM encargo WHERE referencia = ?', (r['id'],))}
-        return r | {'totais': [dict(t) for t in tot], 'referencias': referencias(c), 'atual': referencia_atual(c)['id'],
+        return r | {'totais': [dict(t) for t in tot], 'referencias': referencias(c), 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
                     'encargos_detalhados': sorted(tem_enc)}
 
 
@@ -417,4 +484,5 @@ def apresentacao():
 
 @app.get('/')
 def index():
-    return FileResponse(AQUI / 'static' / 'index.html')
+    # sem cache: depois de sair (ou de a sessão vencer), o navegador não mostra a página guardada
+    return FileResponse(AQUI / 'static' / 'index.html', headers={'Cache-Control': 'no-cache'})

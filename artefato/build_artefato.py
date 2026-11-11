@@ -20,7 +20,8 @@ def trocar(texto, pares, nome):
 
 
 app = (STATIC / 'app.js').read_text(encoding='utf-8')
-app = re.sub(r'async function api\(url\) \{.*?\n\}\n', 'async function api(url) { return LOCAL.req(url); }\n', app, count=1, flags=re.S)
+app, n = re.subn(r'async function buscarJson\(url\) \{.*?\n\}\n', 'async function buscarJson(url) { return LOCAL.req(url); }\n', app, count=1, flags=re.S)
+assert n == 1, 'buscarJson não encontrado em app.js'
 # no artefato não há download de arquivo: o menu "Exportar" vira "Copiar para o Excel"
 app, n = re.subn(r'/\*EXPORTAR-COMP\*/.*?/\*FIM-EXPORTAR-COMP\*/',
                  "function exportarComposicao() { return '<button type=\"button\" class=\"botao\" data-copiar>Copiar para o Excel</button>'; }",
@@ -59,7 +60,7 @@ orc = trocar(orc, [
 orc = orc.replace("'#/orcamentos'", "'#orcamentos'").replace('"#/orcamentos"', '"#orcamentos"')
 # telas novas: painel do orçamento, comparação e relatório (usam as rotas e as funções já trocadas acima)
 extras = ''
-for nome in ('movimento.js', 'painel.js', 'comparar.js', 'relatorio.js', 'paleta.js', 'apresentacao.js'):
+for nome in ('movimento.js', 'fluxo.js', 'painel.js', 'comparar.js', 'relatorio.js', 'paleta.js', 'apresentacao.js'):
     t = (STATIC / nome).read_text(encoding='utf-8').replace('href="#/"', 'href="#inicio"')
     t = t.replace('href="#/orcamentos"', 'href="#orcamentos"')
     for velho, novo in (("'#/orcamentos'", "'#orcamentos'"), ("'#/encargos'", "'#encargos'"), ("'#/comparativo'", "'#comparativo'"), ("'#/apresentacao'", "'#apresentacao'"), ("'#/'", "'#inicio'")):

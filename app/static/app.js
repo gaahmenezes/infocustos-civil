@@ -45,7 +45,18 @@ aplicarTema(PREF.ler('infocustos-tema', ''));
 document.addEventListener('click', (e) => {
   if (!e.target.closest('#tema')) return;
   const novo = temaAtual() === 'dark' ? 'light' : 'dark';
-  PREF.gravar('infocustos-tema', novo); aplicarTema(novo);
+  PREF.gravar('infocustos-tema', novo);
+  // o tema novo se abre em círculo a partir do botão
+  const calmo = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!document.startViewTransition || calmo) { aplicarTema(novo); return; }
+  const q = e.target.closest('#tema').getBoundingClientRect(), x = q.left + q.width / 2, y = q.top + q.height / 2;
+  const raio = Math.hypot(Math.max(x, innerWidth - x), Math.max(y, innerHeight - y));
+  document.documentElement.classList.add('trocando-tema');
+  const t = document.startViewTransition(() => aplicarTema(novo));
+  t.ready.then(() => document.documentElement.animate(
+    { clipPath: [`circle(0px at ${x}px ${y}px)`, `circle(${raio}px at ${x}px ${y}px)`] },
+    { duration: 520, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', pseudoElement: '::view-transition-new(root)' })).catch(() => {});
+  t.finished.finally(() => document.documentElement.classList.remove('trocando-tema'));
 });
 // altura das linhas das tabelas: compacta (padrão) ou confortável
 function aplicarDensidade(d) {
@@ -68,13 +79,14 @@ function medirTopo() { const c = $('.cabecalho'); if (c) document.documentElemen
 medirTopo(); window.addEventListener('resize', medirTopo);
 
 // ---------- peças comuns ----------
+// conjunto próprio: traço único de 2,6 em grade de 48, cantos de raio 4 e um detalhe em amarelo (classe "ac") em cada ícone
 const ICONES = {
-  lupa: '<circle cx="21" cy="21" r="11" /><path d="M29.5 29.5 40 40" />',
-  folha: '<rect x="9" y="6" width="30" height="36" rx="4" /><path d="M16 16h16M16 24h16M16 32h9" />',
-  relogio: '<circle cx="24" cy="24" r="16" /><path d="M24 14v11l7 4" />',
-  planilha: '<rect x="6" y="9" width="36" height="30" rx="4" /><path d="M6 19h36M18 19v20M6 29h36" />',
-  calendario: '<rect x="7" y="10" width="34" height="30" rx="4" /><path d="M7 20h34M16 6v8M32 6v8" />',
-  grafico: '<path d="M8 40h32M14 40V26M24 40V12M34 40V20" />',
+  lupa: '<circle cx="21" cy="21" r="11" /><path d="M29.5 29.5 40 40" /><path class="ac" d="M15.5 21a5.5 5.5 0 0 1 5.5-5.5" />',
+  folha: '<path d="M13 6h16l10 10v22a4 4 0 0 1-4 4H13a4 4 0 0 1-4-4V10a4 4 0 0 1 4-4Z" /><path d="M28 6v11h11" /><path class="ac" d="M16 26h16M16 33h10" />',
+  relogio: '<circle cx="24" cy="24" r="16" /><path class="ac" d="M24 14v10.5l7 4" />',
+  planilha: '<rect x="6" y="9" width="36" height="30" rx="4" /><path d="M6 19h36M18 19v20" /><path class="ac" d="M24 29h12" />',
+  calendario: '<rect x="7" y="10" width="34" height="30" rx="4" /><path d="M7 20h34M16 6v8M32 6v8" /><path class="ac" d="M15 29h6v5h-6z" />',
+  grafico: '<path d="M8 40h32M14 40V28M34 40V20" /><path class="ac" d="M24 40V12" />',
 };
 function vazio(icone, titulo, texto, acao = '') {
   return `<div class="vazio-estado"><svg viewBox="0 0 48 48" aria-hidden="true">${ICONES[icone] || ICONES.folha}</svg>
@@ -92,14 +104,34 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') document.querySelectorAll('details.menu[open]').forEach((m) => { m.removeAttribute('open'); m.querySelector('summary').focus(); });
 });
 
-async function api(url) {
+// sessão encerrada (site com senha): volta para a tela de entrada, guardando onde a pessoa estava
+function sessaoEncerrada() { if (!sessaoEncerrada.indo) { sessaoEncerrada.indo = true; location.href = '/entrar' + location.hash; } }
+async function buscarJson(url) {
   const r = await fetch(url);
+  if (r.status === 401) { sessaoEncerrada(); throw new Error('Sessão encerrada.'); }
   if (!r.ok) {
     let msg = `Erro ${r.status}`;
     try { msg = (await r.json()).detail || msg; } catch (_) { /* sem corpo */ }
     throw new Error(msg);
   }
   return r.json();
+}
+// fichas (composição e insumo) ficam um minuto na memória: abrir de novo, ou abrir o que o mouse já apontou, é instantâneo
+const MEMORIA = new Map();
+const lembravel = (url) => /^\/api\/(composicao|insumo)\//.test(url);
+function api(url) {
+  if (!lembravel(url)) return buscarJson(url);
+  const m = MEMORIA.get(url);
+  if (m && Date.now() - m.t < 60000) return m.p;
+  const p = buscarJson(url);
+  MEMORIA.set(url, { t: Date.now(), p });
+  p.catch(() => MEMORIA.delete(url));
+  if (MEMORIA.size > 80) MEMORIA.delete(MEMORIA.keys().next().value);
+  return p;
+}
+function precarregar(tipo, base, codigo) {
+  const url = `/api/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}?${qsMes()}`;
+  api(url).catch(() => {});
 }
 
 // ---------- mês de referência ----------
@@ -451,6 +483,7 @@ async function rota() {
       if (document.startViewTransition && !semMovimento()) d.dataset.vt = '1';
       if (tipo === 'composicao') desenharComposicao(dados); else desenharInsumo(dados);
     });
+    if (tipo === 'composicao' && window.montarFluxo) window.montarFluxo();
     registrarAberto(dados, tipo === 'composicao' ? 'servico' : 'insumo');
     // a ficha começa visível: no celular volta ao topo; no computador só sobe se o começo ficou fora da tela
     if (window.innerWidth <= 900 || d.getBoundingClientRect().top < 70) window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' });
@@ -560,7 +593,7 @@ function desenharComposicao(c) {
       </div>
     </div>
     ${barraCusto(c)}
-    <div class="tabela-barra"><h3>Itens da composição</h3>${seletorDensidade()}</div>
+    <div class="tabela-barra"><h3>Itens da composição</h3><div class="tabela-ctrl">${window.seletorVista ? window.seletorVista() : ''}${seletorDensidade()}</div></div>
     <table class="arvore">
       <thead><tr><th>Código</th><th>Descrição</th><th class="col-unit">Un.</th><th class="num col-coef">${dnit ? 'Qtd.' : 'Coeficiente'}</th><th class="num">${dnit ? 'Custo prod.' : 'Custo unit.'}</th><th class="num">Custo total</th><th class="col-peso">% do custo</th></tr></thead>
       ${corpo}
@@ -662,6 +695,14 @@ $('#lista').addEventListener('click', (e) => {
   const b = e.target.closest('.res'); if (!b) return;
   const it = estado.itens[b.dataset.i]; if (it) { registrarPesquisa(); abrir(it.tipo, it.base, it.codigo); }
 });
+// apontar (ou focar) um resultado já busca a ficha: quando o clique chega, ela está pronta
+let tPre = 0;
+const preDoResultado = (e) => {
+  const b = e.target.closest && e.target.closest('.res'); if (!b) return;
+  const it = estado.itens[b.dataset.i]; if (!it) return;
+  clearTimeout(tPre); tPre = setTimeout(() => precarregar(it.tipo, it.base, it.codigo), e.type === 'pointerover' ? 70 : 0);
+};
+['pointerover', 'focusin', 'touchstart'].forEach((ev) => $('#lista').addEventListener(ev, preDoResultado, { passive: true }));
 $('#lista').addEventListener('keydown', (e) => {
   const b = e.target.closest('.res'); if (!b) return;
   const li = b.parentElement;
@@ -707,7 +748,14 @@ const inicioHTML = $('#detalhe').innerHTML;
 // o cursor já começa na pesquisa quando a tela inicial é a consulta (em tela de toque não, para o teclado não subir sozinho);
 // nas outras telas o foco fica no começo da página, e o primeiro Tab encontra "Pular para o conteúdo"
 const focoInicial = () => { if (document.body.classList.contains('ocioso') && window.matchMedia('(hover: hover)').matches) $('#q').focus(); };
-carregarReferencia().then(() => { buscar(); rota(); focoInicial(); }).finally(() => { const a = $('#abertura'); if (a) a.remove(); });
+const tAcordando = setTimeout(() => { const a = $('#abertura'); if (a) a.classList.add('acordando'); }, 3500);
+carregarReferencia().then(() => { buscar(); rota(); focoInicial(); }).finally(() => {
+  clearTimeout(tAcordando);
+  const a = $('#abertura'); if (!a) return;
+  if (!a.classList.contains('chegada') || semMovimento()) { a.remove(); return; }
+  // vindo da tela de entrada: a cortina amarela se recolhe e revela o sistema
+  a.classList.add('recolher'); setTimeout(() => a.remove(), 650);
+});
 
 
 // ---------- comparativo entre meses (único lugar onde meses diferentes aparecem juntos) ----------

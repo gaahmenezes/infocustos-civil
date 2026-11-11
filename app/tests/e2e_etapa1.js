@@ -13,11 +13,13 @@ const R = (h) => U + (art ? h.replace('#/', '#') : h);
   await p.goto(U); await p.waitForSelector('#mes-ref');
 
   // tema
-  await p.click('#tema');
+  await p.click('#tema'); await p.waitForFunction(() => document.documentElement.dataset.theme === 'dark', null, { timeout: 2000 }).catch(() => {});
   ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'Botão troca para o tema escuro');
   await p.reload(); await p.waitForSelector('#mes-ref');
   ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'dark', 'Tema escolhido continua depois de recarregar');
   await p.click('#tema');
+  // o tema novo se abre em círculo: a troca acontece no quadro seguinte ao clique
+  await p.waitForFunction(() => document.documentElement.dataset.theme === 'light', null, { timeout: 2000 }).catch(() => {});
   ok(await p.evaluate(() => document.documentElement.dataset.theme) === 'light', 'Botão volta para o tema claro');
 
   // teclado na lista

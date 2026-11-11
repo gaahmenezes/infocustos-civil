@@ -21,7 +21,9 @@
   <div class="abertura" id="abertura" aria-hidden="true">
     <svg viewBox="0 0 32 32"><rect width="32" height="32" rx="8" fill="#F5B800" /><path d="M7 25.5v-7h6v-5.5h6V7.5h6v18z" fill="#17191C" /></svg>
     <span>InfoCustos <b>Civil</b></span><i></i>
+    <p>O servidor estava em repouso e está acordando.<br>Pode levar até um minuto.</p>
   </div>
+  <script>try { if (sessionStorage.getItem('infocustos-chegou')) { sessionStorage.removeItem('infocustos-chegou'); document.getElementById('abertura').classList.add('chegada'); } } catch (e) {}</script>
   <a class="pular" href="#detalhe">Pular para o conteúdo</a>
   <header class="cabecalho">
     <a class="marca" href="#/" aria-label="InfoCustos Civil, início">
@@ -213,6 +215,7 @@
 
   <script src="/static/app.js"></script>
   <script src="/static/movimento.js"></script>
+  <script src="/static/fluxo.js"></script>
   <script src="/static/orcamento.js"></script>
   <script src="/static/painel.js"></script>
   <script src="/static/comparar.js"></script>

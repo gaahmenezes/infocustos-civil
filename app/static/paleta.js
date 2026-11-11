@@ -16,6 +16,7 @@ function acoesDaPaleta() {
     { grupo: 'Ir para', rotulo: 'Comparativo entre meses', dica: 'variação de preços', acao: ir('#/comparativo') },
     { grupo: 'Ir para', rotulo: 'Apresentação do InfoCustos Civil', dica: 'o que o sistema faz', acao: ir('#/apresentacao') },
     { grupo: 'Ações', rotulo: temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro', dica: 'aparência', acao: () => $('#tema').click() },
+    ...(estado.ref && estado.ref.protegido ? [{ grupo: 'Ações', rotulo: 'Sair', dica: 'encerrar a sessão neste navegador', acao: () => fetch('/api/sair', { method: 'POST' }).finally(() => { location.href = '/entrar'; }) }] : []),
     ...meses.filter((m) => m.id !== estado.mes).map((m) => ({ grupo: 'Mês de referência', rotulo: `Ver preços de ${m.descricao.replace(/-1$/, '')}`, dica: 'trocar o mês', acao: () => trocarMes(m.id) })),
   ];
 }

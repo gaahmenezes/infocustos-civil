@@ -124,5 +124,5 @@ https://claude.ai/artifact/4RYzkGmFRxnGs3XV9EBjMM — mesma interface, rodando s
 
 - Build: `bash build.sh` · Start: `cd app && uvicorn server:app --host 0.0.0.0 --port $PORT`
 - `DATABASE_URL`: endereço de um PostgreSQL (ex.: Neon gratuito). Com ele os orçamentos ficam guardados; sem ele, usam SQLite local (apagado a cada publicação no Render).
-- `INFOCUSTOS_SENHA` (e opcionalmente `INFOCUSTOS_USUARIO`, padrão `infocustos`): liga a senha única do site.
+- `INFOCUSTOS_SENHA`: liga a senha única do site. Quem não entrou é levado à tela de entrada (`/entrar`); a sessão fica num cookie assinado por 30 dias. Scripts ainda podem usar Basic (`INFOCUSTOS_USUARIO`, padrão `infocustos`).
 - `/saude` responde sem senha: aponte um monitor gratuito (cron-job.org, UptimeRobot) para ele a cada 10 min para o site não dormir.
