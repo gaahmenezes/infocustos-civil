@@ -36,7 +36,8 @@ app = FastAPI(title='InfoCustos Civil')
 # Senha única do site publicado: só vale quando INFOCUSTOS_SENHA está definida (no computador local fica aberto).
 USUARIO = os.environ.get('INFOCUSTOS_USUARIO', 'infocustos')
 SENHA = os.environ.get('INFOCUSTOS_SENHA', '')
-LIVRES = {'/saude'}  # o monitor que mantém o site acordado entra sem senha
+# entram sem senha: o monitor que mantém o site acordado e o manifesto/ícones, que o navegador busca sem enviar a senha
+LIVRES = {'/saude', '/manifest.webmanifest'}
 
 
 def _autorizado(cabecalho: str) -> bool:
@@ -51,7 +52,7 @@ def _autorizado(cabecalho: str) -> bool:
 
 @app.middleware('http')
 async def exigir_senha(request: Request, seguir):
-    if SENHA and request.url.path not in LIVRES and not _autorizado(request.headers.get('authorization', '')):
+    if SENHA and request.url.path not in LIVRES and not request.url.path.startswith('/static/icones/') and not _autorizado(request.headers.get('authorization', '')):
         return Response('Acesso restrito ao InfoCustos Civil.', status_code=401,
                         headers={'WWW-Authenticate': 'Basic realm="InfoCustos Civil", charset="UTF-8"'})
     return await seguir(request)
