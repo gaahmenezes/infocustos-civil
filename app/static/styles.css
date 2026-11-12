@@ -1755,3 +1755,9 @@ tr.rel-etapa.rel-sub td { background: transparent; font-weight: 650; border-bott
   .cabecalho { grid-template-columns: auto 1fr; height: 102px; padding: 8px 20px; row-gap: 6px; align-content: center; }
   .abas { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* ---------- BDI só no total ---------- */
+.orc-opcoes { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 12px; margin: 4px 0 16px; }
+.orc-opcoes .orc-compl { grid-template-columns: 1fr; gap: 2px; margin: 0; padding: 10px 14px; align-content: start; }
+.orc-opcoes .orc-compl p { font-size: 12.5px; }
+@media print { .orc-opcoes { display: none; } }

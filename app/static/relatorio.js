@@ -50,7 +50,7 @@ function folhaCapa(emp, o) {
     ${capaDivisao(o)}
     <div class="capa-valores">
       <div><span>Custo direto</span><b>${brl.format(o.custo_total)}</b></div>
-      <div><span>BDI de ${num2.format(o.bdi)}%</span><b>${brl.format(o.valor_bdi)}</b></div>
+      <div><span>BDI de ${num2.format(o.bdi)}%${o.bdi_no_total ? ' sobre o total' : ''}</span><b>${brl.format(o.valor_bdi)}</b></div>
       <div class="capa-total"><span>Valor total</span><b>${brl.format(o.total)}</b></div>
     </div>
     <div class="capa-pe"><span>${hoje()}</span>${emp.responsavel ? `<span class="capa-resp"><b>${esc(emp.responsavel)}</b>${emp.registro ? `${esc(emp.registro)}` : 'Responsável técnico'}</span>` : ''}</div>
@@ -66,7 +66,7 @@ function folhaResumo(emp, o) {
   const partes = dv ? PAINEL_PARTES.map(([k, n, cor]) => `<div style="--cor:var(${cor})">${n}<b>${brl.format(o.custo_total * dv[k])}</b><span class="pct">${pct.format(dv[k])}</span></div>`).join('') : '';
   return `<section class="folha">${cabecalhoFolha(emp, o)}
     <h2>Resumo do orçamento</h2>
-    <table class="rel-tabela"><thead><tr><th>Item</th><th>Etapa</th><th class="num">Itens</th><th class="num">Custo direto (R$)</th><th class="num">Total com BDI (R$)</th><th>Peso</th></tr></thead>
+    <table class="rel-tabela"><thead><tr><th>Item</th><th>Etapa</th><th class="num">Itens</th><th class="num">Custo direto (R$)</th><th class="num">${o.bdi_no_total ? 'Total sem BDI (R$)' : 'Total com BDI (R$)'}</th><th>Peso</th></tr></thead>
       <tbody>${linhas}</tbody>
       <tfoot><tr><td></td><td>Total</td><td class="num">${o.qtd_itens}</td><td class="num">${money(o.custo_total)}</td><td class="num">${money(o.total)}</td><td></td></tr></tfoot></table>
     ${dv ? `<h3>Divisão do custo direto</h3><div class="custo"><div class="barra">${PAINEL_PARTES.filter(([k]) => dv[k] > 0).map(([k, , cor]) => `<span style="flex-grow:${dv[k]};background:var(${cor})"></span>`).join('')}</div>
@@ -75,17 +75,18 @@ function folhaResumo(emp, o) {
 }
 
 function folhaPlanilha(emp, o) {
-  const corpo = o.etapas.map((e) => `<tr class="rel-etapa${e.nivel === 2 ? ' rel-sub' : ''}"><td class="n">${e.numero}</td><td colspan="6">${esc(e.titulo)}</td><td class="num">${money(e.total)}</td></tr>
+  const cs = o.bdi_no_total ? 6 : 7;  // com o BDI só no total, a coluna "Preço c/ BDI" não existe
+  const corpo = o.etapas.map((e) => `<tr class="rel-etapa${e.nivel === 2 ? ' rel-sub' : ''}"><td class="n">${e.numero}</td><td colspan="${cs - 1}">${esc(e.titulo)}</td><td class="num">${money(e.total)}</td></tr>
     ${e.itens.map((i) => `<tr><td class="n">${i.numero}</td><td class="rel-cod">${esc(i.codigo)}<span>${esc(rotuloBase(i.base))}</span></td><td>${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
-      <td class="num">${qtdFmt.format(i.quantidade)}</td><td class="num">${money(i.custo_unit)}</td><td class="num">${money(i.preco_unit)}</td><td class="num">${money(i.total)}</td></tr>`).join('')}`).join('');
+      <td class="num">${qtdFmt.format(i.quantidade)}</td><td class="num">${money(i.custo_unit)}</td>${o.bdi_no_total ? '' : `<td class="num">${money(i.preco_unit)}</td>`}<td class="num">${money(i.total)}</td></tr>`).join('')}`).join('');
   return `<section class="folha">${cabecalhoFolha(emp, o)}
     <h2>Planilha orçamentária</h2>
-    <table class="rel-tabela rel-planilha"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num">Custo unit.</th><th class="num">Preço c/ BDI</th><th class="num">Total (R$)</th></tr></thead>
+    <table class="rel-tabela rel-planilha"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num">Custo unit.</th>${o.bdi_no_total ? '' : '<th class="num">Preço c/ BDI</th>'}<th class="num">${o.bdi_no_total ? 'Total sem BDI (R$)' : 'Total (R$)'}</th></tr></thead>
       <tbody>${corpo}</tbody>
-      <tfoot><tr><td colspan="7">Custo direto</td><td class="num">${money(o.custo_total)}</td></tr>
-        <tr><td colspan="7">BDI de ${num2.format(o.bdi)}%</td><td class="num">${money(o.valor_bdi)}</td></tr>
-        <tr class="rel-geral"><td colspan="7">Valor total</td><td class="num">${money(o.total)}</td></tr></tfoot></table>
-    <p class="rel-nota">Preço com BDI e total de cada item arredondados em 2 casas.${o.sem_complementares ? ` Custos unitários sem os encargos complementares da mão de obra (alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação): ${brl.format(o.complementares)} desconsiderados do custo direto, a lançar nos custos indiretos.` : ''}</p>
+      <tfoot><tr><td colspan="${cs}">Custo direto</td><td class="num">${money(o.custo_total)}</td></tr>
+        <tr><td colspan="${cs}">BDI de ${num2.format(o.bdi)}%${o.bdi_no_total ? ' sobre o custo direto total' : ''}</td><td class="num">${money(o.valor_bdi)}</td></tr>
+        <tr class="rel-geral"><td colspan="${cs}">Valor total</td><td class="num">${money(o.total)}</td></tr></tfoot></table>
+    <p class="rel-nota">${o.bdi_no_total ? 'BDI aplicado uma única vez sobre o custo direto total; itens e etapas a custo, sem BDI.' : 'Preço com BDI e total de cada item arredondados em 2 casas.'}${o.sem_complementares ? ` Custos unitários sem os encargos complementares da mão de obra (alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação): ${brl.format(o.complementares)} desconsiderados do custo direto, a lançar nos custos indiretos.` : ''}</p>
     ${rodapeFolha(o)}</section>`;
 }
 
@@ -93,7 +94,7 @@ function folhaABC(emp, o) {
   const l = curvaABC(o);
   return `<section class="folha">${cabecalhoFolha(emp, o)}
     <h2>Curva ABC de serviços</h2>
-    <p class="rel-nota">Itens ordenados pelo valor com BDI. Classe A até 80% do valor acumulado, B até 95%, C o restante.</p>
+    <p class="rel-nota">Itens ordenados pelo valor ${o.bdi_no_total ? 'a custo (o BDI entra só no total do orçamento)' : 'com BDI'}. Classe A até 80% do valor acumulado, B até 95%, C o restante.</p>
     <table class="rel-tabela"><thead><tr><th>Pos.</th><th>Código</th><th>Descrição</th><th class="num">Total (R$)</th><th class="num">%</th><th class="num">% acum.</th><th>Classe</th></tr></thead>
       <tbody>${l.map((x) => `<tr><td class="n">${x.posicao}</td><td class="rel-cod">${esc(x.codigo)}<span>${esc(rotuloBase(x.base))}</span></td><td>${esc(x.descricao)}</td>
         <td class="num">${money(x.total)}</td><td class="num">${pct.format(x.percentual)}</td><td class="num">${pct.format(x.acumulado)}</td><td class="rel-classe">${x.classe}</td></tr>`).join('')}</tbody></table>

@@ -80,6 +80,7 @@ class EdicaoOrcamento(BaseModel):
     bdi: Optional[float] = Field(None, ge=0, le=100)
     observacoes: Optional[str] = None
     sem_complementares: Optional[bool] = None  # tira os encargos complementares do custo das composições
+    bdi_no_total: Optional[bool] = None  # BDI aplicado uma vez sobre o custo direto total, e não item a item
 
 
 class NovaEtapa(BaseModel):
@@ -282,7 +283,9 @@ def _calcular(c, oid):
     if not o:
         raise HTTPException(404, 'Orçamento não encontrado.')
     o = dict(o)
-    fator_bdi = 1 + o['bdi'] / 100
+    o['bdi_no_total'] = bool(o.get('bdi_no_total'))
+    # BDI só no total: os itens e as etapas ficam a custo, e o BDI entra uma vez sobre o custo direto do orçamento
+    fator_bdi = 1.0 if o['bdi_no_total'] else 1 + o['bdi'] / 100
     o['sem_complementares'] = bool(o.get('sem_complementares'))
     todas = [dict(e) for e in c.execute('SELECT * FROM etapa WHERE orcamento_id = ? ORDER BY ordem, id', (oid,))]
     itens = [dict(i) for i in c.execute('SELECT * FROM item WHERE orcamento_id = ? ORDER BY ordem, id', (oid,))]
@@ -333,8 +336,13 @@ def _calcular(c, oid):
         total_custo += e['custo_total']; total += e['total']
     o['etapas'] = etapas
     o['custo_total'] = r2(total_custo)
+    soma_etapas = total
+    if o['bdi_no_total']:
+        o['valor_bdi'] = r2(o['custo_total'] * o['bdi'] / 100)
+        total = o['custo_total'] + o['valor_bdi']
+    else:
+        o['valor_bdi'] = r2(total - total_custo)
     o['total'] = r2(total)
-    o['valor_bdi'] = r2(total - total_custo)
     o['qtd_itens'] = len(itens)
     refs_itens = sorted({i['referencia'] for i in itens if i['referencia']})
     o['referencias_itens'] = refs_itens
@@ -351,7 +359,7 @@ def _calcular(c, oid):
     o['desatualizado'] = (any(i['referencia'] and i['referencia'] < ultimos.get(i['base'], i['referencia']) for i in itens)
                           or (not itens and o['referencia'] < principal))
     for e in etapas:
-        e['peso'] = (e['total'] / total) if total else 0
+        e['peso'] = (e['total'] / soma_etapas) if soma_etapas else 0
     return o
 
 
@@ -421,7 +429,7 @@ def listar():
         out = []
         for r in rows:
             o = calcular(c, r['id'])
-            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em', 'desatualizado', 'custo_total', 'divisao', 'sem_complementares')})
+            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em', 'desatualizado', 'custo_total', 'divisao', 'sem_complementares', 'bdi_no_total')})
         return out
 
 
@@ -447,8 +455,9 @@ def obter(oid: int):
 @router.patch('/orcamentos/{oid}')
 def editar(oid: int, d: EdicaoOrcamento):
     campos = {k: v for k, v in d.model_dump().items() if v is not None}
-    if 'sem_complementares' in campos:
-        campos['sem_complementares'] = int(campos['sem_complementares'])
+    for k in ('sem_complementares', 'bdi_no_total'):
+        if k in campos:
+            campos[k] = int(campos[k])
     with orc() as c:
         calcular(c, oid)
         if campos:
@@ -478,9 +487,9 @@ def _maes_primeiro(etapas):
 def duplicar(oid: int):
     with orc() as c:
         o = calcular(c, oid)
-        cur = c.execute('''INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em, sem_complementares)
-            VALUES (?,?,?,?,?,?,?,?,?)''', (o['nome'] + ' (cópia)', o['cliente'], o['local'], o['referencia'], o['bdi'], o['observacoes'],
-                                            agora(), agora(), int(o['sem_complementares'])))
+        cur = c.execute('''INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em, sem_complementares, bdi_no_total)
+            VALUES (?,?,?,?,?,?,?,?,?,?)''', (o['nome'] + ' (cópia)', o['cliente'], o['local'], o['referencia'], o['bdi'], o['observacoes'],
+                                              agora(), agora(), int(o['sem_complementares']), int(o['bdi_no_total'])))
         novo = cur.lastrowid
         mapa = {}
         for e in o['etapas']:  # a etapa vem sempre antes das suas subetapas
@@ -688,7 +697,7 @@ class Desfazer(BaseModel):
 
 
 COLUNAS = {
-    'orcamento': ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'observacoes', 'criado_em', 'atualizado_em', 'sem_complementares'),
+    'orcamento': ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'observacoes', 'criado_em', 'atualizado_em', 'sem_complementares', 'bdi_no_total'),
     'etapa': ('id', 'orcamento_id', 'ordem', 'titulo', 'pai_id'),
     'item': ('id', 'orcamento_id', 'etapa_id', 'ordem', 'tipo', 'base', 'codigo', 'descricao', 'unidade', 'quantidade', 'custo_unit', 'referencia'),
 }
@@ -755,7 +764,7 @@ def _simular_itens(c, oid, ref=None):
         ref = ref or ref_atual(b)['id']
         if not b.execute('SELECT 1 FROM referencia WHERE id = ?', (ref,)).fetchone():
             raise HTTPException(404, f'A referência {ref} não está carregada.')
-    fator = 1 + o['bdi'] / 100
+    fator = 1.0 if o['bdi_no_total'] else 1 + o['bdi'] / 100
     linhas, sem = [], []
     novo_total = 0.0
     for e in o['etapas']:
@@ -777,6 +786,8 @@ def _simular_itens(c, oid, ref=None):
                            'total_antes': i['total'], 'total_depois': nt,
                            'variacao': (efetivo / i['custo_unit'] - 1) if i['custo_unit'] else None})
     linhas.sort(key=lambda l: -abs(l['total_depois'] - l['total_antes']))
+    if o['bdi_no_total']:  # os itens foram somados a custo: o BDI entra uma vez sobre a soma
+        novo_total = r2(novo_total) + r2(r2(novo_total) * o['bdi'] / 100)
     return {'referencia': ref, 'total_antes': o['total'], 'total_depois': r2(novo_total),
             'variacao': (novo_total / o['total'] - 1) if o['total'] else None, 'itens': linhas, 'sem_preco': sem}
 
@@ -841,7 +852,9 @@ def exportar(oid: int):
     ws['A3'] = f"Data-base: {o['referencia_descricao']} (ORSE e SINAPI, CEHOP/SE)"
     ws['G2'] = 'BDI'; ws['G2'].font = Font(bold=True)
     ws['H2'] = o['bdi'] / 100; ws['H2'].number_format = '0.00%'; ws['H2'].font = Font(bold=True, color=AZUL)
-    _cab(ws, 5, ['Item', 'Código', 'Base', 'Descrição', 'Un.', 'Quant.', 'Custo unit. (R$)', 'Preço unit. c/ BDI (R$)', 'Total (R$)'],
+    no_total = o['bdi_no_total']
+    _cab(ws, 5, ['Item', 'Código', 'Base', 'Descrição', 'Un.', 'Quant.', 'Custo unit. (R$)',
+                 'Preço unit. sem BDI (R$)' if no_total else 'Preço unit. c/ BDI (R$)', 'Total sem BDI (R$)' if no_total else 'Total (R$)'],
          [7, 9, 8, 70, 6, 11, 14, 15, 16])
     linha = 6
     linhas_etapa = []
@@ -868,7 +881,7 @@ def exportar(oid: int):
             ws.cell(row=linha, column=5, value=i['unidade'])
             ws.cell(row=linha, column=6, value=i['quantidade']).number_format = '#,##0.00'
             ws.cell(row=linha, column=7, value=i['custo_unit']).number_format = '#,##0.00'
-            ws.cell(row=linha, column=8, value=f'=ROUND(G{linha}*(1+$H$2),2)').number_format = '#,##0.00'
+            ws.cell(row=linha, column=8, value=f'=G{linha}' if no_total else f'=ROUND(G{linha}*(1+$H$2),2)').number_format = '#,##0.00'
             ws.cell(row=linha, column=9, value=f'=ROUND(F{linha}*H{linha},2)').number_format = '#,##0.00'
             linha += 1
         proprios = f'SUM(I{ini + 1}:I{linha - 1})' if linha - 1 > ini else '0'
@@ -888,8 +901,12 @@ def exportar(oid: int):
     ws.cell(row=linha + 1, column=8, value='BDI').font = Font(bold=True)
     ws.cell(row=linha + 1, column=9, value=f'=I{linha + 2}-I{linha}').number_format = '#,##0.00'
     ws.cell(row=linha + 2, column=8, value='Total geral').font = Font(bold=True, size=12)
-    t = ws.cell(row=linha + 2, column=9, value=f'={soma_etapas}'); t.number_format = '#,##0.00'; t.font = Font(bold=True, size=12)
-    ws.cell(row=linha + 4, column=1, value='Preço unitário com BDI e total por item arredondados em 2 casas. Altere o BDI na célula H2.').font = Font(color='5B6875', size=9)
+    if no_total:  # BDI uma vez sobre o custo direto (a soma das etapas, que estão a custo)
+        ws.cell(row=linha, column=9, value=f'={soma_etapas}')
+        ws.cell(row=linha + 1, column=9, value=f'=ROUND(I{linha}*$H$2,2)')
+    t = ws.cell(row=linha + 2, column=9, value=f'=I{linha}+I{linha + 1}' if no_total else f'={soma_etapas}'); t.number_format = '#,##0.00'; t.font = Font(bold=True, size=12)
+    ws.cell(row=linha + 4, column=1, value=('BDI aplicado uma única vez sobre o custo direto total; itens e etapas estão a custo, sem BDI. Altere o BDI na célula H2.'
+                                              if no_total else 'Preço unitário com BDI e total por item arredondados em 2 casas. Altere o BDI na célula H2.')).font = Font(color='5B6875', size=9)
     if o['sem_complementares']:
         valor = f"{o['complementares']:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
         ws.cell(row=linha + 5, column=1, value='Custos unitários sem os encargos complementares da mão de obra (alimentação, transporte, EPI, ferramentas, '

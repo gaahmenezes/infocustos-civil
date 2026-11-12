@@ -39,6 +39,8 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
   (itens "(encargos complementares)" da SINAPI e serviços "Encargos Complementares - ..." da ORSE, somados também pelos
   serviços auxiliares). O valor retirado aparece na tela, no relatório e na planilha, para ser lançado nos custos
   indiretos sem duplicidade. O SICRO não usa esse formato e não muda.
+- **BDI só no total do orçamento**: chave que deixa itens e etapas a custo e aplica o BDI uma única vez, sobre o custo
+  direto total (em vez de no preço unitário de cada item). Vale para a tela, o relatório em PDF e a planilha do Excel.
 
 ## Composições e insumos próprios
 

@@ -72,7 +72,7 @@ function desenharCartoesOrc() {
       <span class="orc-c-nome">${esc(o.nome)}</span>
       <span class="orc-c-sub">${esc([o.cliente, o.local].filter(Boolean).join(' · ') || 'Sem cliente e local')}</span>
       <span class="orc-c-total">${grana(o.total)}</span>
-      <span class="orc-c-rot">total com BDI de ${num2.format(o.bdi)}%</span>
+      <span class="orc-c-rot">total com BDI de ${num2.format(o.bdi)}%${o.bdi_no_total ? ' sobre o total' : ''}</span>
       <span class="res-div">${o.divisao ? barraDivisao(o.divisao) : '<span class="dom">Ainda sem itens</span>'}</span>
       <span class="orc-c-meta">${esc(nomeRef(o.referencia))} · ${o.qtd_itens} ${o.qtd_itens === 1 ? 'item' : 'itens'} · alterado em ${dataFmt(o.atualizado_em)}</span>
     </a><button type="button" class="orc-c-excluir" data-excluir-orc="${o.id}" aria-label="Excluir o orçamento ${esc(o.nome)}" title="Excluir orçamento">
@@ -180,11 +180,19 @@ async function abrirOrcamento(id, dados) {
     <div class="orc-fixa" aria-hidden="true"><div class="orc-fixa-barra"><b>${esc(o.nome)}</b>
       <span>Custo direto ${brl.format(o.custo_total)}</span><span>BDI ${brl.format(o.valor_bdi)}</span><strong>${brl.format(o.total)}</strong></div></div>
     <div class="mudar-mes" id="orc-mudar-mes" hidden></div>
+    <div class="orc-opcoes">
     <div class="orc-compl${o.sem_complementares ? ' ligado' : ''}" id="orc-compl"${o.complementares > 0 || o.sem_complementares ? '' : ' hidden'}>
       <button type="button" class="chave" id="orc-compl-bt" role="switch" aria-checked="${!!o.sem_complementares}"><span class="chave-trilho" aria-hidden="true"><i></i></span>Desconsiderar encargos complementares</button>
       <p>${o.sem_complementares
-        ? `<b>${brl.format(o.complementares)}</b> de alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação saíram do custo direto de todas as composições. Lance esse custo nos seus custos indiretos (administração local ou BDI), sem duplicidade.`
-        : `As composições deste orçamento trazem <b>${brl.format(o.complementares)}</b> de encargos complementares embutidos na mão de obra (alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação). Se você calcula esses custos à parte, nos indiretos, ligue a chave para não contar duas vezes.`}</p>
+        ? `<b>${brl.format(o.complementares)}</b> de alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação saíram do custo das composições. Lance esse valor nos seus custos indiretos, sem duplicidade.`
+        : `As composições trazem <b>${brl.format(o.complementares)}</b> embutidos na mão de obra (alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação). Se você lança isso nos indiretos, ligue para não contar duas vezes.`}</p>
+    </div>
+    <div class="orc-compl${o.bdi_no_total ? ' ligado' : ''}" id="orc-bdi-total">
+      <button type="button" class="chave" id="orc-bdi-total-bt" role="switch" aria-checked="${!!o.bdi_no_total}"><span class="chave-trilho" aria-hidden="true"><i></i></span>BDI só no total do orçamento</button>
+      <p>${o.bdi_no_total
+        ? `O BDI de ${num2.format(o.bdi)}% entra uma única vez, sobre o custo direto total: <b>${brl.format(o.custo_total)}</b> + <b>${brl.format(o.valor_bdi)}</b>. Itens e etapas aparecem a custo, sem BDI.`
+        : 'O BDI está no preço unitário de cada item. Ligue para deixar os itens a custo e aplicar o BDI uma única vez, sobre o total.'}</p>
+    </div>
     </div>
     <div id="orc-painel"></div>
     <div class="orc-barra">
@@ -210,7 +218,7 @@ async function abrirOrcamento(id, dados) {
 function desenharTotais(o) {
   $('#orc-totais').innerHTML = `
     <div>Custo direto<b>${grana(o.custo_total)}</b></div>
-    <div>BDI de ${num2.format(o.bdi)}%<b>${grana(o.valor_bdi)}</b></div>
+    <div>BDI de ${num2.format(o.bdi)}%${o.bdi_no_total ? ' sobre o total' : ''}<b>${grana(o.valor_bdi)}</b></div>
     <div class="total">Total<b>${grana(o.total)}</b></div>`;
   // quando o orçamento muda, os totais contam do valor antigo ao novo
   const ant = ORC.totais;
@@ -241,6 +249,12 @@ function ligarCabecalho(o) {
     const n = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST'); location.hash = rotaOrc(n.id); avisar('Orçamento duplicado.');
   });
   $('#orc-excluir').addEventListener('click', () => pedirExclusao(o));
+  $('#orc-bdi-total-bt').addEventListener('click', async () => {
+    const ligar = !o.bdi_no_total;
+    const n = await salvar('bdi_no_total', ligar); if (!n) return;
+    await abrirOrcamento(n.id, n); $('#orc-bdi-total-bt').focus();
+    avisar(ligar ? `${VISTO}BDI aplicado só no total: ${brl.format(n.custo_total)} + ${brl.format(n.valor_bdi)} = ${brl.format(n.total)}.` : `BDI de volta ao preço de cada item. Total ${brl.format(n.total)}.`, 6000);
+  });
   $('#orc-compl-bt').addEventListener('click', async () => {
     const ligar = !o.sem_complementares;
     const n = await salvar('sem_complementares', ligar); if (!n) return;
@@ -268,8 +282,8 @@ function desenharPlanilha(o) {
         <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}</td>
         <td class="c-un">${unid(i.unidade)}</td>
         <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
-        <td class="num c-custo" data-rotulo="Custo unit.">${money(i.custo_unit)}</td>
-        <td class="num c-preco" data-rotulo="Preço c/ BDI">${money(i.preco_unit)}</td>
+        <td class="num c-custo" data-rotulo="Custo unit."${o.bdi_no_total ? ' colspan="2"' : ''}>${money(i.custo_unit)}</td>
+        ${o.bdi_no_total ? '' : `<td class="num c-preco" data-rotulo="Preço c/ BDI">${money(i.preco_unit)}</td>`}
         <td class="num total c-total" data-rotulo="Total">${money(i.total)}</td>
         <td class="ctrl">
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
@@ -285,22 +299,22 @@ function desenharPlanilha(o) {
   const filtrada = ORC.filtro && visiveis[0];
   $('#orc-corpo').innerHTML = `
     ${filtrada ? `<p class="filtro-ativo">Mostrando só a etapa <b>${filtrada.numero}. ${esc(filtrada.titulo)}</b><button type="button" class="link-acao" data-ver-todas>Ver todas as etapas</button></p>` : ''}
-    <table class="planilha planilha-orc">
-      <thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num">Custo unit.</th><th class="num">Preço c/ BDI</th><th class="num">Total</th><th></th></tr></thead>
+    <table class="planilha planilha-orc${o.bdi_no_total ? ' bdi-no-total' : ''}">
+      <thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num"${o.bdi_no_total ? ' colspan="2"' : ''}>Custo unit.</th>${o.bdi_no_total ? '' : '<th class="num c-preco">Preço c/ BDI</th>'}<th class="num">${o.bdi_no_total ? 'Total sem BDI' : 'Total'}</th><th></th></tr></thead>
       ${etapas}
     </table>
     <form class="nova-etapa" id="form-etapa">
       <input id="nova-etapa" placeholder="Nome da nova etapa — ex.: Fundações" maxlength="200" aria-label="Nome da nova etapa">
       <button class="botao" type="submit">Adicionar etapa</button>
     </form>
-    <p class="fonte">Preço com BDI e total por item arredondados em 2 casas. Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}</p>`;
+    <p class="fonte">${o.bdi_no_total ? 'BDI aplicado uma única vez sobre o custo direto total: itens e etapas aparecem a custo, sem BDI.' : 'Preço com BDI e total por item arredondados em 2 casas.'} Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}</p>`;
   ligarPlanilha(o);
 }
 
 // refaz os totais do orçamento no navegador, com a mesma conta e os mesmos arredondamentos do servidor
 const arred2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 function recalcular(o, mudar, manter) {
-  const n = structuredClone(o), fator = 1 + n.bdi / 100;
+  const n = structuredClone(o), fator = n.bdi_no_total ? 1 : 1 + n.bdi / 100;
   let custo = 0, total = 0, qtd = 0;
   // a lista vem plana: cada etapa seguida das suas subetapas; o total da etapa inclui as subetapas
   let mae = null, ne = 0, ns = 0;
@@ -318,8 +332,11 @@ function recalcular(o, mudar, manter) {
   });
   n.etapas.filter((e) => e.nivel !== 2).forEach((e) => { custo += e.custo_total; total += e.total; });
   n.complementares = arred2(n.etapas.reduce((t, e) => t + e.itens.reduce((u, i) => u + i.quantidade * (i.custo_compl || 0), 0), 0));
-  n.custo_total = arred2(custo); n.total = arred2(total); n.valor_bdi = arred2(total - custo); n.qtd_itens = qtd;
-  n.etapas.forEach((e) => { e.peso = n.total ? e.total / n.total : 0; });
+  n.custo_total = arred2(custo); n.qtd_itens = qtd;
+  const somaEtapas = total;
+  if (n.bdi_no_total) { n.valor_bdi = arred2(n.custo_total * n.bdi / 100); n.total = arred2(n.custo_total + n.valor_bdi); }
+  else { n.total = arred2(total); n.valor_bdi = arred2(total - custo); }
+  n.etapas.forEach((e) => { e.peso = somaEtapas ? e.total / somaEtapas : 0; });
   return n;
 }
 
@@ -335,10 +352,10 @@ function ligarPlanilha(o) {
   const confirmar = (n, previsto) => {
     if (n.total !== previsto.total || n.custo_total !== previsto.custo_total) return atualizar(n);
     const visto = ORC.atual; ORC.atual = n;
-    // se a pessoa já está em outro campo (busca de item, nome de etapa, dados do orçamento, troca de data-base), espera ela sair para não apagar o texto
+    // se a pessoa já está em outro campo (busca de item, nome de etapa, dados do orçamento, troca de data-base) ou arrastando uma linha, espera ela sair para não apagar o texto
     const ocupada = () => {
       const a = document.activeElement, caixa = $('#orc-mudar-mes');
-      return (caixa && !caixa.hidden) || (!!a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && !a.classList.contains('qtd'));
+      return document.body.classList.contains('arrastando-algo') || (caixa && !caixa.hidden) || (!!a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && !a.classList.contains('qtd'));
     };
     const refazer = () => {
       if (ORC.atual !== n || ORC.aba !== 'planilha' || !$('#orc-corpo')) { if (ORC.atual === visto) ORC.atual = n; return; }
@@ -475,7 +492,7 @@ async function desenharABC(o, tipo) {
   const dif = tipo === 'insumos' ? r.total - r.custo_direto : 0;
   corpo.innerHTML = `
     <p class="sub" style="margin-top:18px">${tipo === 'servicos'
-      ? 'Serviços e insumos do orçamento ordenados pelo valor com BDI. O mesmo código em etapas diferentes aparece somado.'
+      ? `Serviços e insumos do orçamento ordenados pelo valor ${o.bdi_no_total ? 'a custo (o BDI deste orçamento entra só no total)' : 'com BDI'}. O mesmo código em etapas diferentes aparece somado.`
       : 'Cada composição foi desmontada até o insumo, incluindo os serviços auxiliares, e as quantidades foram multiplicadas pelas do orçamento. Valores de custo direto, sem BDI.'}
       Classe A até 80% do valor acumulado, B até 95%, C o restante.</p>
     <div class="custo"><div class="barra">${barra}</div><div class="legenda legenda-3">${blocos}</div></div>

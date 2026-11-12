@@ -14,7 +14,8 @@ PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS orcamento (
   id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cliente TEXT DEFAULT '', local TEXT DEFAULT '',
   referencia TEXT NOT NULL, bdi REAL NOT NULL DEFAULT 25.0, observacoes TEXT DEFAULT '',
-  criado_em TEXT, atualizado_em TEXT, sem_complementares INTEGER NOT NULL DEFAULT 0);
+  criado_em TEXT, atualizado_em TEXT, sem_complementares INTEGER NOT NULL DEFAULT 0,
+  bdi_no_total INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS etapa (
   id INTEGER PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
   ordem INTEGER NOT NULL, titulo TEXT NOT NULL, pai_id INTEGER REFERENCES etapa(id) ON DELETE CASCADE);
@@ -45,7 +46,8 @@ ESQUEMA_POSTGRES = '''
 CREATE TABLE IF NOT EXISTS orcamento (
   id SERIAL PRIMARY KEY, nome TEXT NOT NULL, cliente TEXT DEFAULT '', local TEXT DEFAULT '',
   referencia TEXT NOT NULL, bdi DOUBLE PRECISION NOT NULL DEFAULT 25.0, observacoes TEXT DEFAULT '',
-  criado_em TEXT, atualizado_em TEXT, sem_complementares INTEGER NOT NULL DEFAULT 0);
+  criado_em TEXT, atualizado_em TEXT, sem_complementares INTEGER NOT NULL DEFAULT 0,
+  bdi_no_total INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS etapa (
   id SERIAL PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
   ordem INTEGER NOT NULL, titulo TEXT NOT NULL, pai_id INTEGER REFERENCES etapa(id) ON DELETE CASCADE);
@@ -73,6 +75,7 @@ CREATE TABLE IF NOT EXISTS config (id SERIAL PRIMARY KEY, chave TEXT NOT NULL UN
 
 # colunas que entraram depois: bancos já criados recebem por aqui
 COLUNAS_NOVAS = (('orcamento', 'sem_complementares', 'INTEGER NOT NULL DEFAULT 0'),
+                 ('orcamento', 'bdi_no_total', 'INTEGER NOT NULL DEFAULT 0'),
                  ('etapa', 'pai_id', 'INTEGER REFERENCES etapa(id) ON DELETE CASCADE'))
 
 if POSTGRES:

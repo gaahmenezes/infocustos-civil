@@ -60,7 +60,7 @@ window.desenharPainel = function (o) {
   d.innerHTML = `<section class="painel-orc${estreia ? ' estreia' : ''}" aria-label="Resumo visual do orçamento">
     <button type="button" class="painel-alternar" aria-expanded="${aberto}" data-painel-alternar>Resumo visual${SETA}</button>
     <div class="painel-grade"${aberto ? '' : ' hidden'}>
-      <article class="pcartao"><h3>Custo por etapa <span class="sub">com BDI · clique para filtrar a planilha</span></h3><ul class="pe-lista">${etapas}</ul></article>
+      <article class="pcartao"><h3>Custo por etapa <span class="sub">${o.bdi_no_total ? 'a custo, sem BDI' : 'com BDI'} · clique para filtrar a planilha</span></h3><ul class="pe-lista">${etapas}</ul></article>
       <article class="pcartao"><h3>Curva ABC <span class="sub">valor acumulado dos itens</span></h3>
         <div class="grafico-caixa" id="abc-caixa">${graficoABC(abc)}<div class="dica" id="abc-dica" hidden></div></div>
         <p class="pcartao-nota"><b>A</b> ${cont('A')} ${cont('A') === 1 ? 'item' : 'itens'} · <b>B</b> ${cont('B')} · <b>C</b> ${cont('C')} · clique num ponto para achar o item</p></article>

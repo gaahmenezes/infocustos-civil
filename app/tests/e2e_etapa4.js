@@ -91,6 +91,8 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   ok(contou >= 3 && t1 !== t0, `Ao mudar a quantidade, o total conta de ${t0} até ${t1} (${contou} passos)`);
 
   const linha = (n) => p.$(`tbody.etapa tr.item:nth-of-type(${n + 1})`);
+  // longe das bordas da janela, para a página não rolar sozinha durante o arrasto
+  await p.evaluate(() => document.querySelector('tbody.etapa tr.item:nth-of-type(3)').scrollIntoView({ block: 'center' })); await p.waitForTimeout(700);
   const a = await (await p.$('tbody.etapa tr.item:nth-of-type(4) .pega')).boundingBox();
   const alvo = await (await linha(1)).boundingBox();
   await p.mouse.move(a.x + a.width / 2, a.y + a.height / 2); await p.mouse.down();
