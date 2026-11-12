@@ -73,7 +73,7 @@ class NovaEtapa(BaseModel):
 class NovoItem(BaseModel):
     etapa_id: Optional[int] = None
     tipo: Literal['servico', 'insumo']
-    base: Literal['ORSE', 'SINAPI', 'SICRO']
+    base: Literal['ORSE', 'SINAPI', 'SICRO', 'PROPRIA']
     codigo: str
     quantidade: float = Field(1.0, ge=0)
 
@@ -110,6 +110,10 @@ def mes_para_base(b, base, ref):
 
 
 def preco_na_base(tipo, base, codigo, ref=None):
+    if base == 'PROPRIA':
+        import proprias  # composição/insumo próprio: preço calculado com o mês de cada base
+        with _base_conn() as b:
+            return proprias.preco(tipo, codigo, ref or ref_principal(b))
     with _base_conn() as b:
         ref = mes_para_base(b, base, ref or ref_atual(b)['id'])
         if tipo == 'servico':
@@ -151,7 +155,9 @@ def explodir(b, base, codigo, fator, acc, profundidade=0, ref=None):
 
 
 # ---------- cálculo ----------
-CATEGORIA_PARTE = {'PESSOAL': 'mo', 'EQUIPAMENTOS': 'equip', 'SERVIÇOS DE TERCEIROS': 'terc'}
+CATEGORIA_PARTE = {'PESSOAL': 'mo', 'EQUIPAMENTOS': 'equip', 'SERVIÇOS DE TERCEIROS': 'terc',
+                   'MÃO DE OBRA': 'mo', 'EQUIPAMENTO': 'equip',  # nomes do SICRO
+                   'MAO_DE_OBRA': 'mo', 'SERVICO_TERCEIRO': 'terc'}  # insumos próprios
 
 
 def dividir_custo(b, itens, ref_orc):
@@ -161,6 +167,12 @@ def dividir_custo(b, itens, ref_orc):
     for i in itens:
         custo = i['custo_total']
         if not custo:
+            continue
+        if i['base'] == 'PROPRIA':
+            import proprias  # divisão calculada pelos itens da composição própria (ou o tipo do insumo próprio)
+            d = proprias.divisao(i['tipo'], i['codigo'], i['referencia'] or ref_orc)
+            for k in partes:
+                partes[k] += custo * d.get(k, 0)
             continue
         r = b.execute('''SELECT categoria, pct_mo, pct_mat, pct_equip, pct_terc FROM item_busca
             WHERE tipo = ? AND base = ? AND codigo = ? AND referencia = ?''',
@@ -716,6 +728,14 @@ def exportar(oid: int):
                 if j in (9, 10): cel.number_format = '0.00%'
         s.freeze_panes = 'A5'
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
-    nome = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in o['nome'])[:60]
     return StreamingResponse(buf, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                             headers={'Content-Disposition': f'attachment; filename="orcamento_{nome}.xlsx"'})
+                             headers={'Content-Disposition': disposicao(f"orcamento_{o['nome']}.xlsx")})
+
+
+def disposicao(nome):
+    """Cabeçalho de download que aceita acentos no nome (RFC 6266): versão sem acento para navegadores antigos + nome em UTF-8."""
+    from urllib.parse import quote
+    import unicodedata
+    limpo = ''.join(ch if ch.isalnum() or ch in '-_.' else '_' for ch in nome)[:80]
+    ascii_ = unicodedata.normalize('NFKD', limpo).encode('ascii', 'ignore').decode() or 'arquivo'
+    return f"attachment; filename=\"{ascii_}\"; filename*=UTF-8''{quote(limpo)}"

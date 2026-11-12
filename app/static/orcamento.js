@@ -264,7 +264,7 @@ function desenharPlanilha(o) {
       <tr class="add-linha"><td></td><td colspan="8">
         <div class="add-busca">
           <input class="add-q" placeholder="Adicionar serviço ou insumo de ${esc(nomeRef(o.referencia))} à etapa ${e.numero}: digite descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item à etapa ${e.numero}" autocomplete="off">
-          <ul class="add-res" hidden></ul>
+          <ul class="add-res" role="listbox" aria-label="Itens encontrados" tabindex="0" hidden></ul>
         </div>
       </td></tr>
     </tbody>`).join('');
@@ -386,9 +386,9 @@ function ligarBuscaInline(inp) {
       const r = await req(`/api/busca?${new URLSearchParams({ q, limite: 8, ref: ORC.atual.referencia, refs: refsDoOrcamento(ORC.atual) })}`);
       if (meu !== seqLocal) return;
       itens = r.itens.filter((x) => x.preco != null);
-      ul.innerHTML = itens.length ? itens.map((x, k) => `<li data-k="${k}"><span class="res-cod">${codigoBase(x.codigo, x.base)}<span class="tipo tipo-${x.tipo}">${x.tipo === 'servico' ? 'Composição' : 'Insumo'}</span></span>
+      ul.innerHTML = itens.length ? itens.map((x, k) => `<li data-k="${k}" role="option"><span class="res-cod">${codigoBase(x.codigo, x.base)}<span class="tipo tipo-${x.tipo}">${x.tipo === 'servico' ? 'Composição' : 'Insumo'}</span></span>
           <span>${trecho(x)}</span><span class="add-preco">${brl.format(x.preco)}<span class="un">${unid(x.unidade)}</span></span></li>`).join('')
-        : `<li class="nada">Nada encontrado com preço em ${esc(nomeRef(ORC.atual.referencia))}.</li>`;
+        : `<li class="nada" role="option" aria-disabled="true">Nada encontrado com preço em ${esc(nomeRef(ORC.atual.referencia))}.</li>`;
       ul.hidden = false; sel = -1;
     }, 160);
   });

@@ -36,8 +36,9 @@
     <nav class="abas" aria-label="Seções">
       <a href="#/" data-aba="consulta">Consulta</a>
       <a href="#/orcamentos" data-aba="orcamentos">Orçamentos</a>
+      <a href="#/proprias" data-aba="proprias">Próprias</a>
       <a href="#/encargos" data-aba="encargos">Encargos sociais</a>
-      <a href="#/comparativo" data-aba="comparativo">Comparativo entre meses</a>
+      <a href="#/comparativo" data-aba="comparativo" title="Comparativo entre meses">Comparativo</a>
     </nav>
     <div class="cab-direita">
       <div class="referencia" id="referencia"></div>
@@ -79,6 +80,7 @@
         <button type="button" role="radio" class="chip" data-v="ORSE" aria-checked="false">ORSE <span class="n"></span></button>
         <button type="button" role="radio" class="chip" data-v="SINAPI" aria-checked="false">SINAPI <span class="n"></span></button>
         <button type="button" role="radio" class="chip" data-v="SICRO" aria-checked="false">SICRO <span class="n"></span></button>
+        <button type="button" role="radio" class="chip" data-v="PROPRIA" aria-checked="false">Próprias <span class="n"></span></button>
       </div>
     </div>
     <button type="button" class="ver-base" data-ver-base>Ver toda a base de preços do mês<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3" /></svg></button>
@@ -148,6 +150,24 @@
       </div>
     </form>
   </dialog>
+  <dialog id="dlg-insumo-proprio" class="dialogo" aria-labelledby="ins-titulo">
+    <form id="form-insumo-proprio" autocomplete="off">
+      <h2 id="ins-titulo">Novo insumo próprio</h2>
+      <p class="sub">Material, mão de obra, equipamento ou serviço com o preço da sua cotação. Pode ser usado em composições próprias e direto no orçamento.</p>
+      <label>Descrição<input name="descricao" maxlength="400" required placeholder="Ex.: Porcelanato 90x90 polido, marca X"></label>
+      <div class="dlg-dupla">
+        <label>Unidade<input name="unidade" maxlength="20" required placeholder="m2, un, h, kg"></label>
+        <label>Tipo<select name="tipo"><option value="MATERIAL">Material</option><option value="MAO_DE_OBRA">Mão de obra</option><option value="EQUIPAMENTO">Equipamento</option><option value="SERVICO_TERCEIRO">Serviço de terceiro</option></select></label>
+      </div>
+      <div class="dlg-dupla">
+        <label>Preço (R$)<input name="preco" inputmode="decimal" placeholder="129,90"></label>
+        <label>Data do preço<input name="data_preco" type="date"></label>
+      </div>
+      <label>Fonte ou cotação<input name="fonte" maxlength="400" placeholder="Ex.: menor de 3 cotações, Loja X, 10/11/2026"></label>
+      <p class="erro-campo" id="ins-erro" role="alert"></p>
+      <div class="dlg-acoes"><button type="button" class="botao" data-fechar>Cancelar</button><button type="submit" class="botao primario">Salvar insumo</button></div>
+    </form>
+  </dialog>
   <dialog id="dlg-novo-orc" class="dialogo gaveta" aria-labelledby="novo-orc-t">
     <form id="form-novo" autocomplete="off">
       <header class="gaveta-cab">
@@ -209,6 +229,7 @@
   <nav class="nav-baixo" aria-label="Seções">
     <a href="#/" data-aba="consulta"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>Consulta</a>
     <a href="#/orcamentos" data-aba="orcamentos"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.5" width="16" height="17" rx="2.5" /><path d="M8 8.5h8M8 12.5h8M8 16.5h4.5" /></svg>Orçamentos</a>
+    <a href="#/proprias" data-aba="proprias"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9l7-5 7 5v10z" /><path d="M9.5 19v-5h5v5" /></svg>Próprias</a>
     <a href="#/encargos" data-aba="encargos"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5M16 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.9c1.6.6 2.6 2.1 3 4.6" /></svg>Encargos</a>
     <a href="#/comparativo" data-aba="comparativo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 20v-7M12 20V5M17 20v-10" /></svg>Meses</a>
   </nav>
@@ -219,6 +240,7 @@
   <script src="/static/fluxo.js"></script>
   <script src="/static/orcamento.js"></script>
   <script src="/static/painel.js"></script>
+  <script src="/static/proprias.js"></script>
   <script src="/static/comparar.js"></script>
   <script src="/static/relatorio.js"></script>
   <script src="/static/paleta.js"></script>

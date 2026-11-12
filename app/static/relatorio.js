@@ -18,6 +18,7 @@ function fontesDoOrcamento(o) {
   const bases = basesDoOrcamento(o); if (!bases.length) return `Preços: referência ${nomeRef(o.referencia)}.`;
   const partes = bases.map((b) => {
     const meses = [...new Set(o.etapas.flatMap((e) => e.itens.filter((i) => i.base === b).map((i) => nomeRef(i.referencia || o.referencia))))];
+    if (b === 'PROPRIA') return 'composições e insumos próprios da empresa';
     return `${b} ${meses.join(', ')} (${b === 'SICRO' ? 'DNIT, Sergipe' : 'CEHOP/SE'})`;
   });
   return `Preços: ${juntar(partes)}.`;
@@ -44,7 +45,7 @@ function folhaCapa(emp, o) {
         ${o.cliente ? `<div><dt>Cliente</dt><dd>${esc(o.cliente)}</dd></div>` : ''}
         ${o.local ? `<div><dt>Local</dt><dd>${esc(o.local)}</dd></div>` : ''}
         <div><dt>Data-base dos preços</dt><dd>${esc(nomeRef(o.referencia))}</dd></div>
-        <div><dt>Bases de preços</dt><dd>${esc(juntar(basesDoOrcamento(o)) || 'ORSE e SINAPI')}</dd></div>
+        <div><dt>Bases de preços</dt><dd>${esc(juntar(basesDoOrcamento(o).map((b) => (b === 'PROPRIA' ? 'próprias' : b))) || 'ORSE e SINAPI')}</dd></div>
       </dl></div>
     ${capaDivisao(o)}
     <div class="capa-valores">
@@ -104,7 +105,7 @@ async function folhasComposicoes(emp, o, progresso) {
   const lista = [...vistos.values()]; const blocos = [];
   for (const [k, i] of lista.entries()) {
     progresso(k + 1, lista.length);
-    let c; try { c = await api(`/api/composicao/${i.base}/${i.codigo}?ref=${encodeURIComponent(i.referencia || o.referencia)}`); } catch (_) { continue; }
+    let c; try { c = await api(`/api/composicao/${i.base}/${i.codigo}?ref=${encodeURIComponent(i.referencia || o.referencia)}&refs=${encodeURIComponent(refsDoOrcamento(o))}`); } catch (_) { continue; }
     const secoes = SECOES.map(([s, nome]) => [nome, c.itens.filter((x) => x.secao === s)]).filter((g) => g[1].length);
     blocos.push(`<article class="rel-comp"><header><span class="rel-cod">${esc(c.codigo)}<span>${esc(c.base)}</span></span><b>${esc(c.descricao)}</b>
         <span class="rel-comp-preco">${brl.format(c.custo_total)} por ${esc(c.unidade)}</span></header>

@@ -12,6 +12,8 @@ function acoesDaPaleta() {
     { grupo: 'Ações', rotulo: 'Novo orçamento', dica: 'criar', acao: () => { location.hash = '#/orcamentos'; setTimeout(() => window.abrirNovoOrcamento && window.abrirNovoOrcamento(), 60); } },
     { grupo: 'Ir para', rotulo: 'Consulta', dica: 'pesquisar composições e insumos', acao: () => { location.hash = '#/'; setTimeout(() => $('#q').focus(), 60); } },
     { grupo: 'Ir para', rotulo: 'Orçamentos', dica: 'lista de orçamentos', acao: ir('#/orcamentos') },
+    { grupo: 'Ações', rotulo: 'Nova composição própria', dica: 'montar com itens de qualquer base', acao: () => { location.hash = '#/proprias'; setTimeout(() => { const b = document.querySelector('[data-nova-propria]'); if (b) b.click(); }, 300); } },
+    { grupo: 'Ir para', rotulo: 'Composições próprias', dica: 'composições e insumos da empresa', acao: ir('#/proprias') },
     { grupo: 'Ir para', rotulo: 'Encargos sociais', dica: 'horistas e mensalistas', acao: ir('#/encargos') },
     { grupo: 'Ir para', rotulo: 'Comparativo entre meses', dica: 'variação de preços', acao: ir('#/comparativo') },
     { grupo: 'Ir para', rotulo: 'Apresentação do InfoCustos Civil', dica: 'o que o sistema faz', acao: ir('#/apresentacao') },

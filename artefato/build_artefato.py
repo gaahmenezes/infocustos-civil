@@ -37,14 +37,15 @@ app = trocar(app, [
     ("const rotaOrc = (id, aba) => `#/orcamento/${id}${aba ? '/' + aba : ''}`;",
      "const rotaOrc = (id, aba) => `#orc-${id}${aba ? '-' + aba : ''}`;"),
     ("const emOrc = /^#\\/orcamento/.test(location.hash);", "const emOrc = /^#orc/.test(location.hash);"),
-    ("const m = location.hash.match(/^#\\/(composicao|insumo)\\/(ORSE|SINAPI|SICRO)\\/(\\w+)/);",
-     "const m = location.hash.match(/^#(c|i)-(ORSE|SINAPI|SICRO)-(\\w+)$/);"),
+    ("const m = location.hash.match(/^#\\/(composicao|insumo)\\/(ORSE|SINAPI|SICRO|PROPRIA)\\/(\\w+)/);",
+     "const m = location.hash.match(/^#(c|i)-(ORSE|SINAPI|SICRO|PROPRIA)-(\\w+)$/);"),
+    ("const emProp = /^#\\/propria/.test(location.hash);", "const emProp = /^#propria/.test(location.hash);"),
     ("const [, tipo, base, codigo] = m;", "const [, t, base, codigo] = m; const tipo = t === 'c' ? 'composicao' : 'insumo';"),
     ("const emVar = /^#\\/comparativo/.test(location.hash);", "const emVar = /^#comparativo/.test(location.hash);"),
     ("const emEnc = /^#\\/encargos/.test(location.hash);", "const emEnc = /^#encargos/.test(location.hash);"),
     ("const emAp = /^#\\/apresentacao/.test(location.hash);", "const emAp = /^#apresentacao/.test(location.hash);"),
 ], 'app.js')
-app = app.replace('href="#/orcamentos"', 'href="#orcamentos"')
+app = app.replace('href="#/orcamentos"', 'href="#orcamentos"').replace('href="#/propria/', 'href="#propria-')
 
 orc = (STATIC / 'orcamento.js').read_text(encoding='utf-8')
 orc = re.sub(r'async function req\(url, metodo = .GET., corpo\) \{.*?\n\}\n',
@@ -60,10 +61,14 @@ orc = trocar(orc, [
 orc = orc.replace("'#/orcamentos'", "'#orcamentos'").replace('"#/orcamentos"', '"#orcamentos"')
 # telas novas: painel do orçamento, comparação e relatório (usam as rotas e as funções já trocadas acima)
 extras = ''
-for nome in ('movimento.js', 'fluxo.js', 'painel.js', 'comparar.js', 'relatorio.js', 'paleta.js', 'apresentacao.js'):
+for nome in ('movimento.js', 'fluxo.js', 'painel.js', 'proprias.js', 'comparar.js', 'relatorio.js', 'paleta.js', 'apresentacao.js'):
     t = (STATIC / nome).read_text(encoding='utf-8').replace('href="#/"', 'href="#inicio"')
     t = t.replace('href="#/orcamentos"', 'href="#orcamentos"')
-    for velho, novo in (("'#/orcamentos'", "'#orcamentos'"), ("'#/encargos'", "'#encargos'"), ("'#/comparativo'", "'#comparativo'"), ("'#/apresentacao'", "'#apresentacao'"), ("'#/'", "'#inicio'")):
+    # composições próprias: ficam fora da versão de teste, mas as rotas precisam estar no formato dela
+    t = t.replace("location.hash.match(/^#\\/propria\\/(P\\d+)/)", "location.hash.match(/^#propria-(P\\d+)/)")
+    t = t.replace('href="#/propria/', 'href="#propria-').replace('`#/propria/${', '`#propria-${').replace('href="#/proprias"', 'href="#proprias"')
+    t = t.replace('href="#/composicao/PROPRIA/', 'href="#c-PROPRIA-').replace("/^#\\/propria/.test", "/^#propria/.test")
+    for velho, novo in (("'#/proprias'", "'#proprias'"), ("'#/orcamentos'", "'#orcamentos'"), ("'#/encargos'", "'#encargos'"), ("'#/comparativo'", "'#comparativo'"), ("'#/apresentacao'", "'#apresentacao'"), ("'#/'", "'#inicio'")):
         t = t.replace(velho, novo)
     assert '#/' not in t, f'sobrou rota antiga em {nome}'
     extras += f'\n/* ---- {nome} ---- */\n' + t
@@ -71,6 +76,9 @@ assert '#/' not in orc, 'sobrou rota antiga em orcamento.js'
 assert '#/' not in app.replace("'#/'", ''), 'sobrou rota antiga em app.js'
 
 html = (STATIC / 'index.html').read_text(encoding='utf-8')
+# versão de teste sem servidor: sem a aba e o filtro de composições próprias
+html = re.sub(r'\s*<a href="#/proprias" data-aba="proprias">.*?</a>', '', html, flags=re.S)
+html = html.replace('<button type="button" role="radio" class="chip" data-v="PROPRIA" aria-checked="false">Próprias <span class="n"></span></button>', '')
 corpo = re.search(r'<body[^>]*>(.*?)<script src=', html, re.S).group(1)
 # o esqueleto do artefato traz o próprio <body>: aplica o estado inicial (busca vazia) antes da primeira pintura
 corpo = "<script>document.body.classList.add('ocioso')</script>\n" + corpo

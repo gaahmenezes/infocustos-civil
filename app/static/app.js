@@ -185,8 +185,9 @@ async function carregarReferencia() {
   try { localStorage.setItem('infocustos-bases', JSON.stringify(estado.ativas)); } catch (_) { /* sem armazenamento */ }
   estado.mes = estado.meses.ORSE || ref.id;
   // filtro rápido de base: só aparecem as bases que estão na pesquisa
-  document.querySelectorAll('.chips[data-filtro="base"] .chip').forEach((c) => { if (c.dataset.v !== 'todas') c.hidden = !estado.ativas.includes(c.dataset.v); });
-  if (estado.base !== 'todas' && !estado.ativas.includes(estado.base)) definirFiltro('base', 'todas');
+  // (o filtro "Próprias" fica sempre: itens da empresa não têm data-base)
+  document.querySelectorAll('.chips[data-filtro="base"] .chip').forEach((c) => { if (BASES.includes(c.dataset.v)) c.hidden = !estado.ativas.includes(c.dataset.v); });
+  if (BASES.includes(estado.base) && !estado.ativas.includes(estado.base)) definirFiltro('base', 'todas');
   desenharDatas();
   if (!estado.q.trim()) contarFiltros(totaisDoMes());
 }
@@ -425,7 +426,7 @@ function contarFiltros(grade) {
   const doTipo = (x) => estado.tipo === 'todos' || x.tipo === estado.tipo;
   const n = {
     tipo: { todos: soma(daBase), servico: soma((x) => daBase(x) && x.tipo === 'servico'), insumo: soma((x) => daBase(x) && x.tipo === 'insumo') },
-    base: { todas: soma(doTipo), ...Object.fromEntries(BASES.map((b) => [b, soma((x) => doTipo(x) && x.base === b)])) },
+    base: { todas: soma(doTipo), ...Object.fromEntries([...BASES, 'PROPRIA'].map((b) => [b, soma((x) => doTipo(x) && x.base === b)])) },
   };
   document.querySelectorAll('.chips').forEach((grupo) => grupo.querySelectorAll('.chip').forEach((c) => {
     const v = n[grupo.dataset.filtro][c.dataset.v] || 0;
@@ -495,16 +496,17 @@ function trecho(item) {
 }
 
 // código e base em destaque: número em algarismos fixos, base como etiqueta com cor própria
+const rotuloBase = (b) => (b === 'PROPRIA' ? 'PRÓPRIA' : b);
 function codigoBase(codigo, base, marcar) {
   const termo = marcar ? ($('#q').value || '').trim().replace(/^0+/, '') : '';
   const semZeros = String(codigo).replace(/^0+/, '');
   const num = termo && /^\d+$/.test(termo) && semZeros.startsWith(termo) ? `<mark>${esc(codigo)}</mark>` : esc(codigo);
-  return `<span class="cb"><span class="cb-num">${num}</span><span class="cb-base cb-${esc(base)}">${esc(base)}</span></span>`;
+  return `<span class="cb"><span class="cb-num">${num}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base))}</span></span>`;
 }
 
 // nas tabelas: o mesmo par código + base, mais discreto, e o conjunto inteiro abre o item
 function codLink(tipo, base, codigo) {
-  return `<a class="cb cb-p" href="${rotaItem(tipo, esc(base), esc(codigo))}"><span class="cb-num">${esc(codigo)}</span><span class="cb-base cb-${esc(base)}">${esc(base)}</span></a>`;
+  return `<a class="cb cb-p" href="${rotaItem(tipo, esc(base), esc(codigo))}"><span class="cb-num">${esc(codigo)}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base))}</span></a>`;
 }
 
 function desenharLista(r) {
@@ -580,11 +582,12 @@ async function rota() {
   const emEnc = /^#\/encargos/.test(location.hash);
   const emCmp = lerRotaComparar() !== null;
   const emAp = /^#\/apresentacao/.test(location.hash);
+  const emProp = /^#\/propria/.test(location.hash);
   estado.comparando = emCmp || emAp;
   if (!emAp && window.sairDaApresentacao) window.sairDaApresentacao();
-  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp || emAp);
+  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp || emAp || emProp);
   document.body.classList.toggle('modo-ap', emAp);
-  const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : emAp ? 'apresentacao' : 'consulta';
+  const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : emAp ? 'apresentacao' : emProp ? 'proprias' : 'consulta';
   document.body.dataset.aba = aba;
   document.querySelectorAll('.abas a, .nav-baixo a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
   moverIndicador();
@@ -596,7 +599,8 @@ async function rota() {
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
   if (emVar) { desenharComparativo(); return; }
   if (emEnc) { desenharEncargos(); return; }
-  const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI|SICRO)\/(\w+)/);
+  if (emProp) { window.rotaProprias && window.rotaProprias(); return; }
+  const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI|SICRO|PROPRIA)\/(\w+)/);
   if (!m) {
     estado.atual = null;
     document.body.classList.remove('ver-detalhe');
@@ -612,7 +616,9 @@ async function rota() {
   const d = $('#detalhe');
   const semEsqueleto = comEsqueleto(d, esqueletoFicha());
   try {
-    const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qsMesDe(base)}`) : await api(`/api/insumo/${base}/${codigo}?${qsMesDe(base)}`);
+    // composição própria: cada item no mês da sua base (refs)
+    const qs = base === 'PROPRIA' ? `refs=${encodeURIComponent(refsQs())}` : qsMesDe(base);
+    const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qs}`) : await api(`/api/insumo/${base}/${codigo}?${qs}`);
     semEsqueleto();
     // o código e o preço viajam do resultado clicado até o lugar deles na ficha (ou de uma ficha para a outra)
     const origem = window.innerWidth > 900 && !d.querySelector('.ficha:not(.esq-ficha)') && document.querySelector('.res[aria-current="true"]');
@@ -675,7 +681,7 @@ function barraCusto(c) {
 function linhaItem(i, total, nivel = 0, cor = '--tinta-2') {
   const peso = total > 0 ? Math.min(100, (i.custo_total / total) * 100) : 0;
   const exp = i.tem_composicao
-    ? `<button type="button" class="expandir" aria-expanded="false" aria-label="Mostrar a composição de ${esc(i.codigo)}" data-base="${esc(i.base)}" data-cod="${esc(i.codigo)}" data-nivel="${nivel + 1}" data-qtd="${i.qtd ?? ''}">+</button>`
+    ? `<button type="button" class="expandir" aria-expanded="false" aria-label="Mostrar a composição de ${esc(i.codigo)}" data-base="${esc(i.base)}" data-cod="${esc(i.codigo)}" data-nivel="${nivel + 1}" data-qtd="${i.qtd ?? ''}" data-ref="${esc(i.referencia || '')}">+</button>`
     : '';
   const cls = nivel ? `filho" style="--nivel:${nivel}` : '';
   return `<tr class="${cls}">
@@ -724,12 +730,14 @@ function desenharComposicao(c) {
       <div class="fatos">
         <div>Itens<b>${c.itens.length}</b></div>
         ${c.usada_em ? `<div>Usada em<b>${c.usada_em} composições</b></div>` : ''}
-        <div>Data-base<b>${esc(nomeRef(c.referencia) || ref)}</b></div>
+        <div>Data-base<b>${c.base === 'PROPRIA' ? esc(Object.entries(c.datas || {}).map(([b, m]) => `${b} ${m.map(curto).join(', ')}`).join(' · ') || '—') : esc(nomeRef(c.referencia) || ref)}</b></div>
       </div>
       <div class="acoes">
         <button type="button" class="botao primario" data-adicionar="servico" data-base="${esc(c.base)}" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}">Adicionar ao orçamento</button>
         <button type="button" class="botao" data-comparar="${esc(c.base)}|${esc(c.codigo)}" data-desc="${esc(c.descricao)}" aria-pressed="${window.estaComparando ? window.estaComparando(c.base, c.codigo) : false}">Comparar</button>
-        ${exportarComposicao(c)}
+        ${c.base === 'PROPRIA' ? `<a class="botao" href="#/propria/${esc(c.codigo)}">Editar composição</a>`
+          : `<button type="button" class="botao" data-copiar-propria data-base="${esc(c.base)}" data-cod="${esc(c.codigo)}" data-ref="${esc(c.referencia || '')}" title="Copia os itens para uma composição sua, para ajustar coeficientes e trocar itens">Criar própria a partir desta</button>`}
+        ${c.base === 'PROPRIA' ? '' : exportarComposicao(c)}
       </div>
     </div>
     ${barraCusto(c)}
@@ -740,7 +748,8 @@ function desenharComposicao(c) {
     </table>
     ${dnit ? '<p class="fonte">No modelo DNIT, equipamentos e mão de obra formam o custo horário da equipe, que é dividido pela produção da equipe. Serviços auxiliares entram por unidade.</p>' : ''}
     ${c.base === 'SICRO' ? `<p class="fonte">SICRO: o FIC (fator de influência de chuvas) incide sobre o custo de execução. O momento de transporte não tem custo na tabela do DNIT: depende da distância de cada obra, definida no projeto. Preços sem desoneração.</p>` : ''}
-    <p class="fonte">Fonte: ${esc(c.base)}${c.fonte === 'DNIT' ? ' (DNIT), Sergipe' : c.fonte === 'CAIXA' ? ' (relatórios da CAIXA), Aracaju/SE, sem desoneração' : c.fonte === 'CEHOP' ? ' (programa ORSE da CEHOP)' : ''}, referência ${esc(nomeRef(c.referencia) || ref)}. Valores em R$, sem BDI.</p>
+    ${c.base === 'PROPRIA' ? `<p class="fonte">Composição própria da empresa. Custo calculado agora, cada item no mês escolhido para a sua base.${c.observacoes ? ` Observações: ${esc(c.observacoes)}` : ''}</p>` : ''}
+    <p class="fonte"${c.base === 'PROPRIA' ? ' hidden' : ''}>Fonte: ${esc(c.base)}${c.fonte === 'DNIT' ? ' (DNIT), Sergipe' : c.fonte === 'CAIXA' ? ' (relatórios da CAIXA), Aracaju/SE, sem desoneração' : c.fonte === 'CEHOP' ? ' (programa ORSE da CEHOP)' : ''}, referência ${esc(nomeRef(c.referencia) || ref)}. Valores em R$, sem BDI.</p>
     ${c.fonte === 'CAIXA' ? '<p class="fonte">SINAPI da CAIXA: a composição aparece como a CAIXA publica, com composições auxiliares (abra o + para ver os itens). Insumo sem preço coletado em Sergipe usa o preço de São Paulo (AS), como no cálculo oficial.</p>' : ''}
   </article>`;
   if (dnit) ajustarDnit(c);
@@ -776,7 +785,8 @@ async function expandir(bt) {
   }
   bt.disabled = true;
   try {
-    const sub = await api(`/api/composicao/${bt.dataset.base}/${bt.dataset.cod}?ref=${encodeURIComponent((estado.comp && estado.comp.referencia) || estado.meses[bt.dataset.base] || '')}`);
+    // cada composição auxiliar no mês do próprio item (numa composição própria, os itens são de bases e meses diferentes)
+    const sub = await api(`/api/composicao/${bt.dataset.base}/${bt.dataset.cod}?ref=${encodeURIComponent(bt.dataset.ref || (estado.comp && estado.comp.referencia) || estado.meses[bt.dataset.base] || '')}&refs=${encodeURIComponent(refsQs())}`);
     const nivel = Number(bt.dataset.nivel);
     const cab = `<tr class="filho" style="--nivel:${nivel}"><td class="cod"></td><td class="desc" colspan="6"><span class="rotulo-sub">Composição de ${esc(sub.codigo)}/${esc(sub.base)}, por ${esc(sub.unidade)}: ${brl.format(sub.custo_total)}</span></td></tr>`;
     tr.insertAdjacentHTML('afterend', cab + sub.itens.map((i) => linhaItem(i, sub.custo_total, nivel)).join(''));
@@ -786,9 +796,12 @@ async function expandir(bt) {
 }
 
 // ---------- insumo ----------
+// origem do preço nos relatórios da CAIXA
+const MARCADOR = { C: ' · preço coletado no estado', CR: ' · preço pelo coeficiente da família (CR)', AS: ' · preço de São Paulo (AS), sem coleta no estado', '': '' };
 function desenharInsumo(i) {
   const ref = estado.ref ? estado.ref.descricao.replace('-1', '') : '';
-  const mo = i.tipo === 'PESSOAL' && estado.ref;
+  // a CAIXA publica a mão de obra já com encargos; só nos meses da CEHOP o encargo entra depois
+  const mo = i.tipo === 'PESSOAL' && estado.ref && i.fonte !== 'CAIXA';
   const comEnc = mo ? i.preco * (1 + estado.ref.encargo_social_horista / 100) : null;
   const linhas = i.usos.map((u) => `<tr>
       <td class="cod">${codLink('servico', u.base, u.codigo)}</td>
@@ -802,7 +815,7 @@ function desenharInsumo(i) {
     <div class="ficha-cod">${codigoBase(i.codigo, i.base)}<span class="selo">Insumo</span><span>${esc(i.tipo)} › ${esc(i.grupo)}${i.subgrupo ? ' › ' + esc(i.subgrupo) : ''}</span></div>
     <h2>${esc(i.descricao || 'Insumo sem descrição na base')}</h2>
     <div class="ficha-linha">
-      <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : grana(i.preco)}</span><span class="por">por <b class="un">${unid(i.unidade)}</b>${i.marcador ? ' · preço marcado com # na base' : ''}</span></div>
+      <div class="preco-grande"><span class="valor">${i.preco == null ? 'Sem preço' : grana(i.preco)}</span><span class="por">por <b class="un">${unid(i.unidade)}</b>${MARCADOR[i.marcador] !== undefined ? MARCADOR[i.marcador] : i.marcador ? ' · preço marcado com # na base' : ''}${i.fonte === 'CAIXA' && i.tipo === 'PESSOAL' ? ' · já com encargos sociais' : ''}${i.base === 'PROPRIA' ? `${i.data_preco ? ` · preço de ${esc(i.data_preco.split('-').reverse().join('/'))}` : ''}${i.fonte ? ` · ${esc(i.fonte)}` : ''}` : ''}</span></div>
       <div class="fatos">
         ${mo ? `<div>Com encargo social de ${num2.format(estado.ref.encargo_social_horista)}%<b>${brl.format(comEnc)} por ${esc(i.unidade)}</b></div>` : ''}
         <div>Usado em<b>${i.usado_em.toLocaleString('pt-BR')} composições</b></div>

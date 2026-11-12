@@ -6,7 +6,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await p.goto(U + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForSelector('#dt-campo');
   v((await txt(p, '#dt-campo')).replace(/ /g, '') === 'ORSEago/2026SINAPIset/2026SICROjul/2026', 'Campo mostra uma etiqueta por base com o mês: ' + await txt(p, '#dt-campo'));
   await p.fill('#q', 'concreto'); await p.waitForSelector('.res'); await p.waitForTimeout(400);
-  v(await p.$$eval('.chips[data-filtro="base"] .chip:not([hidden]) .n', (x) => x.every((e) => +e.textContent.replace(/\D/g, '') > 0)) && (await p.$$eval('.chips[data-filtro="base"] .chip:not([hidden])', (x) => x.length)) === 4, 'Pesquisa em todas as bases juntas (contagem em cada uma)');
+  v(await p.$$eval('.chips[data-filtro="base"] .chip:not([hidden]):not([data-v="PROPRIA"]) .n', (x) => x.every((e) => +e.textContent.replace(/\D/g, '') > 0)) && (await p.$$eval('.chips[data-filtro="base"] .chip:not([hidden]):not([data-v="PROPRIA"])', (x) => x.length)) === 4, 'Pesquisa em todas as bases juntas (contagem em cada uma)');
   await p.click('#dt-campo'); v(await p.isVisible('#dt-painel'), 'Clique abre o quadro');
   await p.screenshot({ path: OUT + '/dt_painel.png' });
   await p.uncheck('[data-dt-base="ORSE"]'); await p.selectOption('[data-dt-mes="SINAPI"]', '2026-05');

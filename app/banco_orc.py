@@ -24,6 +24,18 @@ CREATE TABLE IF NOT EXISTS item (
   tipo TEXT NOT NULL, base TEXT NOT NULL, codigo TEXT NOT NULL, descricao TEXT, unidade TEXT,
   quantidade REAL NOT NULL DEFAULT 0, custo_unit REAL NOT NULL DEFAULT 0, referencia TEXT);
 CREATE INDEX IF NOT EXISTS ix_item_orc ON item(orcamento_id, etapa_id, ordem);
+-- composições e insumos próprios da empresa
+CREATE TABLE IF NOT EXISTS insumo_proprio (
+  id INTEGER PRIMARY KEY, descricao TEXT NOT NULL, unidade TEXT NOT NULL, tipo TEXT NOT NULL DEFAULT 'MATERIAL',
+  preco REAL, data_preco TEXT DEFAULT '', fonte TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
+CREATE TABLE IF NOT EXISTS composicao_propria (
+  id INTEGER PRIMARY KEY, descricao TEXT NOT NULL, unidade TEXT NOT NULL, grupo TEXT DEFAULT '', observacoes TEXT DEFAULT '',
+  origem_base TEXT DEFAULT '', origem_codigo TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
+CREATE TABLE IF NOT EXISTS composicao_propria_item (
+  id INTEGER PRIMARY KEY, composicao_id INTEGER NOT NULL REFERENCES composicao_propria(id) ON DELETE CASCADE,
+  ordem INTEGER NOT NULL, tipo TEXT NOT NULL, base TEXT NOT NULL, codigo TEXT NOT NULL, qtd REAL NOT NULL DEFAULT 0,
+  descricao TEXT DEFAULT '', unidade TEXT DEFAULT '');
+CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, ordem);
 '''
 
 # mesmas tabelas; DOUBLE PRECISION porque REAL no Postgres guarda só 6 dígitos
@@ -41,6 +53,18 @@ CREATE TABLE IF NOT EXISTS item (
   tipo TEXT NOT NULL, base TEXT NOT NULL, codigo TEXT NOT NULL, descricao TEXT, unidade TEXT,
   quantidade DOUBLE PRECISION NOT NULL DEFAULT 0, custo_unit DOUBLE PRECISION NOT NULL DEFAULT 0, referencia TEXT);
 CREATE INDEX IF NOT EXISTS ix_item_orc ON item(orcamento_id, etapa_id, ordem);
+-- composições e insumos próprios da empresa
+CREATE TABLE IF NOT EXISTS insumo_proprio (
+  id SERIAL PRIMARY KEY, descricao TEXT NOT NULL, unidade TEXT NOT NULL, tipo TEXT NOT NULL DEFAULT 'MATERIAL',
+  preco DOUBLE PRECISION, data_preco TEXT DEFAULT '', fonte TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
+CREATE TABLE IF NOT EXISTS composicao_propria (
+  id SERIAL PRIMARY KEY, descricao TEXT NOT NULL, unidade TEXT NOT NULL, grupo TEXT DEFAULT '', observacoes TEXT DEFAULT '',
+  origem_base TEXT DEFAULT '', origem_codigo TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
+CREATE TABLE IF NOT EXISTS composicao_propria_item (
+  id SERIAL PRIMARY KEY, composicao_id INTEGER NOT NULL REFERENCES composicao_propria(id) ON DELETE CASCADE,
+  ordem INTEGER NOT NULL, tipo TEXT NOT NULL, base TEXT NOT NULL, codigo TEXT NOT NULL, qtd DOUBLE PRECISION NOT NULL DEFAULT 0,
+  descricao TEXT DEFAULT '', unidade TEXT DEFAULT '');
+CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, ordem);
 '''
 
 if POSTGRES:

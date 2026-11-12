@@ -313,6 +313,7 @@ const LOCAL = (() => {
     const mesPedido = () => { const r = Object.fromEntries((qs.get('refs') || '').split(',').filter((x) => x.includes(':')).map((x) => x.split(':')));
       return mes(r.ORSE || r.SINAPI || qs.get('ref')); };
     const ativas = () => { const l = (qs.get('bases') || '').split(',').filter((b) => BASES.includes(b)); return l.length ? l : BASES; };
+    if (r0 === 'proprias') throw erro(501, 'Composições próprias estão disponíveis no site publicado, não nesta versão de teste.');
     if (r0 === 'referencia') {
       const m = mesPedido(); const d = await dados(m.id);
       const meses = MESES.map(({ encargos, ...x }) => x), atual = MESES[MESES.length - 1].id;

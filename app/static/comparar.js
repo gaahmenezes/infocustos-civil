@@ -58,7 +58,7 @@ const difere = (vals) => { const v = vals.filter((x) => x != null); return v.len
 window.desenharComparar = async function (texto) {
   const d = $('#detalhe');
   const pedidos = texto.split(',').map((t) => { const k = t.indexOf('-'); return { base: t.slice(0, k), codigo: t.slice(k + 1) }; })
-    .filter((x) => BASES.includes(x.base) && /^\w+$/.test(x.codigo)).slice(0, CMP_MAX);
+    .filter((x) => [...BASES, 'PROPRIA'].includes(x.base) && /^\w+$/.test(x.codigo)).slice(0, CMP_MAX);
   if (pedidos.length < 2) {
     d.innerHTML = `<div class="pagina">${vazio('planilha', 'Escolha pelo menos duas composições', 'Na consulta, use o botão "Comparar" em cada resultado.', '<a class="botao primario" href="#/">Ir para a consulta</a>')}</div>`; return;
   }

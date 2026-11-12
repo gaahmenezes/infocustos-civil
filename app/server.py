@@ -284,6 +284,13 @@ def api_referencia(ref: Optional[str] = None, refs: str = '', bases: str = ''):
 def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int = Query(60, le=500), ref: Optional[str] = None,
               desde: int = Query(0, ge=0), ordem: str = 'usos', refs: str = '', bases: str = ''):
     """Cada base é procurada no seu mês (`refs`). Sem texto lista a base inteira: `ordem=codigo` na ordem da tabela, `desde` para as páginas seguintes."""
+    if base.upper() == 'PROPRIA':
+        props = proprias.buscar(q, tipo, refs, limite=500)
+        lista = props[desde:desde + limite]
+        grade = [{'tipo': t, 'base': 'PROPRIA', 'n': sum(1 for x in props if x['tipo'] == t)} for t in ('servico', 'insumo')]
+        with conn() as c:
+            ref0 = ler_refs(c, refs, ref, bases).get('ORSE')
+        return {'total': len(props), 'referencia': ref0, 'refs': {}, 'grade': [g for g in grade if g['n']], 'itens': lista}
     with conn() as c:
         escolha = ler_refs(c, refs, ref, bases)
         r = mes(c, escolha.get(base.upper()) or escolha.get('ORSE') or next(iter(escolha.values())))
@@ -321,8 +328,17 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
             ordenar = 'i.base, i.tipo DESC, i.codigo' if ordem == 'codigo' else 'i.usos DESC'
             rows = c.execute(f'SELECT i.*, NULL AS trecho FROM item_busca i {w} ORDER BY {ordenar} LIMIT ? OFFSET ?',
                              args + [limite, desde]).fetchall()
+        # itens próprios da empresa: aparecem primeiro (com texto ou na lista da base inteira, só na primeira página)
+        if base.upper() not in BASES and desde == 0:
+            props = proprias.buscar(q, tipo, refs, limite=20)
+            if props:
+                rows = props + list(rows)[:max(0, limite - len(props))]
+                total += len(props)
+            todos_props = proprias.buscar(q, 'todos', refs, limite=500)
+            grade = [dict(g) for g in grade] + [{'tipo': t, 'base': 'PROPRIA', 'n': n} for t in ('servico', 'insumo')
+                                                 if (n := sum(1 for x in todos_props if x['tipo'] == t))]
         return {'total': total, 'referencia': r['id'], 'refs': escolha, 'grade': [dict(g) for g in grade],
-                'itens': [{k: x[k] for k in x.keys() if k != 'rel'} for x in rows]}
+                'itens': [(dict(x) if isinstance(x, dict) else {k: x[k] for k in x.keys() if k != 'rel'}) for x in rows]}
 
 
 def ler_composicao(c, base, codigo, ref):
@@ -341,7 +357,9 @@ def ler_composicao(c, base, codigo, ref):
 
 
 @app.get('/api/composicao/{base}/{codigo}')
-def api_composicao(base: str, codigo: str, ref: Optional[str] = None):
+def api_composicao(base: str, codigo: str, ref: Optional[str] = None, refs: str = ''):
+    if base.upper() == 'PROPRIA':
+        return proprias.ficha_composicao(codigo, refs)  # calculada na hora, com a data-base de cada base
     base = checar_base(base)
     with conn() as c:
         r = mes_da_base(c, base, ref)
@@ -356,6 +374,8 @@ def api_composicao(base: str, codigo: str, ref: Optional[str] = None):
 
 @app.get('/api/insumo/{base}/{codigo}')
 def api_insumo(base: str, codigo: str, limite: int = Query(100, le=2000), ref: Optional[str] = None):
+    if base.upper() == 'PROPRIA':
+        return proprias.ficha_insumo(codigo)
     base = checar_base(base)
     with conn() as c:
         r = mes_da_base(c, base, ref)
@@ -376,7 +396,7 @@ def api_insumo(base: str, codigo: str, limite: int = Query(100, le=2000), ref: O
             LEFT JOIN servico s ON s.base = c.base AND s.codigo = c.codigo AND s.referencia = c.referencia
             WHERE i.base = ? AND i.codigo = ? AND i.eh_servico = 0 AND i.referencia = ?
             ORDER BY (custo_item / NULLIF(c.custo_total, 0)) DESC LIMIT ?''', (base, codigo, r['id'], limite)).fetchall()
-        return dict(ins) | {'usado_em': total, 'usos': [dict(u) | {'custo_total': u['custo_item']} for u in usos]}
+        return dict(ins) | {'usado_em': total, 'fonte': fonte_de(c, base, r['id']), 'usos': [dict(u) | {'custo_total': u['custo_item']} for u in usos]}
 
 
 @app.get('/api/encargos')
@@ -481,7 +501,7 @@ def _cab(ws, linha, valores, larguras=None):
 def _xlsx(wb, nome):
     buf = io.BytesIO(); wb.save(buf); buf.seek(0)
     return StreamingResponse(buf, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                             headers={'Content-Disposition': f'attachment; filename="{nome}"'})
+                             headers={'Content-Disposition': orcamento.disposicao(nome)})
 
 
 def _escrever_itens(ws, c, comp, linha, nivel, expandir):
@@ -553,9 +573,11 @@ def exportar_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', ref: O
 
 
 import orcamento  # noqa: E402
+import proprias  # noqa: E402
 
 orcamento.configurar(conn)
 app.include_router(orcamento.router)
+app.include_router(proprias.router)
 app.mount('/static', StaticFiles(directory=AQUI / 'static'), name='static')
 
 

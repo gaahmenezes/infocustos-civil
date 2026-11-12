@@ -30,6 +30,15 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
 | `artefato/` | Versão estática para teste no claude.ai (dados e orçamentos no navegador) |
 | `docs/` | Telas e um orçamento de exemplo exportado |
 
+## Composições e insumos próprios
+
+Aba **Próprias** (`#/proprias`): a empresa cadastra insumos próprios (preço, data e fonte da cotação) e monta
+composições próprias com itens de qualquer base (ORSE, SINAPI, SICRO) ou próprios, inclusive outras composições próprias.
+O custo não fica gravado: é recalculado com a data-base escolhida para cada base no topo. "Criar própria a partir desta",
+na ficha de uma composição oficial, copia os itens para ajustar e mostra a diferença para a original. Ciclos (A usa B que
+usa A) são bloqueados, e itens em uso não podem ser excluídos. Ficam no banco dos orçamentos (`DATABASE_URL`).
+Código: `app/proprias.py` (servidor) e `app/static/proprias.js` (tela).
+
 ## SINAPI pelos relatórios da CAIXA
 
 A CAIXA publica os PDFs de todos os estados. Para Sergipe bastam quatro: `SINAPI_Preco_Ref_Insumos_SE_AAAAMM.pdf`,
