@@ -6,8 +6,10 @@ base. Trocar o mês da SINAPI atualiza todas as composições próprias que usam
 
 Códigos: composição própria P0001, P0002...; insumo próprio I0001, I0002... (base "PROPRIA").
 """
+import contextvars
 import re
 import unicodedata
+from contextlib import contextmanager
 from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -57,7 +59,7 @@ class Calculo:
     """Calcula composições próprias com a data-base de cada base. Guarda o que já calculou e impede ciclos."""
 
     def __init__(self, c, refs: dict):
-        self.c, self.refs, self.memo, self.pilha = c, refs, {}, set()
+        self.c, self.refs, self.memo, self.pilha, self.memo_oficial = c, refs, {}, set(), {}
         with orc_mod._base_conn() as b:
             self.ultimos = orc_mod.ultimo_por_base(b)
 
@@ -67,6 +69,12 @@ class Calculo:
 
     def oficial(self, tipo, base, codigo):
         """Preço e divisão do custo de um item oficial no mês escolhido para a base."""
+        k = (tipo, base, codigo)
+        if k not in self.memo_oficial:
+            self.memo_oficial[k] = self._oficial(tipo, base, codigo)
+        return self.memo_oficial[k]
+
+    def _oficial(self, tipo, base, codigo):
         mes = self.mes(base)
         p = orc_mod.preco_na_base(tipo, base, codigo, mes)
         if not p:
@@ -103,6 +111,12 @@ class Calculo:
         if not cp:
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
         self.pilha.add(cid)
+        try:
+            return self._montar(cid, cp)
+        finally:
+            self.pilha.discard(cid)
+
+    def _montar(self, cid, cp):
         itens, total, div, faltam = [], 0.0, {'mo': 0.0, 'mat': 0.0, 'equip': 0.0, 'terc': 0.0}, 0
         compl = 0.0  # encargos complementares embutidos nos itens oficiais
         for it in self.c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall():
@@ -130,7 +144,6 @@ class Calculo:
                           'descricao': d['descricao'] if d else (it['descricao'] or '') + ' — não encontrado na data-base escolhida',
                           'unidade': d['unidade'] if d else it['unidade'], 'qtd': it['qtd'], 'custo_unit': preco, 'custo_total': custo,
                           'referencia': d['referencia'] if d else None, 'tem_composicao': bool(d and d['tem_composicao'])})
-        self.pilha.discard(cid)
         total = round(total, 2)
         fr = {k: (v / total if total else 0) for k, v in div.items()}
         r = {'base': BASE, 'codigo': cod_comp(cid), 'id': cid, 'descricao': cp['descricao'], 'unidade': cp['unidade'], 'grupo': cp['grupo'] or 'Composições próprias',
@@ -181,12 +194,46 @@ def ficha_insumo(codigo):
                           'custo_total': (u['qtd'] * i['preco']) if i['preco'] is not None else None, 'preco_composicao': None} for u in usos]}
 
 
+# ---------- uma sessão de cálculo por pedido ----------
+# O orçamento pergunta preço, divisão e encargos de cada item próprio. Sem sessão, cada pergunta abria uma conexão e
+# recalculava a composição inteira; com ela, tudo o que já foi calculado no mesmo pedido é reaproveitado.
+_SESSAO = contextvars.ContextVar('sessao_proprias', default=None)
+
+
+@contextmanager
+def sessao(c):
+    if _SESSAO.get() is not None:
+        yield
+        return
+    marca = _SESSAO.set({'c': c, 'calcs': {}})
+    try:
+        yield
+    finally:
+        _SESSAO.reset(marca)
+
+
+def _refs_do_mes(ref):
+    if not ref:
+        return {}
+    with orc_mod._base_conn() as b:
+        return {base: orc_mod.mes_para_base(b, base, ref) for base in BASES_OFICIAIS}
+
+
+@contextmanager
+def _calculo(ref):
+    s = _SESSAO.get()
+    if s is None:
+        with orc() as c:
+            yield Calculo(c, _refs_do_mes(ref))
+        return
+    if ref not in s['calcs']:
+        s['calcs'][ref] = Calculo(s['c'], _refs_do_mes(ref))
+    yield s['calcs'][ref]
+
+
 def preco(tipo, codigo, ref=None):
     """Preço de um item próprio para o orçamento: cada base no mês do orçamento (ou o mais próximo dela)."""
-    with orc() as c:
-        with orc_mod._base_conn() as b:
-            refs = {base: orc_mod.mes_para_base(b, base, ref) for base in BASES_OFICIAIS} if ref else {}
-        calc = Calculo(c, refs)
+    with _calculo(ref) as calc:
         if tipo == 'servico':
             comp = calc.composicao(codigo)
             return {'codigo': comp['codigo'], 'descricao': comp['descricao'], 'unidade': comp['unidade'],
@@ -199,18 +246,13 @@ def complementares(tipo, codigo, ref=None):
     """Encargos complementares embutidos no custo de uma composição própria (vêm dos itens oficiais que ela usa)."""
     if tipo != 'servico':
         return 0.0
-    with orc() as c:
-        with orc_mod._base_conn() as b:
-            refs = {base: orc_mod.mes_para_base(b, base, ref) for base in BASES_OFICIAIS} if ref else {}
-        return Calculo(c, refs).composicao(codigo)['compl']
+    with _calculo(ref) as calc:
+        return calc.composicao(codigo)['compl']
 
 
 def divisao(tipo, codigo, ref=None):
     """Divisão do custo (frações) de um item próprio, para o orçamento."""
-    with orc() as c:
-        with orc_mod._base_conn() as b:
-            refs = {base: orc_mod.mes_para_base(b, base, ref) for base in BASES_OFICIAIS} if ref else {}
-        calc = Calculo(c, refs)
+    with _calculo(ref) as calc:
         try:
             if tipo == 'servico':
                 return calc.composicao(codigo)['divisao']

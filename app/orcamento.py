@@ -6,6 +6,7 @@ A base de preços (ORSE/SINAPI) é só leitura.
 """
 import io
 import os
+import threading
 from collections import defaultdict
 from datetime import datetime
 from functools import lru_cache
@@ -29,9 +30,22 @@ router = APIRouter(prefix='/api')
 _base_conn = None  # definido por server.py
 
 
+_local = threading.local()
+
+
 def configurar(conn_base):
-    global _base_conn
-    _base_conn = conn_base
+    """Guarda como abrir a base de preços. Cada linha de execução reaproveita a sua conexão (só leitura): abrir uma
+    nova a cada consulta custava tempo e memória em orçamentos com muitas composições próprias."""
+    global _base_conn, _meses
+
+    def reaproveitada():
+        c = getattr(_local, 'c', None)
+        if c is None:
+            c = _local.c = conn_base()
+            c.execute('PRAGMA cache_size = -2000')  # até 2 MB de páginas por conexão
+        return c
+    _base_conn = reaproveitada
+    _meses = None
     with orc() as c:
         c.executescript(banco_orc.ESQUEMA_SQLITE)
 
@@ -92,9 +106,22 @@ def ref_atual(b):
     return dict(b.execute('SELECT id, descricao FROM referencia ORDER BY id DESC LIMIT 1').fetchone())
 
 
+_meses = None  # {base: [meses em ordem]}: a base de preços não muda com o servidor no ar, então lê uma vez
+
+
+def meses_por_base(b):
+    global _meses
+    if _meses is None:
+        m = defaultdict(list)
+        for base, ref in b.execute('SELECT DISTINCT base, referencia FROM item_busca ORDER BY base, referencia'):
+            m[base].append(ref)
+        _meses = dict(m)
+    return _meses
+
+
 def ultimo_por_base(b):
     """Mês mais recente de cada base (cada uma tem o seu calendário)."""
-    return dict(b.execute('SELECT base, MAX(referencia) FROM item_busca GROUP BY base').fetchall())
+    return {base: meses[-1] for base, meses in meses_por_base(b).items()}
 
 
 def ref_principal(b):
@@ -105,7 +132,7 @@ def ref_principal(b):
 def mes_para_base(b, base, ref):
     """Cada base tem o seu calendário. Se a base não tem o mês pedido, usa o mês dela mais próximo antes dele
     (ou o primeiro que ela tiver): um orçamento de agosto com itens do SICRO usa o SICRO de julho."""
-    meses = [m for (m,) in b.execute('SELECT DISTINCT referencia FROM item_busca WHERE base = ? ORDER BY referencia', (base,))]
+    meses = meses_por_base(b).get(base, [])
     if not meses or ref in meses:
         return ref
     antes = [m for m in meses if m <= ref]
@@ -245,6 +272,12 @@ def dividir_custo(b, itens, ref_orc):
 
 
 def calcular(c, oid):
+    import proprias
+    with proprias.sessao(c):  # as composições próprias do orçamento são calculadas uma vez só, na mesma conexão
+        return _calcular(c, oid)
+
+
+def _calcular(c, oid):
     o = c.execute('SELECT * FROM orcamento WHERE id = ?', (oid,)).fetchone()
     if not o:
         raise HTTPException(404, 'Orçamento não encontrado.')
@@ -711,6 +744,12 @@ def restaurar(d: Desfazer):
 
 
 def _simular(c, oid, ref=None):
+    import proprias
+    with proprias.sessao(c):
+        return _simular_itens(c, oid, ref)
+
+
+def _simular_itens(c, oid, ref=None):
     o = calcular(c, oid)
     with _base_conn() as b:
         ref = ref or ref_atual(b)['id']
