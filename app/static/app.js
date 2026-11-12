@@ -180,7 +180,7 @@ async function carregarReferencia() {
   catch (e) {
     try { estado.meses = {}; estado.ativas = null; ref = await api('/api/referencia'); } catch (e2) { $('#referencia').textContent = 'Base indisponível'; return; }
   }
-  estado.ref = ref; estado.meses = { ...(ref.refs || { ORSE: ref.id, SINAPI: ref.id }) }; gravarMeses();
+  estado.ref = ref; estado.meses = { ...(ref.refs || { ORSE: ref.id, SINAPI: ref.id }) }; gravarMeses(); mostrarNomeBasePropria();
   estado.ativas = ref.ativas || basesCarregadas();
   try { localStorage.setItem('infocustos-bases', JSON.stringify(estado.ativas)); } catch (_) { /* sem armazenamento */ }
   estado.mes = estado.meses.ORSE || ref.id;
@@ -496,7 +496,10 @@ function trecho(item) {
 }
 
 // código e base em destaque: número em algarismos fixos, base como etiqueta com cor própria
-const rotuloBase = (b) => (b === 'PROPRIA' ? 'PRÓPRIA' : b);
+// a base própria tem o nome que a empresa escolher (aba Bases próprias)
+const nomeBasePropria = () => (estado.ref && estado.ref.base_propria) || 'Base própria';
+const rotuloBase = (b) => (b === 'PROPRIA' ? nomeBasePropria().toUpperCase() : b);
+function mostrarNomeBasePropria() { document.querySelectorAll('[data-nome-propria]').forEach((el) => { el.textContent = nomeBasePropria(); }); }
 function codigoBase(codigo, base, marcar) {
   const termo = marcar ? ($('#q').value || '').trim().replace(/^0+/, '') : '';
   const semZeros = String(codigo).replace(/^0+/, '');

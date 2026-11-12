@@ -287,7 +287,8 @@ def api_referencia(ref: Optional[str] = None, refs: str = '', bases: str = ''):
         bases = {b: {'meses': [x for x in todas if x['id'] in meses], 'atual': meses[-1], 'fontes': {m: fonte_de(c, b, m) for m in meses}}
                  for b, meses in sorted(meses_da_base(c).items(), key=lambda kv: ORDEM_BASES.index(kv[0]) if kv[0] in ORDEM_BASES else 99)}
         return r | {'totais': [dict(t) for t in tot], 'referencias': todas, 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
-                    'encargos_detalhados': sorted(tem_enc), 'bases': bases, 'refs': todas_bases, 'ativas': list(escolha)}
+                    'encargos_detalhados': sorted(tem_enc), 'bases': bases, 'refs': todas_bases, 'ativas': list(escolha),
+                    'base_propria': proprias.nome_base()}
 
 
 @app.get('/api/busca')

@@ -1712,3 +1712,46 @@ html.trocando-tema::view-transition { pointer-events: none; }
 .dlg-dupla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 760px) { .prop-campos { grid-template-columns: 1fr 1fr; } .prop-campos label:nth-child(3) { grid-column: 1 / -1; } .dlg-dupla { grid-template-columns: 1fr; } }
 .ref-mes { font-size: 11.5px; color: var(--tinta-2); background: var(--superficie-2); border: 1px solid var(--linha); padding: 0 6px; border-radius: 999px; margin-left: 6px; white-space: nowrap; }
+
+/* ---------- subetapas ---------- */
+.planilha-orc tbody.sub .etapa-cab td { background: var(--superficie-2); border-bottom-color: var(--linha); }
+.planilha-orc tbody.sub .etapa-cab .n { font-size: 13px; color: var(--tinta-2, var(--tinta)); }
+.planilha-orc tbody.sub .etapa-cab td:nth-child(2) { padding-left: 22px; }
+.planilha-orc tbody.sub .etapa-titulo { font-size: 14px; font-weight: 650; }
+.planilha-orc tbody.sub tr.item td.cod, .planilha-orc tbody.sub tr.add-linha td:nth-child(2) { padding-left: 22px; }
+.add-fila { display: flex; gap: 8px; align-items: flex-start; max-width: 920px; }
+.add-fila .add-busca { flex: 1 1 auto; min-width: 0; }
+.botao.botao-p { padding: 0 12px; min-height: 38px; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
+.rel-sub td:nth-child(2) { padding-left: 18px; }
+tr.rel-etapa.rel-sub td { background: transparent; font-weight: 650; border-bottom: 1px solid var(--linha); }
+
+/* ---------- encargos complementares ---------- */
+.orc-compl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 18px; align-items: center; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio); padding: 12px 16px; margin: 4px 0 16px; }
+.orc-compl[hidden] { display: none; }
+.orc-compl.ligado { border-color: var(--acao); border-left-width: 4px; }
+.orc-compl p { margin: 0; font-size: 13px; color: var(--tinta-3); max-width: 100ch; }
+.orc-compl p b { color: var(--tinta); }
+.chave { display: inline-flex; align-items: center; gap: 10px; border: 0; background: transparent; color: var(--tinta); font: inherit; font-weight: 650; padding: 6px 4px; cursor: pointer; border-radius: var(--raio-p); text-align: left; }
+.chave-trilho { flex: 0 0 auto; width: 38px; height: 22px; border-radius: 999px; background: var(--linha-forte, var(--linha)); position: relative; transition: background-color var(--t-rapido); }
+.chave-trilho i { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / 0.3); transition: transform var(--t-rapido); }
+.chave[aria-checked="true"] .chave-trilho { background: var(--acao); }
+.chave[aria-checked="true"] .chave-trilho i { transform: translateX(16px); }
+@media (max-width: 760px) { .orc-compl { grid-template-columns: 1fr; } }
+@media print { .orc-compl { display: none; } }
+
+/* ---------- nome da base própria ---------- */
+.prop-ident { min-width: 0; }
+.prop-base-rot { display: block; font-size: 12px; font-weight: 650; color: var(--tinta-3); text-transform: uppercase; letter-spacing: 0.04em; }
+.prop-base-rot span { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.prop-ident .orc-nome { width: min(100%, 520px); }
+.cb-base { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* menu de cima numa linha só (o nome "Bases próprias" é mais comprido) */
+.abas a { white-space: nowrap; }
+@media (min-width: 1321px) and (max-width: 1500px) { .cabecalho { gap: 16px; padding: 0 20px; } .abas { flex-wrap: nowrap; } .abas a { padding: 7px 9px; } }
+/* sem largura para marca + menu + datas na mesma linha: o menu desce para a segunda linha, como nas telas menores */
+@media (min-width: 1101px) and (max-width: 1320px) {
+  :root { --topo: 102px; }  /* as faixas que grudam abaixo do cabeçalho acompanham a altura de duas linhas */
+  .cabecalho { grid-template-columns: auto 1fr; height: 102px; padding: 8px 20px; row-gap: 6px; align-content: center; }
+  .abas { grid-column: 1 / -1; grid-row: 2; }
+}

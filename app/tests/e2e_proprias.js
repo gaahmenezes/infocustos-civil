@@ -53,9 +53,9 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   v(o && o.total > 0 && o.divisao && o.divisao.mat < 1, `Entra no orçamento com custo e divisão do custo (total ${o && o.total})`);
   // busca geral
   await p.goto(U + '/'); await p.fill('#q', 'porcelanato 90x90'); await p.waitForSelector('.res');
-  v((await p.$$eval('.res .cb-base', (x) => x.slice(0, 2).map((e) => e.textContent))).includes('PRÓPRIA'), 'Na busca geral, o que é próprio aparece primeiro');
+  v((await p.$$eval('.res .cb-base', (x) => x.slice(0, 2).map((e) => e.textContent))).includes('BASE PRÓPRIA'), 'Na busca geral, o que é próprio aparece primeiro');
   await p.click('.chips[data-filtro="base"] [data-v="PROPRIA"]'); await p.waitForTimeout(600);
-  v((await p.$$eval('.res .cb-base', (x) => [...new Set(x.map((e) => e.textContent))])).join() === 'PRÓPRIA', 'Filtro "Próprias" mostra só os itens da empresa');
+  v((await p.$$eval('.res .cb-base', (x) => [...new Set(x.map((e) => e.textContent))])).join() === 'BASE PRÓPRIA', 'Filtro "Próprias" mostra só os itens da empresa');
   // criar a partir de uma oficial
   await p.goto(U + '/#/composicao/SINAPI/103354'); await p.waitForSelector('[data-copiar-propria]');
   const nOficial = await p.$$eval('.arvore tbody tr:not(.secao)', (x) => x.length);

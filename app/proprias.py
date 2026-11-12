@@ -81,6 +81,7 @@ class Calculo:
             secao = 'SERVICO_AUXILIAR'
             div = {'mo': (r['pct_mo'] or 0), 'mat': (r['pct_mat'] or 0), 'equip': (r['pct_equip'] or 0), 'terc': (r['pct_terc'] or 0)} if r and r['pct_mo'] is not None else {'mat': 1.0}
         return {'codigo': p['codigo'], 'descricao': p['descricao'], 'unidade': p['unidade'], 'preco': p['preco'], 'referencia': p['referencia'],
+                'compl': orc_mod.complementares(tipo, base, p['codigo'], p['referencia'], p['descricao'], p['preco']) if p['preco'] is not None else 0.0,
                 'secao': secao, 'div': div, 'tem_composicao': bool(r and r['tem_composicao']) if tipo == 'servico' else False}
 
     def insumo_proprio(self, codigo):
@@ -103,12 +104,13 @@ class Calculo:
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
         self.pilha.add(cid)
         itens, total, div, faltam = [], 0.0, {'mo': 0.0, 'mat': 0.0, 'equip': 0.0, 'terc': 0.0}, 0
+        compl = 0.0  # encargos complementares embutidos nos itens oficiais
         for it in self.c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall():
             if it['base'] == BASE:
                 if it['tipo'] == 'servico':
                     sub = self.composicao(it['codigo'])
                     d = {'codigo': sub['codigo'], 'descricao': sub['descricao'], 'unidade': sub['unidade'], 'preco': sub['custo_total'],
-                         'referencia': None, 'secao': 'SERVICO_AUXILIAR', 'tem_composicao': True,
+                         'referencia': None, 'secao': 'SERVICO_AUXILIAR', 'tem_composicao': True, 'compl': sub['compl'],
                          'div': {k: (sub['divisao'][k] if sub['custo_total'] else 0) for k in div}}
                 else:
                     d = self.insumo_proprio(it['codigo'])
@@ -120,6 +122,7 @@ class Calculo:
                 faltam += 1
             else:
                 total += custo
+                compl += it['qtd'] * (d.get('compl') or 0.0)
                 for k, v in (d['div'] or {}).items():
                     div[k] += custo * v
             itens.append({'id': it['id'], 'ordem': it['ordem'], 'tipo': it['tipo'], 'base': it['base'], 'codigo': d['codigo'] if d else it['codigo'],
@@ -132,7 +135,7 @@ class Calculo:
         fr = {k: (v / total if total else 0) for k, v in div.items()}
         r = {'base': BASE, 'codigo': cod_comp(cid), 'id': cid, 'descricao': cp['descricao'], 'unidade': cp['unidade'], 'grupo': cp['grupo'] or 'Composições próprias',
              'subgrupo': '', 'observacoes': cp['observacoes'] or '', 'modelo': 'PROPRIA', 'prod_equipe': None, 'encargo_social': None, 'referencia': None,
-             'custo_total': total, 'custo_mao_de_obra': round(div['mo'], 4), 'custo_encargo_social': 0.0, 'custo_material': round(div['mat'], 4),
+             'custo_total': total, 'compl': round(compl, 4), 'custo_mao_de_obra': round(div['mo'], 4), 'custo_encargo_social': 0.0, 'custo_material': round(div['mat'], 4),
              'custo_equipamento': round(div['equip'], 4), 'custo_servico_terceiro': round(div['terc'], 4), 'divisao': fr,
              'itens_sem_preco': faltam, 'itens': itens, 'origem_base': cp['origem_base'] or '', 'origem_codigo': cp['origem_codigo'] or '',
              'atualizado_em': cp['atualizado_em'], 'fonte': 'PROPRIA'}
@@ -190,6 +193,16 @@ def preco(tipo, codigo, ref=None):
                     'preco': comp['custo_total'] if comp['itens'] and not comp['itens_sem_preco'] else (comp['custo_total'] or None), 'referencia': ref}
         i = calc.insumo_proprio(codigo)
         return i and {'codigo': i['codigo'], 'descricao': i['descricao'], 'unidade': i['unidade'], 'preco': i['preco'], 'referencia': ref}
+
+
+def complementares(tipo, codigo, ref=None):
+    """Encargos complementares embutidos no custo de uma composição própria (vêm dos itens oficiais que ela usa)."""
+    if tipo != 'servico':
+        return 0.0
+    with orc() as c:
+        with orc_mod._base_conn() as b:
+            refs = {base: orc_mod.mes_para_base(b, base, ref) for base in BASES_OFICIAIS} if ref else {}
+        return Calculo(c, refs).composicao(codigo)['compl']
 
 
 def divisao(tipo, codigo, ref=None):
@@ -296,7 +309,38 @@ def listar(refs: str = ''):
         ins = [{'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'tipo': i['tipo'], 'preco': i['preco'],
                 'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'atualizado_em': i['atualizado_em']}
                for i in c.execute('SELECT * FROM insumo_proprio ORDER BY descricao').fetchall()]
-        return {'composicoes': comps, 'insumos': ins}
+        return {'composicoes': comps, 'insumos': ins, 'nome_base': nome_base(c)}
+
+
+# ---------- nome da base própria (a empresa escolhe como chamar) ----------
+NOME_PADRAO = 'Base própria'
+
+
+def nome_base(c=None):
+    if c is None:
+        with orc() as c2:
+            return nome_base(c2)
+    r = c.execute("SELECT valor FROM config WHERE chave = 'nome_base_propria'").fetchone()
+    return (r['valor'] if r and r['valor'] else NOME_PADRAO)
+
+
+class NomeBase(BaseModel):
+    nome: str = Field(min_length=1, max_length=40)
+
+
+@router.patch('/proprias/base')
+def renomear_base(d: NomeBase):
+    nome = ' '.join(d.nome.split())
+    if not nome:
+        raise HTTPException(422, 'Dê um nome à base.')
+    if nome.upper() in BASES_OFICIAIS:
+        raise HTTPException(422, f'{nome.upper()} é o nome de uma base oficial. Escolha outro para a sua.')
+    with orc() as c:
+        if c.execute("SELECT 1 FROM config WHERE chave = 'nome_base_propria'").fetchone():
+            c.execute("UPDATE config SET valor = ? WHERE chave = 'nome_base_propria'", (nome,))
+        else:
+            c.execute("INSERT INTO config (chave, valor) VALUES ('nome_base_propria', ?)", (nome,))
+    return {'nome_base': nome}
 
 
 @router.post('/proprias/insumos', status_code=201)

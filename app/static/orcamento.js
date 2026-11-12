@@ -180,6 +180,12 @@ async function abrirOrcamento(id, dados) {
     <div class="orc-fixa" aria-hidden="true"><div class="orc-fixa-barra"><b>${esc(o.nome)}</b>
       <span>Custo direto ${brl.format(o.custo_total)}</span><span>BDI ${brl.format(o.valor_bdi)}</span><strong>${brl.format(o.total)}</strong></div></div>
     <div class="mudar-mes" id="orc-mudar-mes" hidden></div>
+    <div class="orc-compl${o.sem_complementares ? ' ligado' : ''}" id="orc-compl"${o.complementares > 0 || o.sem_complementares ? '' : ' hidden'}>
+      <button type="button" class="chave" id="orc-compl-bt" role="switch" aria-checked="${!!o.sem_complementares}"><span class="chave-trilho" aria-hidden="true"><i></i></span>Desconsiderar encargos complementares</button>
+      <p>${o.sem_complementares
+        ? `<b>${brl.format(o.complementares)}</b> de alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação saíram do custo direto de todas as composições. Lance esse custo nos seus custos indiretos (administração local ou BDI), sem duplicidade.`
+        : `As composições deste orçamento trazem <b>${brl.format(o.complementares)}</b> de encargos complementares embutidos na mão de obra (alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação). Se você calcula esses custos à parte, nos indiretos, ligue a chave para não contar duas vezes.`}</p>
+    </div>
     <div id="orc-painel"></div>
     <div class="orc-barra">
       <nav class="abas-orc" aria-label="Visões do orçamento">${abas.map(([k, n]) => `<a href="${rotaOrc(o.id, k)}" aria-current="${ORC.aba === k}">${n}</a>`).join('')}</nav>
@@ -198,6 +204,7 @@ async function abrirOrcamento(id, dados) {
   ligarMudarMes(o);
   if (ORC.aba === 'planilha') desenharPlanilha(o);
   else await desenharABC(o, ORC.aba === 'abc-servicos' ? 'servicos' : 'insumos');
+  conferirFaixaFixa();  // a tela foi refeita: se já estava rolada, a faixa de totais continua à vista
 }
 
 function desenharTotais(o) {
@@ -234,19 +241,25 @@ function ligarCabecalho(o) {
     const n = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST'); location.hash = rotaOrc(n.id); avisar('Orçamento duplicado.');
   });
   $('#orc-excluir').addEventListener('click', () => pedirExclusao(o));
+  $('#orc-compl-bt').addEventListener('click', async () => {
+    const ligar = !o.sem_complementares;
+    const n = await salvar('sem_complementares', ligar); if (!n) return;
+    await abrirOrcamento(n.id, n); $('#orc-compl-bt').focus();
+    avisar(ligar ? `${VISTO}Encargos complementares desconsiderados: ${brl.format(n.complementares)} a menos no custo direto.` : 'Encargos complementares de volta ao custo das composições.', 6000);
+  });
 }
 
 function desenharPlanilha(o) {
-  const visiveis = o.etapas.filter((e) => !ORC.filtro || e.id === ORC.filtro);
+  const visiveis = o.etapas.filter((e) => !ORC.filtro || e.id === ORC.filtro || e.pai_id === ORC.filtro);
   const etapas = visiveis.map((e) => `
-    <tbody class="etapa" data-etapa="${e.id}">
+    <tbody class="etapa${e.nivel === 2 ? ' sub' : ''}" data-etapa="${e.id}" data-pai="${e.pai_id || ''}">
       <tr class="etapa-cab">
-        <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover a etapa ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button>${e.numero}</td>
-        <td colspan="5"><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título da etapa ${e.numero}" data-etapa="${e.id}"></td>
+        <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover a ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button>${e.numero}</td>
+        <td colspan="5"><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título da ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}" data-etapa="${e.id}"></td>
         <td class="num"><span class="peso-etapa">${pct.format(e.peso)}</span></td>
         <td class="num"><b>${brl.format(e.total)}</b></td>
         <td class="ctrl">
-          <button type="button" class="mini" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir etapa">✕</button>
+          <button type="button" class="mini" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}">✕</button>
         </td>
       </tr>
       ${e.itens.map((i) => `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
@@ -261,12 +274,13 @@ function desenharPlanilha(o) {
         <td class="ctrl">
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
         </td></tr>`).join('')}
-      <tr class="add-linha"><td></td><td colspan="8">
+      <tr class="add-linha"><td></td><td colspan="8"><div class="add-fila">
         <div class="add-busca">
-          <input class="add-q" placeholder="Adicionar serviço ou insumo de ${esc(nomeRef(o.referencia))} à etapa ${e.numero}: digite descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item à etapa ${e.numero}" autocomplete="off">
+          <input class="add-q" placeholder="Adicionar serviço ou insumo de ${esc(nomeRef(o.referencia))} à ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}: digite descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item à ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}" autocomplete="off">
           <ul class="add-res" role="listbox" aria-label="Itens encontrados" tabindex="0" hidden></ul>
         </div>
-      </td></tr>
+        ${e.nivel === 2 ? '' : `<button type="button" class="botao botao-p" data-acao="subetapa-nova" data-id="${e.id}" title="Criar uma subetapa dentro da etapa ${e.numero}" aria-label="Nova subetapa na etapa ${e.numero}">+ Subetapa</button>`}
+      </div></td></tr>
     </tbody>`).join('');
   const filtrada = ORC.filtro && visiveis[0];
   $('#orc-corpo').innerHTML = `
@@ -279,7 +293,7 @@ function desenharPlanilha(o) {
       <input id="nova-etapa" placeholder="Nome da nova etapa — ex.: Fundações" maxlength="200" aria-label="Nome da nova etapa">
       <button class="botao" type="submit">Adicionar etapa</button>
     </form>
-    <p class="fonte">Preço com BDI e total por item arredondados em 2 casas. Custo unitário congelado na data-base em que o item entrou.</p>`;
+    <p class="fonte">Preço com BDI e total por item arredondados em 2 casas. Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}</p>`;
   ligarPlanilha(o);
 }
 
@@ -288,16 +302,22 @@ const arred2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 function recalcular(o, mudar, manter) {
   const n = structuredClone(o), fator = 1 + n.bdi / 100;
   let custo = 0, total = 0, qtd = 0;
-  n.etapas.forEach((e, ne) => {
-    if (manter) e.itens = e.itens.filter(manter);
+  // a lista vem plana: cada etapa seguida das suas subetapas; o total da etapa inclui as subetapas
+  let mae = null, ne = 0, ns = 0;
+  if (manter) n.etapas.forEach((e) => { e.itens = e.itens.filter(manter); });
+  n.etapas.forEach((e) => {
+    if (e.nivel === 2 && mae) { ns += 1; e.numero = `${ne}.${ns}`; } else { ne += 1; ns = e.itens.length; e.numero = String(ne); mae = e; }
     e.itens.forEach((i, ni) => {
       if (mudar) mudar(i);
-      i.numero = `${ne + 1}.${ni + 1}`;
+      i.numero = `${e.numero}.${ni + 1}`;
       i.preco_unit = arred2(i.custo_unit * fator); i.custo_total = arred2(i.quantidade * i.custo_unit); i.total = arred2(i.quantidade * i.preco_unit);
     });
     e.custo_total = arred2(e.itens.reduce((s, i) => s + i.custo_total, 0)); e.total = arred2(e.itens.reduce((s, i) => s + i.total, 0));
-    custo += e.custo_total; total += e.total; qtd += e.itens.length;
+    if (e !== mae) { mae.custo_total = arred2(mae.custo_total + e.custo_total); mae.total = arred2(mae.total + e.total); }
+    qtd += e.itens.length;
   });
+  n.etapas.filter((e) => e.nivel !== 2).forEach((e) => { custo += e.custo_total; total += e.total; });
+  n.complementares = arred2(n.etapas.reduce((t, e) => t + e.itens.reduce((u, i) => u + i.quantidade * (i.custo_compl || 0), 0), 0));
   n.custo_total = arred2(custo); n.total = arred2(total); n.valor_bdi = arred2(total - custo); n.qtd_itens = qtd;
   n.etapas.forEach((e) => { e.peso = n.total ? e.total / n.total : 0; });
   return n;
@@ -315,7 +335,17 @@ function ligarPlanilha(o) {
   const confirmar = (n, previsto) => {
     if (n.total !== previsto.total || n.custo_total !== previsto.custo_total) return atualizar(n);
     const visto = ORC.atual; ORC.atual = n;
-    setTimeout(() => { if (ORC.atual === n && document.body.contains(corpo)) atualizar(n); else if (ORC.atual === visto) ORC.atual = n; }, 480);
+    // se a pessoa já está em outro campo (busca de item, nome de etapa, dados do orçamento, troca de data-base), espera ela sair para não apagar o texto
+    const ocupada = () => {
+      const a = document.activeElement, caixa = $('#orc-mudar-mes');
+      return (caixa && !caixa.hidden) || (!!a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && !a.classList.contains('qtd'));
+    };
+    const refazer = () => {
+      if (ORC.atual !== n || ORC.aba !== 'planilha' || !$('#orc-corpo')) { if (ORC.atual === visto) ORC.atual = n; return; }
+      if (ocupada()) { setTimeout(refazer, 600); return; }
+      atualizar(n);
+    };
+    setTimeout(refazer, 480);
     return Promise.resolve();
   };
   window.ligarArrastar(corpo, o, atualizar);
@@ -352,8 +382,16 @@ function ligarPlanilha(o) {
       }
       if (a === 'etapa-excluir') {
         const et = o.etapas.find((x) => String(x.id) === id);
+        const dentro = o.etapas.filter((x) => x.id === et.id || x.pai_id === et.id);
+        const ni = dentro.reduce((s, x) => s + x.itens.length, 0), nsub = dentro.length - 1;
         const r = await req(`/api/etapas/${id}`, 'DELETE'); await atualizar(r);
-        avisarDesfazer(`Etapa "${esc(et.titulo)}" excluída${et.itens.length ? `, com ${et.itens.length} ${et.itens.length === 1 ? 'item' : 'itens'}` : ''}.`, r.desfazer);
+        const com = [nsub ? `${nsub} ${nsub === 1 ? 'subetapa' : 'subetapas'}` : '', ni ? `${ni} ${ni === 1 ? 'item' : 'itens'}` : ''].filter(Boolean).join(' e ');
+        avisarDesfazer(`${et.nivel === 2 ? 'Subetapa' : 'Etapa'} "${esc(et.titulo)}" excluída${com ? `, com ${com}` : ''}.`, r.desfazer);
+      }
+      if (a === 'subetapa-nova') {
+        const r = await req(`/api/orcamentos/${o.id}/etapas`, 'POST', { titulo: 'Nova subetapa', pai_id: Number(id) });
+        await atualizar(r);
+        const t = document.querySelector(`.etapa-titulo[data-etapa="${r.etapa_criada}"]`); if (t) { t.focus(); t.select(); }
       }
     } catch (err) { avisar(esc(err.message)); }
   });
@@ -370,8 +408,9 @@ function restaurarFoco(foco) {
   if (!foco) return;
   let el = null;
   if (foco.item) el = document.querySelector(`.qtd[data-item="${foco.item}"]`);
-  if (el) { el.focus(); el.select(); return; }
-  if (foco.pega) { el = document.querySelector(`.pega[data-pega="${foco.pega}"][data-id="${foco.id}"]`); if (el) el.focus(); }
+  // sem rolar a página: quem redesenha é o sistema, e a pessoa pode já estar olhando outro ponto
+  if (el) { el.focus({ preventScroll: true }); el.select(); return; }
+  if (foco.pega) { el = document.querySelector(`.pega[data-pega="${foco.pega}"][data-id="${foco.id}"]`); if (el) el.focus({ preventScroll: true }); }
 }
 
 function ligarBuscaInline(inp) {
@@ -407,7 +446,7 @@ function ligarBuscaInline(inp) {
       const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
       await abrirOrcamento(n.id, n); deslizar();
       const q = document.querySelector(`.qtd[data-item="${n.item_criado}"]`); if (q) { q.focus(); q.select(); }
-      avisar(`${VISTO}${esc(x.codigo)}/${esc(x.base)} adicionado. Digite a quantidade.`);
+      avisar(`${VISTO}${esc(x.codigo)}/${esc(rotuloBase(x.base))} adicionado. Digite a quantidade.`);
     } catch (err) { avisar(esc(err.message)); }
   }
 }
@@ -468,7 +507,7 @@ async function trocarOrc() {
   const et = $('#dlg-etapa');
   if (novo) { et.innerHTML = '<option value="">Serviços preliminares</option>'; return; }
   const o = await req(`/api/orcamentos/${v}`);
-  et.innerHTML = o.etapas.map((e) => `<option value="${e.id}">${e.numero}. ${esc(e.titulo)}</option>`).join('');
+  et.innerHTML = o.etapas.map((e) => `<option value="${e.id}">${e.nivel === 2 ? '\u00a0\u00a0\u00a0' : ''}${e.numero}. ${esc(e.titulo)}</option>`).join('');
   if (o.etapas.length) et.value = String(o.etapas[o.etapas.length - 1].id);
 }
 $('#dlg-orc').addEventListener('change', trocarOrc);
@@ -527,8 +566,9 @@ function ligarMudarMes(o) {
 
 // ---------- totais sempre à vista ----------
 // quando o cabeçalho do orçamento sai da tela, uma faixa fina com nome e totais gruda no topo
-window.addEventListener('scroll', () => {
+function conferirFaixaFixa() {
   const cab = document.querySelector('.ficha.orc .orc-cab'); if (!cab) return;
   const topo = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--topo')) || 62;
   cab.closest('.ficha').classList.toggle('rolou', cab.getBoundingClientRect().bottom < topo);
-}, { passive: true });
+}
+window.addEventListener('scroll', conferirFaixaFixa, { passive: true });

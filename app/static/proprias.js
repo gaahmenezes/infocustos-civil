@@ -43,7 +43,9 @@ async function desenharListaProprias() {
     : vazio('folha', 'Nenhum insumo próprio ainda', 'Cadastre materiais, mão de obra ou equipamentos com o preço da sua cotação.',
       '<button type="button" class="botao primario" data-novo-insumo>Novo insumo</button>');
   d.innerHTML = `<div class="pagina proprias">
-    <header class="pag-cab"><div><h1>Composições próprias</h1>
+    <header class="pag-cab"><div class="prop-ident"><h1 class="sr">Bases próprias</h1>
+      <label class="prop-base-rot" for="prop-base-nome">Nome da sua base <span>aparece nas etiquetas dos itens, na busca e nos relatórios · clique para alterar</span></label>
+      <input class="orc-nome" id="prop-base-nome" value="${esc(nomeBasePropria())}" maxlength="40" aria-label="Nome da base própria">
       <p class="sub">Composições da sua empresa com itens de qualquer base (ORSE, SINAPI, SICRO) ou próprios. O custo é recalculado com a data-base de cada base, escolhida no topo.</p></div>
       <div class="acoes"><button type="button" class="botao" data-novo-insumo>Novo insumo</button><button type="button" class="botao primario" data-nova-propria>Nova composição</button></div></header>
     <div class="prop-barra">${seg}<p class="prop-datas">Preços com ${esc(gruposDeData().map((x) => `${juntar(x.bases)} de ${nomeRef(x.mes)}`).join(' · '))}</p></div>
@@ -276,3 +278,16 @@ document.addEventListener('click', async (e) => {
   }
 });
 $('#dlg-insumo-proprio').addEventListener('click', (e) => { if (e.target.id === 'dlg-insumo-proprio') e.target.close(); });
+
+// ---------- nome da base ----------
+document.addEventListener('change', async (e) => {
+  if (e.target.id !== 'prop-base-nome') return;
+  const v = e.target.value.trim();
+  if (!v) { e.target.value = nomeBasePropria(); return; }
+  try {
+    const r = await req('/api/proprias/base', 'PATCH', { nome: v });
+    estado.ref.base_propria = r.nome_base; e.target.value = r.nome_base; mostrarNomeBasePropria();
+    window.rotaProprias(); avisar(`${VISTO}A base agora se chama <b>${esc(r.nome_base)}</b>.`);
+  } catch (err) { e.target.value = nomeBasePropria(); avisar(esc(err.message)); }
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'prop-base-nome') { e.preventDefault(); e.target.blur(); } });

@@ -18,7 +18,7 @@ function fontesDoOrcamento(o) {
   const bases = basesDoOrcamento(o); if (!bases.length) return `Preços: referência ${nomeRef(o.referencia)}.`;
   const partes = bases.map((b) => {
     const meses = [...new Set(o.etapas.flatMap((e) => e.itens.filter((i) => i.base === b).map((i) => nomeRef(i.referencia || o.referencia))))];
-    if (b === 'PROPRIA') return 'composições e insumos próprios da empresa';
+    if (b === 'PROPRIA') return `${nomeBasePropria()} (composições e insumos próprios da empresa)`;
     return `${b} ${meses.join(', ')} (${b === 'SICRO' ? 'DNIT, Sergipe' : 'CEHOP/SE'})`;
   });
   return `Preços: ${juntar(partes)}.`;
@@ -45,7 +45,7 @@ function folhaCapa(emp, o) {
         ${o.cliente ? `<div><dt>Cliente</dt><dd>${esc(o.cliente)}</dd></div>` : ''}
         ${o.local ? `<div><dt>Local</dt><dd>${esc(o.local)}</dd></div>` : ''}
         <div><dt>Data-base dos preços</dt><dd>${esc(nomeRef(o.referencia))}</dd></div>
-        <div><dt>Bases de preços</dt><dd>${esc(juntar(basesDoOrcamento(o).map((b) => (b === 'PROPRIA' ? 'próprias' : b))) || 'ORSE e SINAPI')}</dd></div>
+        <div><dt>Bases de preços</dt><dd>${esc(juntar(basesDoOrcamento(o).map((b) => (b === 'PROPRIA' ? nomeBasePropria() : b))) || 'ORSE e SINAPI')}</dd></div>
       </dl></div>
     ${capaDivisao(o)}
     <div class="capa-valores">
@@ -59,7 +59,8 @@ function folhaCapa(emp, o) {
 
 function folhaResumo(emp, o) {
   const dv = o.divisao;
-  const linhas = o.etapas.map((e) => `<tr><td class="n">${e.numero}</td><td>${esc(e.titulo)}</td><td class="num">${e.itens.length}</td>
+  const itensDe = (e) => o.etapas.filter((x) => x.id === e.id || x.pai_id === e.id).reduce((s, x) => s + x.itens.length, 0);
+  const linhas = o.etapas.map((e) => `<tr${e.nivel === 2 ? ' class="rel-sub"' : ''}><td class="n">${e.numero}</td><td>${esc(e.titulo)}</td><td class="num">${itensDe(e)}</td>
       <td class="num">${money(e.custo_total)}</td><td class="num"><b>${money(e.total)}</b></td>
       <td class="rel-peso"><span class="peso"><i style="width:${e.peso * 100}%"></i></span>${pct.format(e.peso)}</td></tr>`).join('');
   const partes = dv ? PAINEL_PARTES.map(([k, n, cor]) => `<div style="--cor:var(${cor})">${n}<b>${brl.format(o.custo_total * dv[k])}</b><span class="pct">${pct.format(dv[k])}</span></div>`).join('') : '';
@@ -74,8 +75,8 @@ function folhaResumo(emp, o) {
 }
 
 function folhaPlanilha(emp, o) {
-  const corpo = o.etapas.map((e) => `<tr class="rel-etapa"><td class="n">${e.numero}</td><td colspan="6">${esc(e.titulo)}</td><td class="num">${money(e.total)}</td></tr>
-    ${e.itens.map((i) => `<tr><td class="n">${i.numero}</td><td class="rel-cod">${esc(i.codigo)}<span>${esc(i.base)}</span></td><td>${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
+  const corpo = o.etapas.map((e) => `<tr class="rel-etapa${e.nivel === 2 ? ' rel-sub' : ''}"><td class="n">${e.numero}</td><td colspan="6">${esc(e.titulo)}</td><td class="num">${money(e.total)}</td></tr>
+    ${e.itens.map((i) => `<tr><td class="n">${i.numero}</td><td class="rel-cod">${esc(i.codigo)}<span>${esc(rotuloBase(i.base))}</span></td><td>${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
       <td class="num">${qtdFmt.format(i.quantidade)}</td><td class="num">${money(i.custo_unit)}</td><td class="num">${money(i.preco_unit)}</td><td class="num">${money(i.total)}</td></tr>`).join('')}`).join('');
   return `<section class="folha">${cabecalhoFolha(emp, o)}
     <h2>Planilha orçamentária</h2>
@@ -84,7 +85,7 @@ function folhaPlanilha(emp, o) {
       <tfoot><tr><td colspan="7">Custo direto</td><td class="num">${money(o.custo_total)}</td></tr>
         <tr><td colspan="7">BDI de ${num2.format(o.bdi)}%</td><td class="num">${money(o.valor_bdi)}</td></tr>
         <tr class="rel-geral"><td colspan="7">Valor total</td><td class="num">${money(o.total)}</td></tr></tfoot></table>
-    <p class="rel-nota">Preço com BDI e total de cada item arredondados em 2 casas.</p>
+    <p class="rel-nota">Preço com BDI e total de cada item arredondados em 2 casas.${o.sem_complementares ? ` Custos unitários sem os encargos complementares da mão de obra (alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação): ${brl.format(o.complementares)} desconsiderados do custo direto, a lançar nos custos indiretos.` : ''}</p>
     ${rodapeFolha(o)}</section>`;
 }
 
@@ -94,7 +95,7 @@ function folhaABC(emp, o) {
     <h2>Curva ABC de serviços</h2>
     <p class="rel-nota">Itens ordenados pelo valor com BDI. Classe A até 80% do valor acumulado, B até 95%, C o restante.</p>
     <table class="rel-tabela"><thead><tr><th>Pos.</th><th>Código</th><th>Descrição</th><th class="num">Total (R$)</th><th class="num">%</th><th class="num">% acum.</th><th>Classe</th></tr></thead>
-      <tbody>${l.map((x) => `<tr><td class="n">${x.posicao}</td><td class="rel-cod">${esc(x.codigo)}<span>${esc(x.base)}</span></td><td>${esc(x.descricao)}</td>
+      <tbody>${l.map((x) => `<tr><td class="n">${x.posicao}</td><td class="rel-cod">${esc(x.codigo)}<span>${esc(rotuloBase(x.base))}</span></td><td>${esc(x.descricao)}</td>
         <td class="num">${money(x.total)}</td><td class="num">${pct.format(x.percentual)}</td><td class="num">${pct.format(x.acumulado)}</td><td class="rel-classe">${x.classe}</td></tr>`).join('')}</tbody></table>
     ${rodapeFolha(o)}</section>`;
 }
@@ -107,11 +108,11 @@ async function folhasComposicoes(emp, o, progresso) {
     progresso(k + 1, lista.length);
     let c; try { c = await api(`/api/composicao/${i.base}/${i.codigo}?ref=${encodeURIComponent(i.referencia || o.referencia)}&refs=${encodeURIComponent(refsDoOrcamento(o))}`); } catch (_) { continue; }
     const secoes = SECOES.map(([s, nome]) => [nome, c.itens.filter((x) => x.secao === s)]).filter((g) => g[1].length);
-    blocos.push(`<article class="rel-comp"><header><span class="rel-cod">${esc(c.codigo)}<span>${esc(c.base)}</span></span><b>${esc(c.descricao)}</b>
+    blocos.push(`<article class="rel-comp"><header><span class="rel-cod">${esc(c.codigo)}<span>${esc(rotuloBase(c.base))}</span></span><b>${esc(c.descricao)}</b>
         <span class="rel-comp-preco">${brl.format(c.custo_total)} por ${esc(c.unidade)}</span></header>
       <table class="rel-tabela"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Coeficiente</th><th class="num">Custo unit.</th><th class="num">Custo total</th></tr></thead>
       ${secoes.map(([nome, itens]) => `<tbody><tr class="rel-etapa"><td colspan="5">${nome}</td><td class="num">${money(itens.reduce((s, x) => s + (x.custo_total || 0), 0))}</td></tr>
-        ${itens.map((x) => `<tr><td class="rel-cod">${esc(x.codigo)}<span>${esc(x.base)}</span></td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td>
+        ${itens.map((x) => `<tr><td class="rel-cod">${esc(x.codigo)}<span>${esc(rotuloBase(x.base))}</span></td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td>
           <td class="num">${coef(x.qtd)}</td><td class="num">${money(x.custo_unit)}</td><td class="num">${money(x.custo_total)}</td></tr>`).join('')}</tbody>`).join('')}
       </table></article>`);
   }

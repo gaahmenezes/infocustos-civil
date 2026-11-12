@@ -55,11 +55,12 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   };
   for (const c of ['00003', '03310', '00165', '02288', '00051', '00004', '00005', '00006']) await add(c, '100');
   const total = await p.textContent('.orc-totais .total b');
+  await p.evaluate(() => window.scrollTo(0, 0)); await p.waitForTimeout(700);  // incluir itens rola a página; a verificação é no topo
   ok(!(await p.$eval('.ficha.orc', (f) => f.classList.contains('rolou'))), 'No topo, a faixa de totais fica escondida');
   await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight)); await p.waitForFunction(() => document.querySelector('.ficha.orc').classList.contains('rolou'));
   await p.waitForTimeout(250);
   const faixa = await p.evaluate(() => { const f = document.querySelector('.orc-fixa-barra'), r = f.getBoundingClientRect(), c = document.querySelector('.cabecalho').getBoundingClientRect(); return { texto: f.textContent, cola: Math.abs(r.top - c.bottom) < 2, op: getComputedStyle(f).opacity }; });
-  ok(faixa.cola && faixa.op === '1' && norm(faixa.texto).includes(norm(total)), 'Ao rolar, nome e total ficam presos no topo: ' + norm(total));
+  ok(faixa.cola && faixa.op === '1' && norm(faixa.texto).includes(norm(total)), 'Ao rolar, nome e total ficam presos no topo: ' + norm(total) + (faixa.cola && faixa.op === '1' ? '' : ' ' + JSON.stringify(faixa)));
   const th = await p.evaluate(() => [document.querySelector('.planilha-orc thead th').getBoundingClientRect().top, document.querySelector('.orc-fixa-barra').getBoundingClientRect().bottom]);
   ok(th[0] >= th[1] - 1, 'A faixa nunca cobre o cabeçalho da planilha');
 
@@ -83,7 +84,8 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   const cartao = await m.$eval('tr.item', (t) => { const r = t.getBoundingClientRect(); return [...t.querySelectorAll('td')].filter((d) => getComputedStyle(d).display !== 'none').every((d) => { const x = d.getBoundingClientRect(); return x.left >= r.left - 1 && x.right <= r.right + 1; }); });
   ok(cartao, 'Celular: tudo cabe dentro do cartão do item');
   const alvos = await m.$$eval('tr.item .pega, tr.item .mini, .nav-baixo a', (els) => els.map((e) => e.getBoundingClientRect()).every((r) => r.width >= 40 && r.height >= 40));
-  ok(alvos, 'Celular: alça, excluir e navegação com pelo menos 40 px para o dedo');
+  const pequenos = alvos ? '' : await m.$$eval('tr.item .pega, tr.item .mini, .nav-baixo a', (els) => els.map((e) => [e.className || e.textContent.trim(), e.getBoundingClientRect()]).filter(([, r]) => r.width < 40 || r.height < 40).map(([n, r]) => `${n} ${Math.round(r.width)}x${Math.round(r.height)}`).join(', '));
+  ok(alvos, 'Celular: alça, excluir e navegação com pelo menos 40 px para o dedo ' + pequenos);
   await m.tap('.nav-baixo a[data-aba="consulta"]'); await m.waitForSelector('.pesquisa-intro h1');
   await m.fill('#q', 'chapisco'); await m.waitForSelector('.res'); await m.tap('.res'); await m.waitForSelector('.ficha .arvore');
   ok(await m.evaluate(() => document.documentElement.scrollWidth) <= 390, 'Celular: composição sem rolagem lateral');

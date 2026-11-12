@@ -46,8 +46,9 @@ window.desenharPainel = function (o) {
   const d = $('#orc-painel'); if (!d) return;
   if (!o.qtd_itens || !o.total) { d.innerHTML = ''; return; }
   const aberto = PREF.ler('infocustos-painel', 'aberto') === 'aberto';
-  const max = Math.max(...o.etapas.map((e) => e.total), 0.01);
-  const etapas = o.etapas.map((e) => `<li><button type="button" class="pe-linha" data-etapa="${e.id}" aria-pressed="${ORC.filtro === e.id}" title="Mostrar só esta etapa na planilha">
+  const maes = o.etapas.filter((e) => e.nivel !== 2);  // o total de cada etapa já inclui as subetapas
+  const max = Math.max(...maes.map((e) => e.total), 0.01);
+  const etapas = maes.map((e) => `<li><button type="button" class="pe-linha" data-etapa="${e.id}" aria-pressed="${ORC.filtro === e.id}" title="Mostrar só esta etapa na planilha">
       <span class="pe-nome"><b>${e.numero}</b> ${esc(e.titulo)}</span><span class="pe-valor">${brl.format(e.total)}</span>
       <span class="pe-trilho"><i style="width:${Math.max(e.total > 0 ? 1.5 : 0, (e.total / max) * 100)}%"></i></span><span class="pe-pct">${pct.format(e.peso)}</span></button></li>`).join('');
   const abc = curvaABC(o);
@@ -114,7 +115,7 @@ window.ligarArrastar = function (corpo, o, atualizar) {
   let arr = null;
   const limpar = () => {
     if (!arr) return;
-    arr.pecas.forEach((p) => { p.el.style.transform = ''; p.el.style.transition = ''; p.el.classList.remove('arrastando'); });
+    arr.pecas.forEach((p) => p.els.forEach((el) => { el.style.transform = ''; el.style.transition = ''; el.classList.remove('arrastando'); }));
     document.body.classList.remove('arrastando-algo'); arr = null;
   };
   // onde a peça cairia com o ponteiro nesta altura da página
@@ -138,30 +139,34 @@ window.ligarArrastar = function (corpo, o, atualizar) {
     for (const p of arr.pecas) {
       if (p === arr.eu) continue;
       const dy = (p.ordem > arr.eu.ordem ? -arr.eu.alt : 0) + (p.ordem >= corte ? arr.eu.alt : 0);
-      p.el.style.transform = dy ? `translateY(${dy}px)` : '';
+      p.els.forEach((el) => { el.style.transform = dy ? `translateY(${dy}px)` : ''; });
     }
   };
   corpo.addEventListener('pointerdown', (e) => {
     const pega = e.target.closest('.pega'); if (!pega || e.button > 0) return;
     e.preventDefault();
     const tipo = pega.dataset.pega, sy = window.scrollY;
-    const els = tipo === 'etapa' ? [...corpo.querySelectorAll('tbody.etapa')] : [...corpo.querySelectorAll('tbody.etapa > tr')];
-    const pecas = els.map((el, ordem) => {
-      const r = el.getBoundingClientRect(), tb = el.closest('tbody');
-      return { el, ordem, topo: r.top + sy, alt: r.height, meio: r.top + sy + r.height / 2, etapa: Number(tb.dataset.etapa), item: el.classList.contains('item'), fim: el.classList.contains('add-linha') };
-    });
     const meuEl = tipo === 'etapa' ? pega.closest('tbody') : pega.closest('tr');
+    // etapa: move-se entre as irmãs (etapas entre si, levando as subetapas junto; subetapas dentro da mesma etapa)
+    const tbs = [...corpo.querySelectorAll('tbody.etapa')];
+    const grupos = tipo === 'etapa'
+      ? tbs.filter((tb) => tb.dataset.pai === meuEl.dataset.pai).map((tb) => [tb, ...(tb.dataset.pai ? [] : tbs.filter((x) => x.dataset.pai === tb.dataset.etapa))])
+      : [...corpo.querySelectorAll('tbody.etapa > tr')].map((tr) => [tr]);
+    const pecas = grupos.map((els, ordem) => {
+      const r0 = els[0].getBoundingClientRect(), r1 = els[els.length - 1].getBoundingClientRect(), alt = r1.bottom - r0.top, el = els[0], tb = el.closest('tbody');
+      return { el, els, ordem, topo: r0.top + sy, alt, meio: r0.top + sy + alt / 2, etapa: Number(tb.dataset.etapa), item: el.classList.contains('item'), fim: el.classList.contains('add-linha') };
+    });
     const etapas = [...corpo.querySelectorAll('tbody.etapa')].map((tb) => { const r = tb.getBoundingClientRect(); return { id: Number(tb.dataset.etapa), topo: r.top + sy, base: r.bottom + sy }; });
     arr = { tipo, id: Number(pega.dataset.id), pega, pecas, etapas, eu: pecas.find((p) => p.el === meuEl), y0: e.clientY + sy, alvo: null };
     const anima = semMovimento() ? '' : `transform 220ms ${MOLA}`;
-    pecas.forEach((p) => { if (p !== arr.eu) p.el.style.transition = anima; });
-    meuEl.classList.add('arrastando'); document.body.classList.add('arrastando-algo');
+    pecas.forEach((p) => { if (p !== arr.eu) p.els.forEach((el) => { el.style.transition = anima; }); });
+    arr.eu.els.forEach((el) => el.classList.add('arrastando')); document.body.classList.add('arrastando-algo');
     pega.setPointerCapture(e.pointerId);
   });
   corpo.addEventListener('pointermove', (e) => {
     if (!arr) return;
     const yPag = e.clientY + window.scrollY;
-    arr.eu.el.style.transform = `translateY(${yPag - arr.y0}px)`;
+    arr.eu.els.forEach((el) => { el.style.transform = `translateY(${yPag - arr.y0}px)`; });
     arr.alvo = destino(yPag); acomodar(arr.alvo);
     // perto das bordas da janela, rola a página para alcançar o destino
     if (e.clientY < 110) window.scrollBy(0, -14); else if (e.clientY > window.innerHeight - 70) window.scrollBy(0, 14);
@@ -175,7 +180,8 @@ window.ligarArrastar = function (corpo, o, atualizar) {
     limpar();
     try {
       if (tipo === 'etapa') {
-        if (o.etapas.findIndex((x) => x.id === id) === alvo.pos) return;
+        const eu = o.etapas.find((x) => x.id === id);
+        if (o.etapas.filter((x) => (x.pai_id || null) === (eu.pai_id || null)).findIndex((x) => x.id === id) === alvo.pos) return;
         await atualizar(await req(`/api/etapas/${id}/posicionar?posicao=${alvo.pos}`, 'POST'), deslizar);
       } else {
         const origem = o.etapas.find((x) => x.itens.some((i) => i.id === id));

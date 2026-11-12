@@ -14,10 +14,10 @@ PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS orcamento (
   id INTEGER PRIMARY KEY, nome TEXT NOT NULL, cliente TEXT DEFAULT '', local TEXT DEFAULT '',
   referencia TEXT NOT NULL, bdi REAL NOT NULL DEFAULT 25.0, observacoes TEXT DEFAULT '',
-  criado_em TEXT, atualizado_em TEXT);
+  criado_em TEXT, atualizado_em TEXT, sem_complementares INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS etapa (
   id INTEGER PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
-  ordem INTEGER NOT NULL, titulo TEXT NOT NULL);
+  ordem INTEGER NOT NULL, titulo TEXT NOT NULL, pai_id INTEGER REFERENCES etapa(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS item (
   id INTEGER PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
   etapa_id INTEGER NOT NULL REFERENCES etapa(id) ON DELETE CASCADE, ordem INTEGER NOT NULL,
@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS composicao_propria_item (
   ordem INTEGER NOT NULL, tipo TEXT NOT NULL, base TEXT NOT NULL, codigo TEXT NOT NULL, qtd REAL NOT NULL DEFAULT 0,
   descricao TEXT DEFAULT '', unidade TEXT DEFAULT '');
 CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, ordem);
+-- preferências da empresa (ex.: nome da base própria)
+CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, chave TEXT NOT NULL UNIQUE, valor TEXT);
 '''
 
 # mesmas tabelas; DOUBLE PRECISION porque REAL no Postgres guarda só 6 dígitos
@@ -43,10 +45,10 @@ ESQUEMA_POSTGRES = '''
 CREATE TABLE IF NOT EXISTS orcamento (
   id SERIAL PRIMARY KEY, nome TEXT NOT NULL, cliente TEXT DEFAULT '', local TEXT DEFAULT '',
   referencia TEXT NOT NULL, bdi DOUBLE PRECISION NOT NULL DEFAULT 25.0, observacoes TEXT DEFAULT '',
-  criado_em TEXT, atualizado_em TEXT);
+  criado_em TEXT, atualizado_em TEXT, sem_complementares INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS etapa (
   id SERIAL PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
-  ordem INTEGER NOT NULL, titulo TEXT NOT NULL);
+  ordem INTEGER NOT NULL, titulo TEXT NOT NULL, pai_id INTEGER REFERENCES etapa(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS item (
   id SERIAL PRIMARY KEY, orcamento_id INTEGER NOT NULL REFERENCES orcamento(id) ON DELETE CASCADE,
   etapa_id INTEGER NOT NULL REFERENCES etapa(id) ON DELETE CASCADE, ordem INTEGER NOT NULL,
@@ -65,7 +67,13 @@ CREATE TABLE IF NOT EXISTS composicao_propria_item (
   ordem INTEGER NOT NULL, tipo TEXT NOT NULL, base TEXT NOT NULL, codigo TEXT NOT NULL, qtd DOUBLE PRECISION NOT NULL DEFAULT 0,
   descricao TEXT DEFAULT '', unidade TEXT DEFAULT '');
 CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, ordem);
+-- preferências da empresa (ex.: nome da base própria)
+CREATE TABLE IF NOT EXISTS config (id SERIAL PRIMARY KEY, chave TEXT NOT NULL UNIQUE, valor TEXT);
 '''
+
+# colunas que entraram depois: bancos já criados recebem por aqui
+COLUNAS_NOVAS = (('orcamento', 'sem_complementares', 'INTEGER NOT NULL DEFAULT 0'),
+                 ('etapa', 'pai_id', 'INTEGER REFERENCES etapa(id) ON DELETE CASCADE'))
 
 if POSTGRES:
     import psycopg
@@ -126,6 +134,8 @@ if POSTGRES:
 
         def executescript(self, _sqlite_ignorado):
             self._c.execute(ESQUEMA_POSTGRES)
+            for tabela, coluna, tipo in COLUNAS_NOVAS:
+                self._c.execute(f'ALTER TABLE {tabela} ADD COLUMN IF NOT EXISTS {coluna} {tipo}')
 
         def ajustar_sequencia(self, tabela):
             """Depois de gravar uma linha com id escolhido (desfazer), o próximo id automático pula para depois dele."""
@@ -149,6 +159,12 @@ else:
     class _Sqlite(sqlite3.Connection):
         def ajustar_sequencia(self, _tabela):
             pass  # no SQLite o próximo id já é o maior + 1
+
+        def executescript(self, sql):
+            super().executescript(sql)
+            for tabela, coluna, tipo in COLUNAS_NOVAS:
+                if coluna not in [r[1] for r in self.execute(f'PRAGMA table_info({tabela})')]:
+                    self.execute(f'ALTER TABLE {tabela} ADD COLUMN {coluna} {tipo}')
 
     def conectar(caminho):
         c = sqlite3.connect(caminho, check_same_thread=False, factory=_Sqlite)

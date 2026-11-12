@@ -30,9 +30,19 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
 | `artefato/` | Versão estática para teste no claude.ai (dados e orçamentos no navegador) |
 | `docs/` | Telas e um orçamento de exemplo exportado |
 
+## Orçamento: subetapas e encargos complementares
+
+- **Subetapas**: cada etapa pode ter subetapas (dois níveis). Botão "+ Subetapa" na linha de inclusão da etapa. A numeração
+  segue os itens diretos da etapa (1.1, 1.2 = subetapa, 1.2.1 = item dela) e o total da etapa inclui as subetapas.
+- **Desconsiderar encargos complementares**: chave no orçamento que tira do custo unitário de todas as composições a
+  alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação que as bases embutem na mão de obra
+  (itens "(encargos complementares)" da SINAPI e serviços "Encargos Complementares - ..." da ORSE, somados também pelos
+  serviços auxiliares). O valor retirado aparece na tela, no relatório e na planilha, para ser lançado nos custos
+  indiretos sem duplicidade. O SICRO não usa esse formato e não muda.
+
 ## Composições e insumos próprios
 
-Aba **Próprias** (`#/proprias`): a empresa cadastra insumos próprios (preço, data e fonte da cotação) e monta
+Aba **Bases próprias** (`#/proprias`; o nome da base é escolhido pela empresa no topo da página e aparece nas etiquetas, na busca e nos relatórios): a empresa cadastra insumos próprios (preço, data e fonte da cotação) e monta
 composições próprias com itens de qualquer base (ORSE, SINAPI, SICRO) ou próprios, inclusive outras composições próprias.
 O custo não fica gravado: é recalculado com a data-base escolhida para cada base no topo. "Criar própria a partir desta",
 na ficha de uma composição oficial, copia os itens para ajustar e mostra a diferença para a original. Ciclos (A usa B que

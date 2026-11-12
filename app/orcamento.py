@@ -8,6 +8,7 @@ import io
 import os
 from collections import defaultdict
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Literal, Optional
 
@@ -64,10 +65,12 @@ class EdicaoOrcamento(BaseModel):
     local: Optional[str] = None
     bdi: Optional[float] = Field(None, ge=0, le=100)
     observacoes: Optional[str] = None
+    sem_complementares: Optional[bool] = None  # tira os encargos complementares do custo das composições
 
 
 class NovaEtapa(BaseModel):
     titulo: str = Field(min_length=1, max_length=200)
+    pai_id: Optional[int] = None  # com pai, é uma subetapa
 
 
 class NovoItem(BaseModel):
@@ -127,9 +130,56 @@ def preco_na_base(tipo, base, codigo, ref=None):
         return (dict(r) | {'referencia': ref}) if r else None
 
 
-def explodir(b, base, codigo, fator, acc, profundidade=0, ref=None):
+# ---------- encargos complementares ----------
+# Alimentação, transporte, EPI, ferramentas, exames, seguro e curso de capacitação que as bases embutem no custo da mão
+# de obra. Na SINAPI vêm como itens "(... encargos complementares)" dentro de "Pedreiro com encargos complementares";
+# na ORSE, como o serviço auxiliar "Encargos Complementares - Pedreiro". O SICRO não usa esse formato.
+def eh_complementar(descricao):
+    d = (descricao or '').lower()
+    return 'encargos complementares' in d and 'com encargos complementares' not in d
+
+
+@lru_cache(maxsize=60000)
+def _compl_composicao(base, codigo, ref, profundidade=0):
+    """Quanto do custo unitário de uma composição oficial é encargo complementar (soma pelos serviços auxiliares)."""
+    if profundidade > 6:
+        return 0.0
+    with _base_conn() as b:
+        comp = b.execute('SELECT modelo, prod_equipe FROM composicao WHERE base = ? AND codigo = ? AND referencia = ?', (base, codigo, ref)).fetchone()
+        if not comp:
+            return 0.0
+        itens = b.execute('''SELECT secao, base, codigo, eh_servico, descricao, qtd, custo_unit, custo_total FROM composicao_item
+            WHERE composicao_base = ? AND composicao = ? AND referencia = ?''', (base, codigo, ref)).fetchall()
+    total = 0.0
+    for i in itens:
+        q = i['qtd'] or 0
+        if eh_complementar(i['descricao']):
+            total += i['custo_total'] if i['custo_total'] is not None else q * (i['custo_unit'] or 0)
+        elif i['eh_servico']:
+            if comp['modelo'] == 'DNIT' and i['secao'] in ('EQUIPAMENTO', 'MAO_DE_OBRA') and comp['prod_equipe']:
+                q = q / comp['prod_equipe']
+            total += q * _compl_composicao(i['base'], i['codigo'], ref, profundidade + 1)
+    return total
+
+
+def complementares(tipo, base, codigo, ref, descricao='', preco=None):
+    """Encargos complementares embutidos no custo unitário de um item (0 se não houver)."""
+    if base == 'PROPRIA':
+        import proprias
+        return proprias.complementares(tipo, codigo, ref)
+    if eh_complementar(descricao):  # o próprio item é um encargo complementar
+        return preco or 0.0
+    if tipo != 'servico':
+        return 0.0
+    with _base_conn() as b:
+        ref = mes_para_base(b, base, ref)
+    return _compl_composicao(base, codigo, ref)
+
+
+def explodir(b, base, codigo, fator, acc, profundidade=0, ref=None, sem_compl=False):
     """Soma em `acc` os insumos de uma composição multiplicados por `fator` (quantidade do serviço).
-    Usa a composição da referência `ref` (a do item no orçamento); sem ela, a mais recente."""
+    Usa a composição da referência `ref` (a do item no orçamento); sem ela, a mais recente.
+    Com `sem_compl`, os encargos complementares ficam de fora."""
     comp = b.execute('''SELECT modelo, prod_equipe, referencia FROM composicao WHERE base = ? AND codigo = ?
         AND (? IS NULL OR referencia = ?) ORDER BY referencia DESC LIMIT 1''', (base, codigo, ref, ref)).fetchone()
     if not comp or profundidade > 6:
@@ -138,13 +188,15 @@ def explodir(b, base, codigo, fator, acc, profundidade=0, ref=None):
         FROM composicao_item WHERE composicao_base = ? AND composicao = ? AND referencia = ?''',
                       (base, codigo, comp['referencia'])).fetchall()
     for i in itens:
+        if sem_compl and eh_complementar(i['descricao']):
+            continue
         q = i['qtd'] or 0
         if comp['modelo'] == 'DNIT' and i['secao'] in ('EQUIPAMENTO', 'MAO_DE_OBRA') and comp['prod_equipe']:
             q = q / comp['prod_equipe']
-            cu = (i['custo_total'] / i['qtd']) if i['qtd'] else (i['custo_prod'] or 0)
+            cu = ((i['custo_total'] or 0) / i['qtd']) if i['qtd'] else (i['custo_prod'] or 0)
         else:
-            cu = i['custo_unit'] if i['custo_unit'] is not None else ((i['custo_total'] / i['qtd']) if i['qtd'] else 0)
-        if i['eh_servico'] and explodir(b, i['base'], i['codigo'], fator * q, acc, profundidade + 1, comp['referencia']):
+            cu = i['custo_unit'] if i['custo_unit'] is not None else (((i['custo_total'] or 0) / i['qtd']) if i['qtd'] else 0)
+        if i['eh_servico'] and explodir(b, i['base'], i['codigo'], fator * q, acc, profundidade + 1, comp['referencia'], sem_compl):
             continue
         k = (i['base'], i['codigo'], i['secao'])
         a = acc[k]
@@ -164,8 +216,11 @@ def dividir_custo(b, itens, ref_orc):
     """Divisão do custo direto do orçamento em mão de obra, material, equipamento e terceiros (frações de 0 a 1).
     Serviço: usa a divisão da própria composição. Insumo: entra inteiro na parte da sua categoria."""
     partes = {'mo': 0.0, 'mat': 0.0, 'equip': 0.0, 'terc': 0.0}
+    fora = 0.0  # encargos complementares desconsiderados (as bases lançam quase tudo como material)
     for i in itens:
-        custo = i['custo_total']
+        custo = i['quantidade'] * i.get('custo_cheio', i['custo_unit'])
+        if i.get('custo_cheio') is not None:
+            fora += custo - i['quantidade'] * i['custo_unit']
         if not custo:
             continue
         if i['base'] == 'PROPRIA':
@@ -184,6 +239,7 @@ def dividir_custo(b, itens, ref_orc):
             partes[CATEGORIA_PARTE.get(r['categoria'] if r else '', 'mat')] += custo
         else:
             partes['mat'] += custo  # serviço sem composição detalhada
+    partes['mat'] = max(partes['mat'] - fora, 0.0)
     soma = sum(partes.values())
     return {k: round(v / soma, 4) for k, v in partes.items()} if soma > 0 else None
 
@@ -194,22 +250,53 @@ def calcular(c, oid):
         raise HTTPException(404, 'Orçamento não encontrado.')
     o = dict(o)
     fator_bdi = 1 + o['bdi'] / 100
-    etapas = [dict(e) for e in c.execute('SELECT * FROM etapa WHERE orcamento_id = ? ORDER BY ordem, id', (oid,))]
+    o['sem_complementares'] = bool(o.get('sem_complementares'))
+    todas = [dict(e) for e in c.execute('SELECT * FROM etapa WHERE orcamento_id = ? ORDER BY ordem, id', (oid,))]
     itens = [dict(i) for i in c.execute('SELECT * FROM item WHERE orcamento_id = ? ORDER BY ordem, id', (oid,))]
     por_etapa = defaultdict(list)
+    compl_total = 0.0
     for i in itens:
+        # custo_cheio é o da base; com os encargos complementares desconsiderados, custo_unit já vem sem eles
+        i['custo_cheio'] = i['custo_unit']
+        try:
+            i['custo_compl'] = min(max(complementares(i['tipo'], i['base'], i['codigo'], i['referencia'] or o['referencia'],
+                                                      i['descricao'], i['custo_unit']), 0.0), i['custo_unit'])
+        except HTTPException:
+            i['custo_compl'] = 0.0  # composição própria que não existe mais
+        compl_total += i['quantidade'] * i['custo_compl']
+        if o['sem_complementares']:
+            i['custo_unit'] = r2(i['custo_cheio'] - i['custo_compl'])
         i['preco_unit'] = r2(i['custo_unit'] * fator_bdi)
         i['custo_total'] = r2(i['quantidade'] * i['custo_unit'])
         i['total'] = r2(i['quantidade'] * i['preco_unit'])
         por_etapa[i['etapa_id']].append(i)
+    o['complementares'] = r2(compl_total)
+    # lista plana, na ordem da planilha: cada etapa seguida das suas subetapas (nivel 2). Cada uma traz só os itens
+    # lançados direto nela; o total da etapa inclui as subetapas.
+    filhas = defaultdict(list)
+    for e in todas:
+        filhas[e.get('pai_id')].append(e)
+    etapas = []
     total_custo = total = 0.0
-    for n, e in enumerate(etapas, 1):
-        e['numero'] = str(n)
+    for n, e in enumerate(filhas[None], 1):
+        e['numero'], e['nivel'] = str(n), 1
         e['itens'] = por_etapa.get(e['id'], [])
         for m, i in enumerate(e['itens'], 1):
             i['numero'] = f'{n}.{m}'
-        e['custo_total'] = r2(sum(i['custo_total'] for i in e['itens']))
-        e['total'] = r2(sum(i['total'] for i in e['itens']))
+        e['custo_total'] = sum(i['custo_total'] for i in e['itens'])
+        e['total'] = sum(i['total'] for i in e['itens'])
+        etapas.append(e)
+        for k, sub in enumerate(filhas[e['id']], len(e['itens']) + 1):
+            sub['numero'], sub['nivel'] = f'{n}.{k}', 2
+            sub['itens'] = por_etapa.get(sub['id'], [])
+            for m, i in enumerate(sub['itens'], 1):
+                i['numero'] = f'{n}.{k}.{m}'
+            sub['custo_total'] = r2(sum(i['custo_total'] for i in sub['itens']))
+            sub['total'] = r2(sum(i['total'] for i in sub['itens']))
+            e['custo_total'] += sub['custo_total']; e['total'] += sub['total']
+            etapas.append(sub)
+        e['custo_total'], e['total'] = r2(e['custo_total']), r2(e['total'])
+        e['subetapas'] = len(filhas[e['id']])
         total_custo += e['custo_total']; total += e['total']
     o['etapas'] = etapas
     o['custo_total'] = r2(total_custo)
@@ -265,7 +352,7 @@ def abc_insumos(o):
     with _base_conn() as b:
         for e in o['etapas']:
             for i in e['itens']:
-                if i['tipo'] == 'servico' and explodir(b, i['base'], i['codigo'], i['quantidade'], acc, ref=i['referencia']):
+                if i['tipo'] == 'servico' and explodir(b, i['base'], i['codigo'], i['quantidade'], acc, ref=i['referencia'], sem_compl=o['sem_complementares']):
                     continue
                 if i['tipo'] == 'servico':  # serviço sem composição: entra como ele mesmo
                     k = (i['base'], i['codigo'], 'SERVICO_SEM_COMPOSICAO')
@@ -301,7 +388,7 @@ def listar():
         out = []
         for r in rows:
             o = calcular(c, r['id'])
-            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em', 'desatualizado', 'custo_total', 'divisao')})
+            out.append({k: o[k] for k in ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'total', 'qtd_itens', 'atualizado_em', 'desatualizado', 'custo_total', 'divisao', 'sem_complementares')})
         return out
 
 
@@ -327,6 +414,8 @@ def obter(oid: int):
 @router.patch('/orcamentos/{oid}')
 def editar(oid: int, d: EdicaoOrcamento):
     campos = {k: v for k, v in d.model_dump().items() if v is not None}
+    if 'sem_complementares' in campos:
+        campos['sem_complementares'] = int(campos['sem_complementares'])
     with orc() as c:
         calcular(c, oid)
         if campos:
@@ -342,25 +431,33 @@ def excluir(oid: int):
         if not o:
             raise HTTPException(404, 'Orçamento não encontrado.')
         desfazer = {'tipo': 'orcamento', 'orcamento': dict(o),
-                    'etapas': [dict(r) for r in c.execute('SELECT * FROM etapa WHERE orcamento_id = ?', (oid,))],
+                    'etapas': _maes_primeiro([dict(r) for r in c.execute('SELECT * FROM etapa WHERE orcamento_id = ?', (oid,))]),
                     'itens': [dict(r) for r in c.execute('SELECT * FROM item WHERE orcamento_id = ?', (oid,))]}
         c.execute('DELETE FROM orcamento WHERE id = ?', (oid,))
         return {'desfazer': desfazer}
+
+
+def _maes_primeiro(etapas):
+    return sorted(etapas, key=lambda e: e.get('pai_id') is not None)
 
 
 @router.post('/orcamentos/{oid}/duplicar', status_code=201)
 def duplicar(oid: int):
     with orc() as c:
         o = calcular(c, oid)
-        cur = c.execute('INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?)',
-                        (o['nome'] + ' (cópia)', o['cliente'], o['local'], o['referencia'], o['bdi'], o['observacoes'], agora(), agora()))
+        cur = c.execute('''INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em, sem_complementares)
+            VALUES (?,?,?,?,?,?,?,?,?)''', (o['nome'] + ' (cópia)', o['cliente'], o['local'], o['referencia'], o['bdi'], o['observacoes'],
+                                            agora(), agora(), int(o['sem_complementares'])))
         novo = cur.lastrowid
-        for e in o['etapas']:
-            eid = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo) VALUES (?,?,?)', (novo, e['ordem'], e['titulo'])).lastrowid
+        mapa = {}
+        for e in o['etapas']:  # a etapa vem sempre antes das suas subetapas
+            eid = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)',
+                            (novo, e['ordem'], e['titulo'], mapa.get(e.get('pai_id')))).lastrowid
+            mapa[e['id']] = eid
             for i in e['itens']:
                 c.execute('''INSERT INTO item (orcamento_id, etapa_id, ordem, tipo, base, codigo, descricao, unidade, quantidade, custo_unit, referencia)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (novo, eid, i['ordem'], i['tipo'], i['base'], i['codigo'], i['descricao'],
-                                                     i['unidade'], i['quantidade'], i['custo_unit'], i['referencia']))
+                                                     i['unidade'], i['quantidade'], i['custo_cheio'], i['referencia']))
         return calcular(c, novo)
 
 
@@ -368,10 +465,16 @@ def duplicar(oid: int):
 def nova_etapa(oid: int, d: NovaEtapa):
     with orc() as c:
         calcular(c, oid)
+        if d.pai_id is not None:
+            pai = c.execute('SELECT pai_id FROM etapa WHERE id = ? AND orcamento_id = ?', (d.pai_id, oid)).fetchone()
+            if not pai:
+                raise HTTPException(404, 'Etapa não encontrada neste orçamento.')
+            if pai['pai_id'] is not None:
+                raise HTTPException(422, 'Uma subetapa não pode ter outra subetapa dentro dela.')
         ordem = c.execute('SELECT COALESCE(MAX(ordem), 0) + 1 FROM etapa WHERE orcamento_id = ?', (oid,)).fetchone()[0]
-        c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo) VALUES (?,?,?)', (oid, ordem, d.titulo.strip()))
+        cur = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, d.titulo.strip(), d.pai_id))
         c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), oid))
-        return calcular(c, oid)
+        return calcular(c, oid) | {'etapa_criada': cur.lastrowid}
 
 
 @router.patch('/etapas/{eid}')
@@ -384,18 +487,33 @@ def editar_etapa(eid: int, d: NovaEtapa):
         return calcular(c, e['orcamento_id'])
 
 
+def _irmas(c, e):
+    """Etapas do mesmo nível, na ordem: as etapas do orçamento ou as subetapas da mesma etapa."""
+    return [r['id'] for r in c.execute('SELECT id, pai_id FROM etapa WHERE orcamento_id = ? ORDER BY ordem, id', (e['orcamento_id'],))
+            if r['pai_id'] == e['pai_id']]
+
+
+def _reordenar_irmas(c, e, ids):
+    """Grava a nova ordem das irmãs reaproveitando os números de ordem que elas já ocupavam."""
+    ordens = sorted(r['ordem'] for r in c.execute('SELECT id, ordem, pai_id FROM etapa WHERE orcamento_id = ?', (e['orcamento_id'],))
+                    if r['pai_id'] == e['pai_id'])
+    if len(set(ordens)) < len(ordens):  # ordens repetidas (bancos antigos): numera de novo
+        ordens = list(range(1, len(ids) + 1))
+    for n, x in zip(ordens, ids):
+        c.execute('UPDATE etapa SET ordem = ? WHERE id = ?', (n, x))
+
+
 @router.post('/etapas/{eid}/mover')
 def mover_etapa(eid: int, direcao: Literal['cima', 'baixo']):
     with orc() as c:
         e = c.execute('SELECT * FROM etapa WHERE id = ?', (eid,)).fetchone()
         if not e:
             raise HTTPException(404, 'Etapa não encontrada.')
-        lista = [r['id'] for r in c.execute('SELECT id FROM etapa WHERE orcamento_id = ? ORDER BY ordem, id', (e['orcamento_id'],))]
+        lista = _irmas(c, e)
         k = lista.index(eid); j = k - 1 if direcao == 'cima' else k + 1
         if 0 <= j < len(lista):
             lista[k], lista[j] = lista[j], lista[k]
-            for n, x in enumerate(lista, 1):
-                c.execute('UPDATE etapa SET ordem = ? WHERE id = ?', (n, x))
+            _reordenar_irmas(c, e, lista)
         return calcular(c, e['orcamento_id'])
 
 
@@ -405,7 +523,10 @@ def excluir_etapa(eid: int):
         e = c.execute('SELECT * FROM etapa WHERE id = ?', (eid,)).fetchone()
         if not e:
             raise HTTPException(404, 'Etapa não encontrada.')
-        desfazer = {'tipo': 'etapa', 'etapas': [dict(e)], 'itens': [dict(r) for r in c.execute('SELECT * FROM item WHERE etapa_id = ?', (eid,))]}
+        subs = [dict(r) for r in c.execute('SELECT * FROM etapa WHERE pai_id = ? ORDER BY ordem, id', (eid,))]
+        ids = [eid] + [x['id'] for x in subs]
+        itens = [dict(r) for r in c.execute('SELECT * FROM item WHERE orcamento_id = ? ORDER BY ordem, id', (e['orcamento_id'],)) if r['etapa_id'] in ids]
+        desfazer = {'tipo': 'etapa', 'etapas': [dict(e)] + subs, 'itens': itens}
         c.execute('DELETE FROM etapa WHERE id = ?', (eid,))
         c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), e['orcamento_id']))
         return calcular(c, e['orcamento_id']) | {'desfazer': desfazer}
@@ -518,9 +639,9 @@ def posicionar_etapa(eid: int, posicao: int = Query(ge=0)):
         e = c.execute('SELECT * FROM etapa WHERE id = ?', (eid,)).fetchone()
         if not e:
             raise HTTPException(404, 'Etapa não encontrada.')
-        lista = [r['id'] for r in c.execute('SELECT id FROM etapa WHERE orcamento_id = ? AND id <> ? ORDER BY ordem, id', (e['orcamento_id'], eid))]
+        lista = [x for x in _irmas(c, e) if x != eid]
         lista.insert(min(posicao, len(lista)), eid)
-        _renumerar(c, 'etapa', lista)
+        _reordenar_irmas(c, e, lista)
         c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), e['orcamento_id']))
         return calcular(c, e['orcamento_id'])
 
@@ -534,8 +655,8 @@ class Desfazer(BaseModel):
 
 
 COLUNAS = {
-    'orcamento': ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'observacoes', 'criado_em', 'atualizado_em'),
-    'etapa': ('id', 'orcamento_id', 'ordem', 'titulo'),
+    'orcamento': ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'observacoes', 'criado_em', 'atualizado_em', 'sem_complementares'),
+    'etapa': ('id', 'orcamento_id', 'ordem', 'titulo', 'pai_id'),
     'item': ('id', 'orcamento_id', 'etapa_id', 'ordem', 'tipo', 'base', 'codigo', 'descricao', 'unidade', 'quantidade', 'custo_unit', 'referencia'),
 }
 
@@ -562,10 +683,12 @@ def restaurar(d: Desfazer):
                     raise HTTPException(422, 'Faltam os dados do orçamento.')
                 oid = _reinserir(c, 'orcamento', d.orcamento)
             mapa = {}
-            for e in d.etapas:
+            for e in _maes_primeiro(d.etapas):
                 e = dict(e)
                 if oid is not None:
                     e['orcamento_id'] = oid
+                if e.get('pai_id') is not None:
+                    e['pai_id'] = mapa.get(e['pai_id'], e['pai_id'])
                 if not c.execute('SELECT 1 FROM orcamento WHERE id = ?', (e.get('orcamento_id'),)).fetchone():
                     raise HTTPException(404, 'O orçamento não existe mais.')
                 mapa[e.get('id')] = _reinserir(c, 'etapa', e)
@@ -604,12 +727,16 @@ def _simular(c, oid, ref=None):
                             'motivo': 'saiu da base' if not p else 'sem preço na nova referência'})
                 novo_total += i['total']
                 continue
-            nt = r2(i['quantidade'] * r2(p['preco'] * fator))
+            efetivo = p['preco']
+            if o['sem_complementares']:
+                efetivo = r2(p['preco'] - min(complementares(i['tipo'], i['base'], i['codigo'], p['referencia'], p['descricao'], p['preco']), p['preco']))
+            nt = r2(i['quantidade'] * r2(efetivo * fator))
             novo_total += nt
             linhas.append({'id': i['id'], 'numero': i['numero'], 'codigo': i['codigo'], 'base': i['base'], 'descricao': i['descricao'],
                            'unidade': i['unidade'], 'quantidade': i['quantidade'], 'de_referencia': i['referencia'], 'para_referencia': p['referencia'],
-                           'custo_unit_antes': i['custo_unit'], 'custo_unit_depois': p['preco'], 'total_antes': i['total'], 'total_depois': nt,
-                           'variacao': (p['preco'] / i['custo_unit'] - 1) if i['custo_unit'] else None})
+                           'custo_unit_antes': i['custo_unit'], 'custo_unit_depois': efetivo, 'custo_gravar': p['preco'],
+                           'total_antes': i['total'], 'total_depois': nt,
+                           'variacao': (efetivo / i['custo_unit'] - 1) if i['custo_unit'] else None})
     linhas.sort(key=lambda l: -abs(l['total_depois'] - l['total_antes']))
     return {'referencia': ref, 'total_antes': o['total'], 'total_depois': r2(novo_total),
             'variacao': (novo_total / o['total'] - 1) if o['total'] else None, 'itens': linhas, 'sem_preco': sem}
@@ -630,7 +757,7 @@ def atualizar(oid: int, referencia: Optional[str] = None):
         ref = sim['referencia']
         for l in sim['itens']:
             # cada item fica com o mês de onde veio o preço dele (a base pode não ter o mês pedido: usa o mais próximo dela)
-            c.execute('UPDATE item SET custo_unit = ?, referencia = ? WHERE id = ?', (l['custo_unit_depois'], l['para_referencia'], l['id']))
+            c.execute('UPDATE item SET custo_unit = ?, referencia = ? WHERE id = ?', (l['custo_gravar'], l['para_referencia'], l['id']))
         c.execute('UPDATE orcamento SET referencia = ?, atualizado_em = ? WHERE id = ?', (ref, agora(), oid))
         o = calcular(c, oid)
         o['atualizacao'] = {'referencia': ref, 'total_antes': sim['total_antes'], 'itens_atualizados': len(sim['itens']),
@@ -666,6 +793,8 @@ def _cab(ws, linha, nomes, larguras):
 def exportar(oid: int):
     with orc() as c:
         o = calcular(c, oid)
+    import proprias
+    nome_propria = proprias.nome_base()
     wb = Workbook()
     ws = wb.active; ws.title = 'Orçamento'
     ws['A1'] = o['nome']; ws['A1'].font = Font(bold=True, size=14)
@@ -677,18 +806,25 @@ def exportar(oid: int):
          [7, 9, 8, 70, 6, 11, 14, 15, 16])
     linha = 6
     linhas_etapa = []
+    mae = None  # [célula do total, fórmula dos itens diretos, linhas das subetapas]
+    def fechar_mae():
+        if mae:
+            mae[0].value = '=' + '+'.join([mae[1]] + [f'I{x}' for x in mae[2]])
     for e in o['etapas']:
+        sub = e['nivel'] == 2
+        if not sub and linhas_etapa:
+            linha += 1  # linha em branco entre etapas
         ini = linha
         ws.cell(row=linha, column=1, value=e['numero']).font = Font(bold=True)
-        ws.cell(row=linha, column=4, value=e['titulo']).font = Font(bold=True)
+        ws.cell(row=linha, column=4, value=('   ' if sub else '') + e['titulo']).font = Font(bold=True, italic=sub)
         tot_cel = ws.cell(row=linha, column=9); tot_cel.font = Font(bold=True); tot_cel.number_format = '#,##0.00'
         for j in range(1, 10):
-            ws.cell(row=linha, column=j).fill = PatternFill('solid', fgColor='E3EDF5')
+            ws.cell(row=linha, column=j).fill = PatternFill('solid', fgColor='F1F5F9' if sub else 'E3EDF5')
         linha += 1
         for i in e['itens']:
             ws.cell(row=linha, column=1, value=i['numero'])
             ws.cell(row=linha, column=2, value=i['codigo'])
-            ws.cell(row=linha, column=3, value=i['base'])
+            ws.cell(row=linha, column=3, value=nome_propria if i['base'] == 'PROPRIA' else i['base'])
             ws.cell(row=linha, column=4, value=i['descricao']).alignment = Alignment(wrap_text=True, vertical='top')
             ws.cell(row=linha, column=5, value=i['unidade'])
             ws.cell(row=linha, column=6, value=i['quantidade']).number_format = '#,##0.00'
@@ -696,9 +832,17 @@ def exportar(oid: int):
             ws.cell(row=linha, column=8, value=f'=ROUND(G{linha}*(1+$H$2),2)').number_format = '#,##0.00'
             ws.cell(row=linha, column=9, value=f'=ROUND(F{linha}*H{linha},2)').number_format = '#,##0.00'
             linha += 1
-        tot_cel.value = f'=SUM(I{ini + 1}:I{linha - 1})' if linha - 1 > ini else 0
-        linhas_etapa.append(ini)
-        linha += 1
+        proprios = f'SUM(I{ini + 1}:I{linha - 1})' if linha - 1 > ini else '0'
+        if sub:
+            tot_cel.value = '=' + proprios
+            if mae:
+                mae[2].append(ini)
+        else:
+            fechar_mae()
+            mae = [tot_cel, proprios, []]
+            linhas_etapa.append(ini)
+    fechar_mae()
+    linha += 1
     soma_etapas = '+'.join(f'I{x}' for x in linhas_etapa) or '0'
     ws.cell(row=linha, column=8, value='Custo direto').font = Font(bold=True)
     ws.cell(row=linha, column=9, value=f'=SUMPRODUCT(F6:F{linha - 1},G6:G{linha - 1})').number_format = '#,##0.00'
@@ -707,6 +851,10 @@ def exportar(oid: int):
     ws.cell(row=linha + 2, column=8, value='Total geral').font = Font(bold=True, size=12)
     t = ws.cell(row=linha + 2, column=9, value=f'={soma_etapas}'); t.number_format = '#,##0.00'; t.font = Font(bold=True, size=12)
     ws.cell(row=linha + 4, column=1, value='Preço unitário com BDI e total por item arredondados em 2 casas. Altere o BDI na célula H2.').font = Font(color='5B6875', size=9)
+    if o['sem_complementares']:
+        valor = f"{o['complementares']:,.2f}".replace(',', 'X').replace('.', ',').replace('X', '.')
+        ws.cell(row=linha + 5, column=1, value='Custos unitários sem os encargos complementares da mão de obra (alimentação, transporte, EPI, ferramentas, '
+                f'exames, seguro e capacitação). Valor desconsiderado no custo direto: R$ {valor}, a lançar nos custos indiretos.').font = Font(color='5B6875', size=9)
     ws.freeze_panes = 'A6'
 
     for nome, tipo, chave in (('Curva ABC serviços', 'servicos', 'total'), ('Curva ABC insumos', 'insumos', 'custo_total')):
