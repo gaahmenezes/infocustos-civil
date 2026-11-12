@@ -1195,9 +1195,9 @@ b.un { margin-left: 2px; }
   /* navegação embaixo, ao alcance do polegar */
   .abas { display: none; }
   .cabecalho { grid-template-columns: auto minmax(0, 1fr); height: 56px; padding: 0 14px; }
-  .nav-baixo { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-template-columns: repeat(4, 1fr); padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
+  .nav-baixo { position: fixed; left: 0; right: 0; bottom: 0; z-index: 35; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0px));
     background: var(--grafite); box-shadow: 0 -1px 0 var(--grafite-linha), 0 -10px 24px -14px rgb(0 0 0 / 0.5); }
-  .nav-baixo a { display: grid; justify-items: center; gap: 3px; padding: 6px 2px 5px; min-height: 48px; border-radius: var(--raio); color: var(--grafite-texto); text-decoration: none; font-size: 11px; font-weight: 650; }
+  .nav-baixo a { display: grid; justify-items: center; gap: 3px; padding: 6px 2px 5px; min-height: 48px; border-radius: var(--raio); color: var(--grafite-texto); text-decoration: none; font-size: 11px; font-weight: 650; text-align: center; line-height: 1.15; }
   .nav-baixo svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
   .nav-baixo a[aria-current="true"] { color: var(--acao); background: var(--grafite-2); }
   body { padding-bottom: calc(66px + env(safe-area-inset-bottom, 0px)); }

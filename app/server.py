@@ -622,10 +622,17 @@ VERSAO = _versao_estaticos()
 
 def _com_versao(nome):
     html = (AQUI / 'static' / nome).read_text(encoding='utf-8')
+    html = html.replace('__VERSAO__', VERSAO)
     return re.sub(r'(/static/[\w-]+\.(?:js|css))"', rf'\1?v={VERSAO}"', html)
 
 
 INDEX_HTML = _com_versao('index.html')
+
+
+@app.get('/api/versao')
+def api_versao():
+    """A página compara com a versão que carregou: se mudou, ela se recarrega sozinha."""
+    return JSONResponse({'versao': VERSAO}, headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/')

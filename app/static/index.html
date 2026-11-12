@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,400..700&family=Barlow+Condensed:wght@600;700&display=swap" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23F5B800'/%3E%3Cpath d='M7 25.5v-7h6v-5.5h6V7.5h6v18z' fill='%2317191C'/%3E%3C/svg%3E">
   <meta name="theme-color" content="#17191C">
+  <meta name="versao" content="__VERSAO__">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/static/icones/icone-180.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -36,7 +37,7 @@
     <nav class="abas" aria-label="Seções">
       <a href="#/" data-aba="consulta">Consulta</a>
       <a href="#/orcamentos" data-aba="orcamentos">Orçamentos</a>
-      <a href="#/proprias" data-aba="proprias">Próprias</a>
+      <a href="#/proprias" data-aba="proprias">Bases próprias</a>
       <a href="#/encargos" data-aba="encargos">Encargos sociais</a>
       <a href="#/comparativo" data-aba="comparativo" title="Comparativo entre meses">Comparativo</a>
     </nav>
@@ -80,7 +81,7 @@
         <button type="button" role="radio" class="chip" data-v="ORSE" aria-checked="false">ORSE <span class="n"></span></button>
         <button type="button" role="radio" class="chip" data-v="SINAPI" aria-checked="false">SINAPI <span class="n"></span></button>
         <button type="button" role="radio" class="chip" data-v="SICRO" aria-checked="false">SICRO <span class="n"></span></button>
-        <button type="button" role="radio" class="chip" data-v="PROPRIA" aria-checked="false">Próprias <span class="n"></span></button>
+        <button type="button" role="radio" class="chip" data-v="PROPRIA" aria-checked="false">Bases próprias <span class="n"></span></button>
       </div>
     </div>
     <button type="button" class="ver-base" data-ver-base>Ver toda a base de preços do mês<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3" /></svg></button>
@@ -229,7 +230,7 @@
   <nav class="nav-baixo" aria-label="Seções">
     <a href="#/" data-aba="consulta"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg>Consulta</a>
     <a href="#/orcamentos" data-aba="orcamentos"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.5" width="16" height="17" rx="2.5" /><path d="M8 8.5h8M8 12.5h8M8 16.5h4.5" /></svg>Orçamentos</a>
-    <a href="#/proprias" data-aba="proprias"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9l7-5 7 5v10z" /><path d="M9.5 19v-5h5v5" /></svg>Próprias</a>
+    <a href="#/proprias" data-aba="proprias"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9l7-5 7 5v10z" /><path d="M9.5 19v-5h5v5" /></svg>Bases próprias</a>
     <a href="#/encargos" data-aba="encargos"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8.5" r="3.2" /><path d="M3.5 19.5c.6-3.2 2.7-5 5.5-5s4.9 1.8 5.5 5M16 5.6a3.2 3.2 0 0 1 0 5.8M17.5 14.9c1.6.6 2.6 2.1 3 4.6" /></svg>Encargos</a>
     <a href="#/comparativo" data-aba="comparativo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h16M7 20v-7M12 20V5M17 20v-10" /></svg>Meses</a>
   </nav>

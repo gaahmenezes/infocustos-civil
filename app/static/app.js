@@ -185,7 +185,7 @@ async function carregarReferencia() {
   try { localStorage.setItem('infocustos-bases', JSON.stringify(estado.ativas)); } catch (_) { /* sem armazenamento */ }
   estado.mes = estado.meses.ORSE || ref.id;
   // filtro rápido de base: só aparecem as bases que estão na pesquisa
-  // (o filtro "Próprias" fica sempre: itens da empresa não têm data-base)
+  // (o filtro "Bases próprias" fica sempre: itens da empresa não têm data-base)
   document.querySelectorAll('.chips[data-filtro="base"] .chip').forEach((c) => { if (BASES.includes(c.dataset.v)) c.hidden = !estado.ativas.includes(c.dataset.v); });
   if (BASES.includes(estado.base) && !estado.ativas.includes(estado.base)) definirFiltro('base', 'todas');
   desenharDatas();
@@ -888,6 +888,22 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '/' && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); $('#q').select(); }
 });
 window.addEventListener('hashchange', rota);
+
+// Versão nova publicada: a página se recarrega sozinha ao trocar de tela ou ao voltar para a aba do navegador,
+// para nunca rodar arquivos antigos misturados com o servidor novo.
+const VERSAO_CARREGADA = (document.querySelector('meta[name=versao]') || {}).content || '';
+let ultimaConferencia = 0;
+async function conferirVersao() {
+  if (!VERSAO_CARREGADA || VERSAO_CARREGADA === '__VERSAO__' || Date.now() - ultimaConferencia < 5000) return;
+  ultimaConferencia = Date.now();
+  try {
+    const r = await fetch('/api/versao', { cache: 'no-store' }); if (!r.ok) return;
+    const { versao } = await r.json();
+    if (versao && versao !== VERSAO_CARREGADA) location.reload();
+  } catch (_) { /* sem rede: tenta na próxima */ }
+}
+window.addEventListener('hashchange', conferirVersao);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') conferirVersao(); });
 
 document.addEventListener('click', (e) => {
   const s = e.target.closest('[data-repetir]'); if (!s) return;
