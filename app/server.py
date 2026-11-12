@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from openpyxl import Workbook
@@ -71,6 +71,16 @@ def _basic_valido(cabecalho: str) -> bool:
 
 
 @app.middleware('http')
+async def conferir_versao(request: Request, seguir):
+    """Arquivos do site (JS/CSS): o navegador sempre confere se há versão nova (responde 304 se não mudou).
+    Sem isso, depois de uma atualização ele podia misturar arquivo novo com antigo."""
+    resposta = await seguir(request)
+    if request.url.path.startswith('/static/') and 'cache-control' not in resposta.headers:
+        resposta.headers['Cache-Control'] = 'no-cache'
+    return resposta
+
+
+@app.middleware('http')
 async def exigir_senha(request: Request, seguir):
     caminho = request.url.path
     if (not SENHA or caminho in LIVRES or caminho.startswith('/static/icones/')
@@ -89,7 +99,7 @@ class Entrada(BaseModel):
 def tela_entrar(request: Request):
     if not SENHA or _sessao_valida(request.cookies.get(COOKIE, '')):
         return RedirectResponse('/', status_code=303)
-    return FileResponse(AQUI / 'static' / 'entrar.html', headers={'Cache-Control': 'no-store'})
+    return HTMLResponse(_com_versao('entrar.html'), headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/api/entrada')
@@ -599,7 +609,26 @@ def apresentacao():
     return RedirectResponse('/#/apresentacao')
 
 
+def _versao_estaticos():
+    """Etiqueta que muda quando qualquer JS/CSS muda: vai no endereço dos arquivos, e o navegador baixa o novo."""
+    h = hashlib.sha1()
+    for f in sorted((AQUI / 'static').glob('*.[jc]s*')):
+        h.update(f.name.encode()); h.update(f.read_bytes())
+    return h.hexdigest()[:10]
+
+
+VERSAO = _versao_estaticos()
+
+
+def _com_versao(nome):
+    html = (AQUI / 'static' / nome).read_text(encoding='utf-8')
+    return re.sub(r'(/static/[\w-]+\.(?:js|css))"', rf'\1?v={VERSAO}"', html)
+
+
+INDEX_HTML = _com_versao('index.html')
+
+
 @app.get('/')
 def index():
     # sem cache: depois de sair (ou de a sessão vencer), o navegador não mostra a página guardada
-    return FileResponse(AQUI / 'static' / 'index.html', headers={'Cache-Control': 'no-cache'})
+    return HTMLResponse(INDEX_HTML, headers={'Cache-Control': 'no-cache'})
