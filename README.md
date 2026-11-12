@@ -4,7 +4,7 @@ Consulta da base de preços de obras de Sergipe (ORSE/CEHOP) e da SINAPI usada p
 busca rápida, composição analítica em árvore, orçamento com BDI e curva ABC, e histórico de preços entre referências.
 
 Bases carregadas (Sergipe): **ORSE** de maio/2026 e agosto/2026 e **SINAPI** de maio/2026 e agosto/2026 (programa da CEHOP);
-**SINAPI** de setembro/2026 (relatórios da CAIXA); **SICRO** de julho/2026 (DNIT).
+**SINAPI** de julho/2026 e setembro/2026 (relatórios da CAIXA); **SICRO** de julho/2026 (DNIT).
 Cada base tem a sua data-base: a pesquisa procura todas juntas, cada uma no mês escolhido para ela.
 
 ## Rodar
