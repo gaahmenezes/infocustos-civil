@@ -118,7 +118,17 @@ async function buscarJson(url) {
     try { msg = (await r.json()).detail || msg; } catch (_) { /* sem corpo */ }
     throw new Error(msg);
   }
-  return r.json();
+  return anotarBasesProprias(await r.json());
+}
+// cada item próprio pertence a uma base com nome escolhido pela empresa: as respostas trazem esse nome (base_nome) e
+// ele fica guardado por código, para as etiquetas de qualquer tela mostrarem a base certa
+const BASE_DO_ITEM = new Map();
+function anotarBasesProprias(dado, prof = 0) {
+  if (!dado || typeof dado !== 'object' || prof > 6) return dado;
+  if (Array.isArray(dado)) { for (const x of dado) anotarBasesProprias(x, prof + 1); return dado; }
+  if (dado.base_nome && dado.codigo && (dado.base === 'PROPRIA' || /^[PI]\d{4,}$/.test(dado.codigo))) BASE_DO_ITEM.set(dado.codigo, dado.base_nome);
+  for (const v of Object.values(dado)) if (v && typeof v === 'object') anotarBasesProprias(v, prof + 1);
+  return dado;
 }
 // fichas (composição e insumo) ficam um minuto na memória: abrir de novo, ou abrir o que o mouse já apontou, é instantâneo
 const MEMORIA = new Map();
@@ -497,19 +507,21 @@ function trecho(item) {
 
 // código e base em destaque: número em algarismos fixos, base como etiqueta com cor própria
 // a base própria tem o nome que a empresa escolher (aba Bases próprias)
-const nomeBasePropria = () => (estado.ref && estado.ref.base_propria) || 'Base própria';
-const rotuloBase = (b) => (b === 'PROPRIA' ? nomeBasePropria().toUpperCase() : b);
+const basesProprias = () => (estado.ref && estado.ref.bases_proprias) || [];
+// com uma base só, o nome dela; com várias, o filtro da busca diz "Bases próprias" (todas juntas)
+const nomeBasePropria = () => (basesProprias().length > 1 ? 'Bases próprias' : (estado.ref && estado.ref.base_propria) || 'Base própria');
+const rotuloBase = (b, codigo) => (b === 'PROPRIA' ? (BASE_DO_ITEM.get(codigo) || (basesProprias().length > 1 ? 'Própria' : nomeBasePropria())).toUpperCase() : b);
 function mostrarNomeBasePropria() { document.querySelectorAll('[data-nome-propria]').forEach((el) => { el.textContent = nomeBasePropria(); }); }
 function codigoBase(codigo, base, marcar) {
   const termo = marcar ? ($('#q').value || '').trim().replace(/^0+/, '') : '';
   const semZeros = String(codigo).replace(/^0+/, '');
   const num = termo && /^\d+$/.test(termo) && semZeros.startsWith(termo) ? `<mark>${esc(codigo)}</mark>` : esc(codigo);
-  return `<span class="cb"><span class="cb-num">${num}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base))}</span></span>`;
+  return `<span class="cb"><span class="cb-num">${num}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base, codigo))}</span></span>`;
 }
 
 // nas tabelas: o mesmo par código + base, mais discreto, e o conjunto inteiro abre o item
 function codLink(tipo, base, codigo) {
-  return `<a class="cb cb-p" href="${rotaItem(tipo, esc(base), esc(codigo))}"><span class="cb-num">${esc(codigo)}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base))}</span></a>`;
+  return `<a class="cb cb-p" href="${rotaItem(tipo, esc(base), esc(codigo))}"><span class="cb-num">${esc(codigo)}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base, codigo))}</span></a>`;
 }
 
 function desenharLista(r) {
@@ -585,7 +597,8 @@ async function rota() {
   const emEnc = /^#\/encargos/.test(location.hash);
   const emCmp = lerRotaComparar() !== null;
   const emAp = /^#\/apresentacao/.test(location.hash);
-  const emProp = /^#\/propria/.test(location.hash);
+  const emImp = /^#\/importar/.test(location.hash);
+  const emProp = emImp || /^#\/propria/.test(location.hash);
   estado.comparando = emCmp || emAp;
   if (!emAp && window.sairDaApresentacao) window.sairDaApresentacao();
   document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp || emAp || emProp);
@@ -602,6 +615,7 @@ async function rota() {
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
   if (emVar) { desenharComparativo(); return; }
   if (emEnc) { desenharEncargos(); return; }
+  if (emImp) { window.rotaImportar && window.rotaImportar(); return; }
   if (emProp) { window.rotaProprias && window.rotaProprias(); return; }
   const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI|SICRO|PROPRIA)\/(\w+)/);
   if (!m) {

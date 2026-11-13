@@ -312,7 +312,7 @@ def montar_fts(q):
 @app.get('/api/referencia')
 def api_referencia(ref: Optional[str] = None, refs: str = '', bases: str = ''):
     """Meses de cada base e o tamanho de cada uma no mês escolhido. `ref` (mês principal: ORSE/SINAPI) segue valendo."""
-    return _referencia(ref, refs, bases) | {'base_propria': proprias.nome_base()}
+    return _referencia(ref, refs, bases) | {'base_propria': proprias.nome_base(), 'bases_proprias': proprias.lista_bases()}
 
 
 @lru_cache(maxsize=64)
@@ -630,6 +630,8 @@ import proprias  # noqa: E402
 orcamento.configurar(conn)
 app.include_router(orcamento.router)
 app.include_router(proprias.router)
+import importar  # noqa: E402
+app.include_router(importar.router)
 app.mount('/static', StaticFiles(directory=AQUI / 'static'), name='static')
 
 

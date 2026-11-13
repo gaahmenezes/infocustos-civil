@@ -14,7 +14,7 @@ async function req(url, metodo = 'GET', corpo) {
     const d = j.detail;
     throw new Error(Array.isArray(d) ? 'Confira os campos preenchidos.' : (d || `Erro ${r.status}`));
   }
-  return j;
+  return anotarBasesProprias(j);
 }
 
 function avisar(html, ms = 4000) {
@@ -463,7 +463,7 @@ function ligarBuscaInline(inp) {
       const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
       await abrirOrcamento(n.id, n); deslizar();
       const q = document.querySelector(`.qtd[data-item="${n.item_criado}"]`); if (q) { q.focus(); q.select(); }
-      avisar(`${VISTO}${esc(x.codigo)}/${esc(rotuloBase(x.base))} adicionado. Digite a quantidade.`);
+      avisar(`${VISTO}${esc(x.codigo)}/${esc(rotuloBase(x.base, x.codigo))} adicionado. Digite a quantidade.`);
     } catch (err) { avisar(esc(err.message)); }
   }
 }

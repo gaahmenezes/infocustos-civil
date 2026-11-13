@@ -3,7 +3,13 @@
    A composição própria é viva: o preço de cada item vem da data-base escolhida para a base dele (seletor do topo),
    então trocar o mês atualiza o custo sozinho. Itens podem ser de qualquer base ou próprios (inclusive outras composições próprias). */
 
-const PROP = { aba: 'composicoes', dados: null, atual: null, editarIns: null };
+const PROP = { aba: 'composicoes', dados: null, atual: null, editarIns: null, base: 1 };
+try { PROP.base = Number(localStorage.getItem('infocustos-base-propria')) || 1; } catch (_) { /* sem armazenamento */ }
+const lembrarBase = (id) => { PROP.base = id; try { localStorage.setItem('infocustos-base-propria', String(id)); } catch (_) { /* ok */ } };
+async function recarregarBases() {
+  try { const b = await req('/api/proprias/bases'); if (estado.ref) estado.ref.bases_proprias = b; if (b[0] && estado.ref) estado.ref.base_propria = b[0].nome; mostrarNomeBasePropria(); return b; }
+  catch (_) { return basesProprias(); }
+}
 const TIPO_INSUMO = { MATERIAL: 'Material', MAO_DE_OBRA: 'Mão de obra', EQUIPAMENTO: 'Equipamento', SERVICO_TERCEIRO: 'Serviço de terceiro' };
 const qsRefs = () => `refs=${encodeURIComponent(refsQs())}`;
 const dataBr = (d) => (d ? d.split('-').reverse().join('/') : '');
@@ -18,9 +24,17 @@ window.rotaProprias = async function () {
 async function desenharListaProprias() {
   const d = $('#detalhe');
   const semEsq = d.querySelector('.proprias') ? () => {} : comEsqueleto(d, `<div class="pagina">${esqueletoCartoes(4)}</div>`);
-  try { PROP.dados = await req(`/api/proprias?${qsRefs()}`); semEsq(); }
-  catch (e) { semEsq(); d.innerHTML = `<div class="pagina"><div class="erro">${esc(e.message)}</div></div>`; return; }
-  const { composicoes, insumos } = PROP.dados;
+  try {
+    PROP.dados = await req(`/api/proprias?${qsRefs()}&base_id=${PROP.base}`);
+    if (!PROP.dados.bases.some((b) => b.id === PROP.base)) { lembrarBase(PROP.dados.bases[0].id); PROP.dados = await req(`/api/proprias?${qsRefs()}&base_id=${PROP.base}`); }
+    semEsq();
+  } catch (e) { semEsq(); d.innerHTML = `<div class="pagina"><div class="erro">${esc(e.message)}</div></div>`; return; }
+  const { composicoes, insumos, bases } = PROP.dados;
+  if (estado.ref) { estado.ref.bases_proprias = bases; estado.ref.base_propria = bases[0].nome; mostrarNomeBasePropria(); }
+  const base = bases.find((b) => b.id === PROP.base);
+  const seletor = `<div class="prop-bases" role="radiogroup" aria-label="Base própria">${bases.map((b) => `<button type="button" role="radio" class="prop-base-bt" data-prop-base="${b.id}" aria-checked="${b.id === PROP.base}">
+      <b>${esc(b.nome)}</b><span>${b.composicoes} ${b.composicoes === 1 ? 'composição' : 'composições'} · ${b.insumos} ${b.insumos === 1 ? 'insumo' : 'insumos'}</span></button>`).join('')}
+    <button type="button" class="prop-base-bt prop-base-nova" data-prop-base-nova><b>+ Nova base</b><span>vazia, para montar ou importar</span></button></div>`;
   const seg = `<div class="segmentos" role="radiogroup" aria-label="Mostrar" data-prop-aba>
     <button type="button" role="radio" data-v="composicoes" aria-checked="${PROP.aba === 'composicoes'}">Composições <span class="n">${composicoes.length}</span></button>
     <button type="button" role="radio" data-v="insumos" aria-checked="${PROP.aba === 'insumos'}">Insumos próprios <span class="n">${insumos.length}</span></button></div>`;
@@ -43,11 +57,14 @@ async function desenharListaProprias() {
     : vazio('folha', 'Nenhum insumo próprio ainda', 'Cadastre materiais, mão de obra ou equipamentos com o preço da sua cotação.',
       '<button type="button" class="botao primario" data-novo-insumo>Novo insumo</button>');
   d.innerHTML = `<div class="pagina proprias">
-    <header class="pag-cab"><div class="prop-ident"><h1 class="sr">Bases próprias</h1>
-      <label class="prop-base-rot" for="prop-base-nome">Nome da sua base <span>aparece nas etiquetas dos itens, na busca e nos relatórios · clique para alterar</span></label>
-      <input class="orc-nome" id="prop-base-nome" value="${esc(nomeBasePropria())}" maxlength="40" aria-label="Nome da base própria">
-      <p class="sub">Composições da sua empresa com itens de qualquer base (ORSE, SINAPI, SICRO) ou próprios. O custo é recalculado com a data-base de cada base, escolhida no topo.</p></div>
-      <div class="acoes"><button type="button" class="botao" data-novo-insumo>Novo insumo</button><button type="button" class="botao primario" data-nova-propria>Nova composição</button></div></header>
+    <h1 class="sr">Bases próprias</h1>
+    ${seletor}
+    <header class="pag-cab"><div class="prop-ident">
+      <label class="prop-base-rot" for="prop-base-nome">Nome da base <span>aparece nas etiquetas dos itens, na busca e nos relatórios · clique para alterar</span></label>
+      <input class="orc-nome" id="prop-base-nome" value="${esc(base.nome)}" maxlength="40" aria-label="Nome da base própria" data-base-id="${base.id}">
+      <p class="sub">Composições com itens de qualquer base (ORSE, SINAPI, SICRO) ou próprios. O custo é recalculado com a data-base de cada base, escolhida no topo.</p></div>
+      <div class="acoes"><a class="botao" href="#/importar">Importar arquivo</a><button type="button" class="botao" data-novo-insumo>Novo insumo</button><button type="button" class="botao primario" data-nova-propria>Nova composição</button>
+        ${bases.length > 1 ? menu('Mais', ['<button type="button" role="menuitem" class="perigo" data-prop-base-excluir>Excluir esta base</button>']) : ''}</div></header>
     <div class="prop-barra">${seg}<p class="prop-datas">Preços com ${esc(gruposDeData().map((x) => `${juntar(x.bases)} de ${nomeRef(x.mes)}`).join(' · '))}</p></div>
     <section class="${PROP.aba === 'composicoes' ? '' : 'oculto'}" data-prop-painel="composicoes">${cartoes}</section>
     <section class="ficha ${PROP.aba === 'insumos' ? '' : 'oculto'}" data-prop-painel="insumos">${tabela}</section>
@@ -202,14 +219,14 @@ function buscaDeItens(inp, escolher, proprio) {
 // ---------- ações ----------
 async function novaComposicao() {
   try {
-    const c = await req(`/api/proprias/composicoes?${qsRefs()}`, 'POST', { descricao: 'Nova composição própria', unidade: 'un' });
+    const c = await req(`/api/proprias/composicoes?${qsRefs()}`, 'POST', { descricao: 'Nova composição própria', unidade: 'un', base_id: PROP.base });
     location.hash = `#/propria/${c.codigo}`;
     setTimeout(() => { const t = $('#prop-descricao'); if (t) { t.focus(); t.select(); } }, 120);
   } catch (e) { avisar(esc(e.message)); }
 }
 async function copiarOficial(base, codigo, ref) {
   try {
-    const c = await req(`/api/proprias/copiar/${base}/${codigo}?${new URLSearchParams({ ref: ref || '', refs: refsQs() })}`, 'POST');
+    const c = await req(`/api/proprias/copiar/${base}/${codigo}?${new URLSearchParams({ ref: ref || '', refs: refsQs(), base_id: PROP.base })}`, 'POST');
     location.hash = `#/propria/${c.codigo}`;
     avisar(`${VISTO} Composição própria ${esc(c.codigo)} criada a partir de ${esc(codigo)}/${esc(base)}. Ajuste os itens.`);
   } catch (e) { avisar(esc(e.message)); }
@@ -232,6 +249,7 @@ $('#form-insumo-proprio').addEventListener('submit', async (e) => {
   if (preco !== null && !(preco >= 0)) { $('#ins-erro').textContent = 'Digite o preço como 129,90.'; return; }
   const corpo = { descricao: f.elements.descricao.value.trim(), unidade: f.elements.unidade.value.trim(), tipo: f.elements.tipo.value, preco,
     data_preco: f.elements.data_preco.value, fonte: f.elements.fonte.value.trim() };
+  if (!PROP.editarIns) corpo.base_id = (PROP.insParaComp && PROP.atual && PROP.atual.base_id) || PROP.base;
   if (!corpo.descricao || !corpo.unidade) { $('#ins-erro').textContent = 'Preencha a descrição e a unidade.'; return; }
   try {
     const i = PROP.editarIns ? await req(`/api/proprias/insumos/${PROP.editarIns}`, 'PATCH', corpo) : await req('/api/proprias/insumos', 'POST', corpo);
@@ -247,6 +265,26 @@ $('#form-insumo-proprio').addEventListener('submit', async (e) => {
 
 document.addEventListener('click', async (e) => {
   if (e.target.closest('[data-nova-propria]')) { novaComposicao(); return; }
+  const bb = e.target.closest('[data-prop-base]'); if (bb) { lembrarBase(Number(bb.dataset.propBase)); window.rotaProprias(); return; }
+  if (e.target.closest('[data-prop-base-nova]')) {
+    const nomes = new Set(basesProprias().map((b) => b.nome)); let n = basesProprias().length + 1; while (nomes.has(`Base ${n}`)) n += 1;
+    try {
+      const b = await req('/api/proprias/bases', 'POST', { nome: `Base ${n}` }); lembrarBase(b.id); await recarregarBases(); await window.rotaProprias();
+      const t = $('#prop-base-nome'); if (t) { t.focus(); t.select(); } avisar(`${VISTO}Base criada. Dê um nome a ela.`);
+    } catch (err) { avisar(esc(err.message)); }
+    return;
+  }
+  const bx = e.target.closest('[data-prop-base-excluir]');
+  if (bx) {
+    const b = basesProprias().find((x) => x.id === PROP.base); if (!b) return;
+    if (bx.dataset.confirmar !== '1') {
+      bx.dataset.confirmar = '1'; bx.textContent = `Clique de novo: excluir "${b.nome}" com ${b.composicoes} composições e ${b.insumos} insumos`;
+      setTimeout(() => { const m = bx.closest('details'); if (m) m.open = true; }, 0); return;
+    }
+    try { await req(`/api/proprias/bases/${b.id}`, 'DELETE'); lembrarBase(1); await recarregarBases(); window.rotaProprias(); avisar(`Base "${esc(b.nome)}" excluída.`); }
+    catch (err) { avisar(esc(err.message)); }
+    return;
+  }
   const ni = e.target.closest('[data-novo-insumo]'); if (ni) { abrirDialogoInsumo(null, ni.dataset.paraComp); return; }
   const ei = e.target.closest('[data-editar-insumo]'); if (ei) { abrirDialogoInsumo(ei.dataset.editarInsumo); return; }
   const xi = e.target.closest('[data-excluir-insumo]');
@@ -284,10 +322,11 @@ document.addEventListener('change', async (e) => {
   if (e.target.id !== 'prop-base-nome') return;
   const v = e.target.value.trim();
   if (!v) { e.target.value = nomeBasePropria(); return; }
+  const id = Number(e.target.dataset.baseId) || 1, antes = (basesProprias().find((b) => b.id === id) || {}).nome || '';
   try {
-    const r = await req('/api/proprias/base', 'PATCH', { nome: v });
-    estado.ref.base_propria = r.nome_base; e.target.value = r.nome_base; mostrarNomeBasePropria();
-    window.rotaProprias(); avisar(`${VISTO}A base agora se chama <b>${esc(r.nome_base)}</b>.`);
-  } catch (err) { e.target.value = nomeBasePropria(); avisar(esc(err.message)); }
+    const r = await req(`/api/proprias/bases/${id}`, 'PATCH', { nome: v });
+    e.target.value = r.nome; for (const [k, nome] of BASE_DO_ITEM) if (nome === antes) BASE_DO_ITEM.set(k, r.nome);
+    await recarregarBases(); MEMORIA.clear(); window.rotaProprias(); avisar(`${VISTO}A base agora se chama <b>${esc(r.nome)}</b>.`);
+  } catch (err) { e.target.value = antes; avisar(esc(err.message)); }
 });
 document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.id === 'prop-base-nome') { e.preventDefault(); e.target.blur(); } });

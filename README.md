@@ -42,6 +42,22 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
 - **BDI só no total do orçamento**: chave que deixa itens e etapas a custo e aplica o BDI uma única vez, sobre o custo
   direto total (em vez de no preço unitário de cada item). Vale para a tela, o relatório em PDF e a planilha do Excel.
 
+## Várias bases próprias e importação (SIENGE, Excel, PDF)
+
+- **Várias bases próprias**: na aba Bases próprias, cada base tem nome próprio ("+ Nova base"), as suas composições e
+  insumos, e aparece com esse nome nas etiquetas, na busca, no orçamento e nos relatórios. Excluir uma base apaga os
+  itens dela, e é recusado se algum item estiver num orçamento ou for usado por composição de outra base.
+- **Importar arquivo** (`#/importar`): Excel (.xlsx/.xlsm), CSV ou PDF (tabelas desenhadas ou texto em colunas, pela
+  posição das palavras). O sistema reconhece as colunas pelos títulos; a pessoa confere na prévia, confere o resumo
+  sem gravar e importa. Três tipos:
+  - *Insumos* (no SIENGE, o relatório de insumos do orçamento): código, descrição, unidade, tipo e preço.
+  - *Composições* analíticas: composição como título com os itens abaixo, ou com o código dela em cada linha. Um item
+    pode ser outra composição do arquivo, um insumo da base, um código SINAPI/ORSE/SICRO, ou vira insumo novo.
+    O custo calculado é conferido com o preço que o arquivo trazia.
+  - *Orçamento* (planilha orçamentária): títulos viram etapas e subetapas, itens com quantidade ligam às composições
+    e insumos da base pelo código de origem; o que não tiver composição entra com o preço do arquivo.
+  Cada item guarda o código de origem: importar de novo atualiza em vez de duplicar.
+
 ## Composições e insumos próprios
 
 Aba **Bases próprias** (`#/proprias`; o nome da base é escolhido pela empresa no topo da página e aparece nas etiquetas, na busca e nos relatórios): a empresa cadastra insumos próprios (preço, data e fonte da cotação) e monta

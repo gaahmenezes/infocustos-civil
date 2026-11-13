@@ -48,6 +48,11 @@ def configurar(conn_base):
     _meses = None
     with orc() as c:
         c.executescript(banco_orc.ESQUEMA_SQLITE)
+        if not c.execute('SELECT 1 FROM base_propria LIMIT 1').fetchone():
+            # a primeira base própria: herda o nome que a empresa já tinha escolhido (quando só existia uma)
+            n = c.execute("SELECT valor FROM config WHERE chave = 'nome_base_propria'").fetchone()
+            c.execute("INSERT INTO base_propria (id, nome, descricao, criado_em) VALUES (1, ?, '', ?)", ((n['valor'] if n and n['valor'] else 'Base própria'), agora()))
+            c.ajustar_sequencia('base_propria')
 
 
 def orc():
@@ -300,6 +305,9 @@ def _calcular(c, oid):
         except HTTPException:
             i['custo_compl'] = 0.0  # composição própria que não existe mais
         compl_total += i['quantidade'] * i['custo_compl']
+        if i['base'] == 'PROPRIA':
+            import proprias
+            i['base_nome'] = proprias.base_do_codigo(i['codigo'])
         if o['sem_complementares']:
             i['custo_unit'] = r2(i['custo_cheio'] - i['custo_compl'])
         i['preco_unit'] = r2(i['custo_unit'] * fator_bdi)
@@ -876,7 +884,7 @@ def exportar(oid: int):
         for i in e['itens']:
             ws.cell(row=linha, column=1, value=i['numero'])
             ws.cell(row=linha, column=2, value=i['codigo'])
-            ws.cell(row=linha, column=3, value=nome_propria if i['base'] == 'PROPRIA' else i['base'])
+            ws.cell(row=linha, column=3, value=i.get('base_nome') or nome_propria if i['base'] == 'PROPRIA' else i['base'])
             ws.cell(row=linha, column=4, value=i['descricao']).alignment = Alignment(wrap_text=True, vertical='top')
             ws.cell(row=linha, column=5, value=i['unidade'])
             ws.cell(row=linha, column=6, value=i['quantidade']).number_format = '#,##0.00'

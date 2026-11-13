@@ -76,11 +76,28 @@ def acervo():
                     for r in c.execute('SELECT * FROM composicao_propria_item ORDER BY composicao_id, ordem, id').fetchall():
                         itens.setdefault(r['composicao_id'], []).append(dict(r))
                     insumos = {r['id']: dict(r) for r in c.execute('SELECT * FROM insumo_proprio').fetchall()}
-                    n = c.execute("SELECT valor FROM config WHERE chave = 'nome_base_propria'").fetchone()
-                _ACERVO = {'comps': comps, 'itens': itens, 'insumos': insumos, 'calcs': {},
-                           'nome': (n['valor'] if n and n['valor'] else NOME_PADRAO)}
+                    bases = {r['id']: dict(r) for r in c.execute('SELECT * FROM base_propria ORDER BY id').fetchall()}
+                if not bases:
+                    bases = {1: {'id': 1, 'nome': NOME_PADRAO, 'descricao': ''}}
+                _ACERVO = {'comps': comps, 'itens': itens, 'insumos': insumos, 'calcs': {}, 'bases': bases,
+                           'nome': bases[min(bases)]['nome']}
             a = _ACERVO
     return a
+
+
+def nome_da_base(base_id):
+    b = acervo()['bases'].get(base_id or 1)
+    return b['nome'] if b else NOME_PADRAO
+
+
+def base_do_codigo(codigo):
+    """Nome da base própria de um item (P0001 ou I0001)."""
+    a = acervo()
+    try:
+        x = a['comps'].get(id_de(codigo, 'P')) if (codigo or '').upper().startswith('P') else a['insumos'].get(id_de(codigo, 'I'))
+    except HTTPException:
+        return NOME_PADRAO
+    return nome_da_base(x and x.get('base_id'))
 
 
 def invalidar():
@@ -222,7 +239,8 @@ class Calculo:
              'custo_total': total, 'compl': round(compl, 4), 'custo_mao_de_obra': round(div['mo'], 4), 'custo_encargo_social': 0.0, 'custo_material': round(div['mat'], 4),
              'custo_equipamento': round(div['equip'], 4), 'custo_servico_terceiro': round(div['terc'], 4), 'divisao': fr,
              'itens_sem_preco': faltam, 'itens': itens, 'origem_base': cp['origem_base'] or '', 'origem_codigo': cp['origem_codigo'] or '',
-             'atualizado_em': cp['atualizado_em'], 'fonte': 'PROPRIA'}
+             'atualizado_em': cp['atualizado_em'], 'fonte': 'PROPRIA', 'base_id': cp.get('base_id') or 1,
+             'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or ''}
         self.memo[cid] = r
         return r
 
@@ -260,6 +278,7 @@ def ficha_insumo(codigo):
         return {'base': BASE, 'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'preco': i['preco'],
                 'tipo': i['tipo'], 'categoria': i['tipo'], 'grupo': 'Insumos próprios', 'marcador': '', 'referencia': None,
                 'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'usado_em': len(usos),
+                'base_id': i['base_id'] or 1, 'base_nome': nome_da_base(i['base_id']), 'codigo_origem': i['codigo_origem'] or '',
                 'usos': [{'base': BASE, 'codigo': cod_comp(u['id']), 'descricao': u['descricao'], 'unidade': u['unidade'], 'qtd': u['qtd'],
                           'custo_total': (u['qtd'] * i['preco']) if i['preco'] is not None else None, 'preco_composicao': None} for u in usos]}
 
@@ -325,7 +344,7 @@ def divisao(tipo, codigo, ref=None):
             return {'mat': 1.0}
 
 
-def buscar(q: str, tipo: str, refs: str, limite: int = 40):
+def buscar(q: str, tipo: str, refs: str, limite: int = 40, base_id: Optional[int] = None):
     """Itens próprios que batem com o texto (todas as palavras, sem acento), no formato dos resultados da busca."""
     termos = [t for t in re.findall(r'[a-z0-9]+', sem_acento(q))]
     out = []
@@ -336,7 +355,9 @@ def buscar(q: str, tipo: str, refs: str, limite: int = 40):
         calc = calculo_guardado(ler_refs(refs))
         if tipo in ('todos', 'servico'):
             for cp in sorted(a['comps'].values(), key=lambda x: x['descricao']):
-                alvo = sem_acento(f"{cp['descricao']} {cod_comp(cp['id'])}")
+                if base_id and (cp.get('base_id') or 1) != base_id:
+                    continue
+                alvo = sem_acento(f"{cp['descricao']} {cod_comp(cp['id'])} {cp.get('codigo_origem') or ''}")
                 if all(t in alvo for t in termos):
                     try:
                         comp = calc.composicao(cod_comp(cp['id']))
@@ -346,13 +367,16 @@ def buscar(q: str, tipo: str, refs: str, limite: int = 40):
                     out.append({'tipo': 'servico', 'base': BASE, 'codigo': comp['codigo'], 'descricao': cp['descricao'], 'unidade': cp['unidade'],
                                 'preco': comp['custo_total'], 'categoria': 'COMPOSIÇÃO PRÓPRIA', 'grupo': cp['grupo'] or 'Composições próprias',
                                 'tem_composicao': 1, 'usos': 0, 'pct_mo': d['mo'], 'pct_mat': d['mat'], 'pct_equip': d['equip'], 'pct_terc': d['terc'],
-                                'referencia': None, 'trecho': None})
+                                'referencia': None, 'trecho': None, 'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or ''})
         if tipo in ('todos', 'insumo'):
             for i in sorted(a['insumos'].values(), key=lambda x: x['descricao']):
-                if all(t in sem_acento(f"{i['descricao']} {cod_ins(i['id'])}") for t in termos):
+                if base_id and (i.get('base_id') or 1) != base_id:
+                    continue
+                if all(t in sem_acento(f"{i['descricao']} {cod_ins(i['id'])} {i.get('codigo_origem') or ''}") for t in termos):
                     out.append({'tipo': 'insumo', 'base': BASE, 'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'],
                                 'preco': i['preco'], 'categoria': i['tipo'], 'grupo': 'Insumos próprios', 'tem_composicao': 0, 'usos': 0,
-                                'pct_mo': None, 'pct_mat': None, 'pct_equip': None, 'pct_terc': None, 'referencia': None, 'trecho': None})
+                                'pct_mo': None, 'pct_mat': None, 'pct_equip': None, 'pct_terc': None, 'referencia': None, 'trecho': None,
+                                'base_nome': nome_da_base(i.get('base_id')), 'codigo_origem': i.get('codigo_origem') or ''})
     return out[:limite]
 
 
@@ -364,6 +388,7 @@ class NovoInsumo(BaseModel):
     preco: Optional[float] = Field(None, ge=0)
     data_preco: str = ''
     fonte: str = Field('', max_length=400)
+    base_id: int = 1
 
 
 class EdicaoInsumo(BaseModel):
@@ -373,6 +398,7 @@ class EdicaoInsumo(BaseModel):
     preco: Optional[float] = Field(None, ge=0)
     data_preco: Optional[str] = None
     fonte: Optional[str] = Field(None, max_length=400)
+    base_id: Optional[int] = None
 
 
 class NovaComposicao(BaseModel):
@@ -380,6 +406,7 @@ class NovaComposicao(BaseModel):
     unidade: str = Field(min_length=1, max_length=20)
     grupo: str = Field('', max_length=120)
     observacoes: str = Field('', max_length=2000)
+    base_id: int = 1
 
 
 class EdicaoComposicao(BaseModel):
@@ -387,6 +414,7 @@ class EdicaoComposicao(BaseModel):
     unidade: Optional[str] = Field(None, min_length=1, max_length=20)
     grupo: Optional[str] = Field(None, max_length=120)
     observacoes: Optional[str] = Field(None, max_length=2000)
+    base_id: Optional[int] = None  # mudar a composição de base
 
 
 class NovoItem(BaseModel):
@@ -401,12 +429,14 @@ class EdicaoItem(BaseModel):
 
 
 @router.get('/proprias')
-def listar(refs: str = ''):
+def listar(refs: str = '', base_id: Optional[int] = None):
     a = acervo()
     if True:
         calc = calculo_guardado(ler_refs(refs))
         comps = []
         for cp in sorted(a['comps'].values(), key=lambda x: (x['atualizado_em'] or '', x['id']), reverse=True):
+            if base_id and (cp.get('base_id') or 1) != base_id:
+                continue
             try:
                 k = calc.composicao(cod_comp(cp['id']))
                 total, n, faltam = k['custo_total'], len(k['itens']), k['itens_sem_preco']
@@ -414,11 +444,13 @@ def listar(refs: str = ''):
                 total, n, faltam = None, 0, 0
             comps.append({'codigo': cod_comp(cp['id']), 'descricao': cp['descricao'], 'unidade': cp['unidade'], 'grupo': cp['grupo'] or '',
                           'custo_total': total, 'qtd_itens': n, 'itens_sem_preco': faltam, 'atualizado_em': cp['atualizado_em'],
-                          'origem_base': cp['origem_base'] or '', 'origem_codigo': cp['origem_codigo'] or ''})
+                          'origem_base': cp['origem_base'] or '', 'origem_codigo': cp['origem_codigo'] or '',
+                          'base_id': cp.get('base_id') or 1, 'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or ''})
         ins = [{'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'tipo': i['tipo'], 'preco': i['preco'],
-                'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'atualizado_em': i['atualizado_em']}
-               for i in sorted(a['insumos'].values(), key=lambda x: x['descricao'])]
-        return {'composicoes': comps, 'insumos': ins, 'nome_base': a['nome']}
+                'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'atualizado_em': i['atualizado_em'],
+                'base_id': i.get('base_id') or 1, 'base_nome': nome_da_base(i.get('base_id')), 'codigo_origem': i.get('codigo_origem') or ''}
+               for i in sorted(a['insumos'].values(), key=lambda x: x['descricao']) if not base_id or (i.get('base_id') or 1) == base_id]
+        return {'composicoes': comps, 'insumos': ins, 'nome_base': a['nome'], 'bases': lista_bases()}
 
 
 # ---------- nome da base própria (a empresa escolhe como chamar) ----------
@@ -430,33 +462,108 @@ class NomeBase(BaseModel):
     nome: str = Field(min_length=1, max_length=40)
 
 
-@router.patch('/proprias/base')
-def renomear_base(d: NomeBase):
-    nome = ' '.join(d.nome.split())
+def _nome_valido(c, nome, fora=None):
+    nome = ' '.join((nome or '').split())
     if not nome:
         raise HTTPException(422, 'Dê um nome à base.')
     if nome.upper() in BASES_OFICIAIS:
         raise HTTPException(422, f'{nome.upper()} é o nome de uma base oficial. Escolha outro para a sua.')
+    for r in c.execute('SELECT id, nome FROM base_propria').fetchall():
+        if r['id'] != fora and sem_acento(r['nome']) == sem_acento(nome):
+            raise HTTPException(409, f'Já existe uma base chamada "{r["nome"]}".')
+    return nome
+
+
+def checar_base_propria(c, base_id):
+    if not c.execute('SELECT 1 FROM base_propria WHERE id = ?', (base_id,)).fetchone():
+        raise HTTPException(404, 'Base própria não encontrada.')
+
+
+def lista_bases():
+    a = acervo()
+    n_comp, n_ins = {}, {}
+    for x in a['comps'].values():
+        n_comp[x.get('base_id') or 1] = n_comp.get(x.get('base_id') or 1, 0) + 1
+    for x in a['insumos'].values():
+        n_ins[x.get('base_id') or 1] = n_ins.get(x.get('base_id') or 1, 0) + 1
+    return [{'id': b['id'], 'nome': b['nome'], 'descricao': b.get('descricao') or '', 'composicoes': n_comp.get(b['id'], 0),
+             'insumos': n_ins.get(b['id'], 0)} for b in a['bases'].values()]
+
+
+@router.get('/proprias/bases')
+def listar_bases():
+    return lista_bases()
+
+
+class NovaBase(BaseModel):
+    nome: str = Field(min_length=1, max_length=40)
+    descricao: str = Field('', max_length=400)
+
+
+@router.post('/proprias/bases', status_code=201)
+def criar_base(d: NovaBase):
     with gravando() as c:
-        if c.execute("SELECT 1 FROM config WHERE chave = 'nome_base_propria'").fetchone():
-            c.execute("UPDATE config SET valor = ? WHERE chave = 'nome_base_propria'", (nome,))
-        else:
-            c.execute("INSERT INTO config (chave, valor) VALUES ('nome_base_propria', ?)", (nome,))
-    return {'nome_base': nome}
+        cur = c.execute('INSERT INTO base_propria (nome, descricao, criado_em) VALUES (?,?,?)', (_nome_valido(c, d.nome), d.descricao.strip(), orc_mod.agora()))
+        novo = cur.lastrowid
+    return next(b for b in lista_bases() if b['id'] == novo)
+
+
+@router.patch('/proprias/bases/{base_id}')
+def renomear_base_n(base_id: int, d: NovaBase):
+    with gravando() as c:
+        checar_base_propria(c, base_id)
+        c.execute('UPDATE base_propria SET nome = ?, descricao = ? WHERE id = ?', (_nome_valido(c, d.nome, base_id), d.descricao.strip(), base_id))
+    return next(b for b in lista_bases() if b['id'] == base_id)
+
+
+@router.delete('/proprias/bases/{base_id}')
+def excluir_base(base_id: int):
+    """Exclui a base com todas as suas composições e insumos. Recusa se algum item dela estiver num orçamento ou for usado
+    por composição de outra base, para nenhum orçamento perder preço."""
+    a = acervo()
+    if base_id not in a['bases']:
+        raise HTTPException(404, 'Base própria não encontrada.')
+    if len(a['bases']) == 1:
+        raise HTTPException(409, 'Esta é a única base própria. Crie outra antes de excluir esta.')
+    comps = {cod_comp(i) for i, x in a['comps'].items() if (x.get('base_id') or 1) == base_id}
+    ins = {cod_ins(i) for i, x in a['insumos'].items() if (x.get('base_id') or 1) == base_id}
+    fora = [cod_comp(cid) for cid, itens in a['itens'].items() if (a['comps'].get(cid, {}).get('base_id') or 1) != base_id
+            and any(it['base'] == BASE and it['codigo'] in (comps | ins) for it in itens)]
+    if fora:
+        raise HTTPException(409, f'Itens desta base são usados em composições de outra base ({", ".join(sorted(fora)[:5])}). Troque-os antes de excluir.')
+    with gravando() as c:
+        em_orc = c.execute("SELECT DISTINCT o.nome FROM item i JOIN orcamento o ON o.id = i.orcamento_id WHERE i.base = 'PROPRIA' AND i.codigo IN (" +
+                           ','.join('?' * len(comps | ins)) + ')', sorted(comps | ins)).fetchall() if comps | ins else []
+        if em_orc:
+            raise HTTPException(409, f'Itens desta base estão em orçamentos ({", ".join(r[0] for r in em_orc[:3])}). Tire-os de lá antes de excluir a base.')
+        ids = [id_de(x, 'P') for x in comps]
+        for cid in ids:
+            c.execute('DELETE FROM composicao_propria_item WHERE composicao_id = ?', (cid,))
+        c.execute('DELETE FROM composicao_propria WHERE base_id = ?', (base_id,))
+        c.execute('DELETE FROM insumo_proprio WHERE base_id = ?', (base_id,))
+        c.execute('DELETE FROM base_propria WHERE id = ?', (base_id,))
+    return {'ok': True, 'composicoes': len(comps), 'insumos': len(ins)}
+
+
+@router.patch('/proprias/base')
+def renomear_base(d: NomeBase):
+    """Renomeia a primeira base (como era quando só havia uma)."""
+    return {'nome_base': renomear_base_n(min(acervo()['bases']), NovaBase(nome=d.nome))['nome']}
 
 
 @router.post('/proprias/insumos', status_code=201)
 def criar_insumo(d: NovoInsumo):
     with gravando() as c:
-        cur = c.execute('INSERT INTO insumo_proprio (descricao, unidade, tipo, preco, data_preco, fonte, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?)',
-                        (d.descricao.strip(), d.unidade.strip(), d.tipo, d.preco, d.data_preco, d.fonte.strip(), orc_mod.agora(), orc_mod.agora()))
+        checar_base_propria(c, d.base_id)
+        cur = c.execute('INSERT INTO insumo_proprio (descricao, unidade, tipo, preco, data_preco, fonte, criado_em, atualizado_em, base_id) VALUES (?,?,?,?,?,?,?,?,?)',
+                        (d.descricao.strip(), d.unidade.strip(), d.tipo, d.preco, d.data_preco, d.fonte.strip(), orc_mod.agora(), orc_mod.agora(), d.base_id))
         return ficha_insumo_c(c, cur.lastrowid)
 
 
 def ficha_insumo_c(c, iid):
     i = c.execute('SELECT * FROM insumo_proprio WHERE id = ?', (iid,)).fetchone()
     return {'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'tipo': i['tipo'], 'preco': i['preco'],
-            'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or ''}
+            'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'base_id': i['base_id'] or 1, 'codigo_origem': i['codigo_origem'] or ''}
 
 
 @router.patch('/proprias/insumos/{codigo}')
@@ -490,8 +597,9 @@ def excluir_insumo(codigo: str):
 @router.post('/proprias/composicoes', status_code=201)
 def criar_composicao(d: NovaComposicao, refs: str = ''):
     with gravando() as c:
-        cur = c.execute('INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, criado_em, atualizado_em) VALUES (?,?,?,?,?,?)',
-                        (d.descricao.strip(), d.unidade.strip(), d.grupo.strip(), d.observacoes.strip(), orc_mod.agora(), orc_mod.agora()))
+        checar_base_propria(c, d.base_id)
+        cur = c.execute('INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, criado_em, atualizado_em, base_id) VALUES (?,?,?,?,?,?,?)',
+                        (d.descricao.strip(), d.unidade.strip(), d.grupo.strip(), d.observacoes.strip(), orc_mod.agora(), orc_mod.agora(), d.base_id))
         novo = cur.lastrowid
     return ficha_composicao(cod_comp(novo), refs)
 
@@ -611,7 +719,7 @@ def mover_item(iid: int, direcao: Literal['cima', 'baixo'], refs: str = ''):
 
 
 @router.post('/proprias/copiar/{base}/{codigo}', status_code=201)
-def copiar_oficial(base: str, codigo: str, ref: Optional[str] = None, refs: str = ''):
+def copiar_oficial(base: str, codigo: str, ref: Optional[str] = None, refs: str = '', base_id: int = 1):
     """Nova composição própria com os itens de uma composição oficial (para ajustar coeficientes, trocar ou tirar itens)."""
     base = base.upper()
     if base not in BASES_OFICIAIS:
@@ -628,10 +736,11 @@ def copiar_oficial(base: str, codigo: str, ref: Optional[str] = None, refs: str 
     # no modelo DNIT (equipe com produção), equipamento e mão de obra viram coeficiente por unidade (qtd ÷ produção)
     prod = comp['prod_equipe'] if comp['modelo'] == 'DNIT' and comp['prod_equipe'] else None
     with gravando() as c:
-        cur = c.execute('''INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, origem_base, origem_codigo, criado_em, atualizado_em)
-            VALUES (?,?,?,?,?,?,?,?)''', (f"{s['descricao']} (ajustada)", s['unidade'], s['grupo'] or '',
+        checar_base_propria(c, base_id)
+        cur = c.execute('''INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, origem_base, origem_codigo, criado_em, atualizado_em, base_id)
+            VALUES (?,?,?,?,?,?,?,?,?)''', (f"{s['descricao']} (ajustada)", s['unidade'], s['grupo'] or '',
                                          f'Criada a partir de {s["codigo"]}/{base} de {mes}.' + (' Sem o FIC (fator de influência de chuvas), que o DNIT calcula sobre a execução e não é um item.' if base == 'SICRO' else ''),
-                                         base, s['codigo'], orc_mod.agora(), orc_mod.agora()))
+                                         base, s['codigo'], orc_mod.agora(), orc_mod.agora(), base_id))
         novo = cur.lastrowid
         n = 0
         for it in itens:
@@ -651,9 +760,9 @@ def duplicar(codigo: str, refs: str = ''):
         cp = c.execute('SELECT * FROM composicao_propria WHERE id = ?', (cid,)).fetchone()
         if not cp:
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
-        cur = c.execute('''INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, origem_base, origem_codigo, criado_em, atualizado_em)
-            VALUES (?,?,?,?,?,?,?,?)''', (f"{cp['descricao']} (cópia)", cp['unidade'], cp['grupo'], cp['observacoes'], cp['origem_base'], cp['origem_codigo'],
-                                         orc_mod.agora(), orc_mod.agora()))
+        cur = c.execute('''INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, origem_base, origem_codigo, criado_em, atualizado_em, base_id)
+            VALUES (?,?,?,?,?,?,?,?,?)''', (f"{cp['descricao']} (cópia)", cp['unidade'], cp['grupo'], cp['observacoes'], cp['origem_base'], cp['origem_codigo'],
+                                         orc_mod.agora(), orc_mod.agora(), cp['base_id'] or 1))
         novo = cur.lastrowid
         for it in c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall():
             c.execute('INSERT INTO composicao_propria_item (composicao_id, ordem, tipo, base, codigo, qtd, descricao, unidade) VALUES (?,?,?,?,?,?,?,?)',

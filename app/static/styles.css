@@ -1744,7 +1744,7 @@ tr.rel-etapa.rel-sub td { background: transparent; font-weight: 650; border-bott
 .prop-base-rot { display: block; font-size: 12px; font-weight: 650; color: var(--tinta-3); text-transform: uppercase; letter-spacing: 0.04em; }
 .prop-base-rot span { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .prop-ident .orc-nome { width: min(100%, 520px); }
-.cb-base { max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cb-base { max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* menu de cima numa linha só (o nome "Bases próprias" é mais comprido) */
 .abas a { white-space: nowrap; }
@@ -1767,3 +1767,50 @@ html.vai-ap body:not(.modo-ap) .area { visibility: hidden; }
 html.vai-ap body:not(.modo-ap) { background: #101214; }
 /* link direto para outra tela (orçamento, composição...): a consulta também não aparece antes dela */
 html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
+
+/* ---------- várias bases próprias ---------- */
+.prop-bases { display: flex; flex-wrap: wrap; gap: 10px; margin: 6px 0 18px; }
+.prop-base-bt { display: grid; gap: 2px; text-align: left; padding: 10px 14px; min-width: 170px; max-width: 280px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); font: inherit; cursor: pointer; transition: border-color var(--t-rapido), background-color var(--t-rapido); }
+.prop-base-bt b { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prop-base-bt span { font-size: 12px; color: var(--tinta-3); }
+.prop-base-bt:hover { border-color: var(--linha-forte); }
+.prop-base-bt[aria-checked="true"] { border-color: var(--acao); background: var(--planta-claro); box-shadow: inset 0 0 0 1px var(--acao); }
+.prop-base-nova { border-style: dashed; background: transparent; }
+@media (max-width: 760px) { .prop-base-bt { min-width: 0; flex: 1 1 140px; } }
+
+/* ---------- importação ---------- */
+.importar .imp-passo { background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio-g); padding: 18px 20px; margin: 0 0 16px; }
+.imp-passo h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 14px; font-size: 17px; }
+.imp-passo h2 span { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--acao); color: #17191C; font-size: 14px; }
+.imp-tipos { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin-bottom: 14px; }
+.imp-tipos button { display: grid; gap: 4px; text-align: left; padding: 12px 14px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); font: inherit; cursor: pointer; }
+.imp-tipos button b { font-size: 15px; }
+.imp-tipos button span { font-size: 12.5px; color: var(--tinta-3); line-height: 1.4; }
+.imp-tipos button[aria-checked="true"] { border-color: var(--acao); background: var(--planta-claro); box-shadow: inset 0 0 0 1px var(--acao); }
+.imp-campos { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: flex-end; }
+.imp-campos > label, .imp-map { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--tinta-2); min-width: 200px; flex: 1 1 220px; max-width: 360px; }
+.imp-campos > label.curto { min-width: 90px; flex: 0 0 110px; }
+.imp-campos input:not([type=checkbox]), .imp-campos select, .imp-map select { font: inherit; font-weight: 400; padding: 8px 10px; border: 1px solid var(--linha-forte); border-radius: var(--raio-p); background: var(--superficie); color: var(--tinta); min-width: 0; }
+.imp-campos label[hidden] { display: none; }
+.imp-check { display: inline-flex !important; align-items: center; gap: 6px; font-weight: 500 !important; min-width: 0 !important; flex: 0 0 auto !important; }
+.imp-oficiais { border: 1px dashed var(--linha-forte); border-radius: var(--raio); padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.imp-oficiais legend { font-size: 13px; font-weight: 600; color: var(--tinta-2); padding: 0 4px; }
+.imp-oficiais small { flex-basis: 100%; color: var(--tinta-3); }
+.imp-arquivo { display: grid; place-items: center; gap: 6px; text-align: center; padding: 26px 16px; border: 2px dashed var(--linha-forte); border-radius: var(--raio-g); cursor: pointer; transition: border-color var(--t-rapido), background-color var(--t-rapido); }
+.imp-arquivo input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.imp-arquivo:hover, .imp-arquivo.sobre, .imp-arquivo:focus-within { border-color: var(--acao); background: var(--planta-claro); }
+.imp-arquivo.lendo { opacity: 0.6; pointer-events: none; }
+.imp-arquivo span { font-size: 13px; color: var(--tinta-3); }
+.imp-obrig { color: var(--perigo, #C0392B); }
+.imp-mapa { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 14px; }
+.imp-previa { max-height: 380px; border: 1px solid var(--linha); border-radius: var(--raio); }
+.imp-previa table { font-size: 12.5px; }
+.imp-previa th { white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+.imp-previa th span { display: block; font-size: 11px; color: var(--acao-forte, var(--acao)); font-weight: 700; }
+.imp-previa td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
+.imp-previa .imp-usada { background: color-mix(in srgb, var(--acao) 10%, transparent); }
+.imp-resultado { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--linha); border-left: 4px solid var(--linha-forte); border-radius: var(--raio); }
+.imp-resultado.feito { border-left-color: var(--acao); }
+.imp-resultado ul { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 4px; }
+.imp-alerta { color: var(--c-mat); }
+.imp-dif { font-size: 12.5px; color: var(--tinta-2); }

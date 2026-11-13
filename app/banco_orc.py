@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS composicao_propria_item (
 CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, ordem);
 -- preferências da empresa (ex.: nome da base própria)
 CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, chave TEXT NOT NULL UNIQUE, valor TEXT);
+-- bases próprias (a empresa pode ter várias: a sua, a importada do SIENGE, a de um cliente...)
+CREATE TABLE IF NOT EXISTS base_propria (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', criado_em TEXT);
 '''
 
 # mesmas tabelas; DOUBLE PRECISION porque REAL no Postgres guarda só 6 dígitos
@@ -71,12 +73,18 @@ CREATE TABLE IF NOT EXISTS composicao_propria_item (
 CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, ordem);
 -- preferências da empresa (ex.: nome da base própria)
 CREATE TABLE IF NOT EXISTS config (id SERIAL PRIMARY KEY, chave TEXT NOT NULL UNIQUE, valor TEXT);
+CREATE TABLE IF NOT EXISTS base_propria (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', criado_em TEXT);
 '''
 
 # colunas que entraram depois: bancos já criados recebem por aqui
 COLUNAS_NOVAS = (('orcamento', 'sem_complementares', 'INTEGER NOT NULL DEFAULT 0'),
                  ('orcamento', 'bdi_no_total', 'INTEGER NOT NULL DEFAULT 0'),
-                 ('etapa', 'pai_id', 'INTEGER REFERENCES etapa(id) ON DELETE CASCADE'))
+                 ('etapa', 'pai_id', 'INTEGER REFERENCES etapa(id) ON DELETE CASCADE'),
+                 # cada item próprio pertence a uma base; código de origem = o código do item no sistema de onde veio (SIENGE...)
+                 ('composicao_propria', 'base_id', 'INTEGER NOT NULL DEFAULT 1'),
+                 ('composicao_propria', 'codigo_origem', "TEXT DEFAULT ''"),
+                 ('insumo_proprio', 'base_id', 'INTEGER NOT NULL DEFAULT 1'),
+                 ('insumo_proprio', 'codigo_origem', "TEXT DEFAULT ''"))
 
 if POSTGRES:
     import psycopg
@@ -134,6 +142,12 @@ if POSTGRES:
             if insercao:
                 sql += ' RETURNING id'
             return Cursor(self._c.execute(sql, tuple(params)), insercao)
+
+        def executemany(self, sql, linhas):
+            """Muitas linhas de uma vez (em lote: uma ida ao banco em vez de uma por linha)."""
+            sql = sql.replace('%', '%%').replace('?', '%s')
+            with self._c.cursor() as cur:
+                cur.executemany(sql, [tuple(x) for x in linhas])
 
         def executescript(self, _sqlite_ignorado):
             self._c.execute(ESQUEMA_POSTGRES)
