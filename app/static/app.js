@@ -830,7 +830,7 @@ function desenharInsumo(i) {
     <p class="sub">Composições ordenadas pela participação do insumo no custo${i.usado_em > i.usos.length ? `; mostrando ${i.usos.length} de ${i.usado_em.toLocaleString('pt-BR')}` : ''}.</p></div>${seletorDensidade()}</div>
     <table class="uso"><thead><tr><th>Composição</th><th>Descrição</th><th class="num">Coeficiente</th><th class="num">Custo no serviço</th><th class="num">Participação</th></tr></thead><tbody>${linhas}</tbody></table>`
     : vazio('folha', 'Nenhuma composição usa este insumo', `Em ${esc(nomeRef(i.referencia) || ref)}, ele aparece só na tabela de preços.`)}
-    <p class="fonte">Fonte: ${esc(i.base)}, referência ${esc(ref)}.</p>
+    <p class="fonte">Fonte: ${esc(i.base)}${i.fonte === 'DNIT' ? ' (DNIT), Sergipe' : i.fonte === 'CAIXA' ? ' (relatórios da CAIXA), Aracaju/SE, sem desoneração' : i.fonte === 'CEHOP' ? ' (programa ORSE da CEHOP)' : ''}, referência ${esc(nomeRef(i.referencia) || ref)}.</p>
   </article>`;
   contarPreco(`i|${i.base}|${i.codigo}`, i.preco);
 }
