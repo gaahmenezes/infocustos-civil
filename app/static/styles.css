@@ -1761,3 +1761,9 @@ tr.rel-etapa.rel-sub td { background: transparent; font-weight: 650; border-bott
 .orc-opcoes .orc-compl { grid-template-columns: 1fr; gap: 2px; margin: 0; padding: 10px 14px; align-content: start; }
 .orc-opcoes .orc-compl p { font-size: 12.5px; }
 @media print { .orc-opcoes { display: none; } }
+
+/* abrindo direto na apresentação: até ela entrar, nada da consulta aparece e o fundo já é o escuro dela */
+html.vai-ap body:not(.modo-ap) .area { visibility: hidden; }
+html.vai-ap body:not(.modo-ap) { background: #101214; }
+/* link direto para outra tela (orçamento, composição...): a consulta também não aparece antes dela */
+html.vai-outra body:not([data-aba]) .area { visibility: hidden; }

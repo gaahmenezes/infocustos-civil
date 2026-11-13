@@ -16,6 +16,13 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="InfoCustos">
   <link rel="stylesheet" href="/static/styles.css">
+  <script>
+    // antes de desenhar qualquer coisa: sem tela pedida no endereço, o destino é a apresentação. A consulta fica escondida
+    // até a apresentação entrar, para não aparecer por um instante (a "piscada")
+    if (!location.hash || location.hash === '#') history.replaceState(null, '', '#/apresentacao');
+    if (/^#\/apresentacao/.test(location.hash)) document.documentElement.classList.add('vai-ap');
+    else if (!/^#\/?(\?.*)?$/.test(location.hash)) document.documentElement.classList.add('vai-outra');  // orçamento, composição...
+  </script>
   <script>try { var t = localStorage.getItem('infocustos-tema'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}</script>
 </head>
 <body class="ocioso">
