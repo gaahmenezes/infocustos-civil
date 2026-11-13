@@ -139,3 +139,41 @@ def test_le_pdf_sem_linhas_de_tabela():
     assert {k: f['colunas'].get(k) for k in ('codigo', 'descricao', 'unidade', 'tipo', 'preco')} == {'codigo': 0, 'descricao': 1, 'unidade': 2, 'tipo': 3, 'preco': 4}
     r = c.post('/api/importar/insumos', json=pedido(f, nova_base='PDF sem grade', simular=True)).json()
     assert r['novos'] == 6 and r['sem_preco'] == 0
+
+
+def test_sienge_mesmo_codigo_com_detalhes_e_data_do_preco():
+    """No SIENGE o código 24 vale para vários cimentos ("Cimento / Detalhe: CP-II F-40", "... CP-V ARI"): cada variação
+    é um insumo, e as composições acham a variação certa pelo detalhe."""
+    from openpyxl import Workbook
+    import io
+    w = Workbook(); ws = w.active
+    for ln in [('EMPRESA',), ('Relatório de insumos',), (), (), ('Código', 'Descrição', None, None, None, 'Un.', None, 'Preço unitário', None, None, 'Data do preço'),
+               (1, 'Servente', None, None, None, 'h', None, 15.87, None, None, '12/02/2025'),
+               (24, 'Cimento / Detalhe: CP-II F-40', None, None, None, 'kg', None, 0.5908, None, None, '25/04/2022'),
+               (24, 'Cimento / Detalhe: CP-V ARI', None, None, None, 'kg', None, 0.6925, None, None, '22/06/2021'),
+               (24, 'Cimento / Detalhe: CP-II F-32', None, None, None, 'kg', None, 0.6774, None, None, '02/08/2023'),
+               (26, 'Areia / Detalhe: Media posto em obra', None, None, None, 'm3', None, 64, None, None, '24/05/2024')]:
+        ws.append(list(ln))
+    b = io.BytesIO(); w.save(b)
+    f = ler('insumos_sienge.xlsx', b.getvalue())['folhas'][0]
+    assert f['colunas'].get('data') == 10 and f['colunas'].get('preco') == 7 and f['colunas'].get('unidade') == 5
+    r = c.post('/api/importar/insumos', json=pedido(f, nova_base='SIENGE detalhes')).json()
+    assert r['novos'] == 5 and r['codigos_com_variacoes'] == 1 and r['variacoes'] == 3, r
+    bid = r['base_id']
+    ins = {i['codigo_origem']: i for i in c.get(f'/api/proprias?base_id={bid}').json()['insumos']}
+    assert ins['24#cp v ari']['preco'] == 0.6925 and ins['24#cp v ari']['data_preco'] == '2021-06-22'
+    assert ins['1']['data_preco'] == '2025-02-12' and ins['26']['codigo_origem'] == '26'
+    # de novo: atualiza as 5, não duplica
+    assert c.post('/api/importar/insumos', json=pedido(f, base_id=bid)).json()['atualizados'] == 5
+    # composição que usa o cimento CP-V ARI: liga à variação certa
+    w = Workbook(); ws = w.active
+    for ln in [('Código', 'Descrição', 'Unid.', 'Índice'), ('S-1', 'Argamassa de alta resistência', 'm3', None),
+               (24, 'Cimento / Detalhe: CP-V ARI', 'kg', 400), (26, 'Areia / Detalhe: Media posto em obra', 'm3', 1.1), (1, 'Servente', 'h', 8)]:
+        ws.append(list(ln))
+    b = io.BytesIO(); w.save(b)
+    f = ler('comp.xlsx', b.getvalue())['folhas'][0]
+    r = c.post('/api/importar/composicoes', json=pedido(f, base_id=bid)).json()
+    assert r['composicoes_novas'] == 1 and r['insumos_criados'] == 0, r
+    comp = c.get(f'/api/proprias?base_id={bid}').json()['composicoes'][0]
+    assert abs(comp['custo_total'] - (400 * 0.6925 + 1.1 * 64 + 8 * 15.87)) < 0.01
+    c.delete(f'/api/proprias/bases/{bid}')

@@ -7,7 +7,7 @@ const IMP = { tipo: 'insumos', arq: null, folha: 0, cab: null, col: {}, base: ''
   nome: '', bdi: 0, comBdi: false, simulado: null, enviando: false };
 
 const PAPEIS = {
-  insumos: [['codigo', 'Código'], ['descricao', 'Descrição', true], ['unidade', 'Unidade'], ['tipo', 'Tipo (material, mão de obra...)'], ['preco', 'Preço unitário']],
+  insumos: [['codigo', 'Código'], ['descricao', 'Descrição', true], ['unidade', 'Unidade'], ['tipo', 'Tipo (material, mão de obra...)'], ['preco', 'Preço unitário'], ['data', 'Data do preço']],
   composicoes: [['comp_codigo', 'Código da composição (se vier em cada linha)'], ['comp_descricao', 'Descrição da composição (idem)'], ['comp_unidade', 'Unidade da composição (idem)'],
     ['codigo', 'Código do item'], ['descricao', 'Descrição', true], ['unidade', 'Unidade'], ['coeficiente', 'Coeficiente (índice)', true], ['preco', 'Preço unitário'], ['tipo', 'Tipo do insumo']],
   orcamento: [['item', 'Item (1, 1.1, 1.1.1)'], ['codigo', 'Código'], ['descricao', 'Descrição', true], ['unidade', 'Unidade'], ['quantidade', 'Quantidade', true],
@@ -82,6 +82,7 @@ function resumoImportacao(r) {
   const base = r.base_id ? `<a href="#/proprias" data-ir-base="${r.base_id}">${esc(r.base)}</a>` : `<b>${esc(r.base)}</b> (nova)`;
   let corpo = '';
   if (IMP.tipo === 'insumos') corpo = `<li>${n(r.novos, 'insumo novo', 'insumos novos')} e ${n(r.atualizados, 'atualizado', 'atualizados')} na base ${base}</li>
+    ${r.codigos_com_variacoes ? `<li>${n(r.variacoes, 'linha', 'linhas')} com o mesmo código e detalhe diferente (${n(r.codigos_com_variacoes, 'código', 'códigos')}): cada variação entra como um insumo</li>` : ''}
     ${r.sem_preco ? `<li>${n(r.sem_preco, 'insumo sem preço', 'insumos sem preço')} (coluna de preço vazia ou não indicada)</li>` : ''}
     ${r.ignoradas && r.ignoradas.length ? `<li>Linhas sem descrição ignoradas: ${r.ignoradas.slice(0, 12).join(', ')}${r.ignoradas.length > 12 ? '…' : ''}</li>` : ''}`;
   if (IMP.tipo === 'composicoes') corpo = `<li>${n(r.composicoes_novas, 'composição nova', 'composições novas')} e ${n(r.composicoes_atualizadas, 'atualizada', 'atualizadas')} na base ${base}, com ${n(r.itens, 'item', 'itens')}</li>

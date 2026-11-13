@@ -1803,9 +1803,9 @@ html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
 .imp-arquivo span { font-size: 13px; color: var(--tinta-3); }
 .imp-obrig { color: var(--perigo, #C0392B); }
 .imp-mapa { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 8px 0 14px; }
-.imp-previa { max-height: 380px; border: 1px solid var(--linha); border-radius: var(--raio); }
+.importar .tabela-rola.imp-previa { max-height: 380px; overflow: auto; border: 1px solid var(--linha); border-radius: var(--raio); }
 .imp-previa table { font-size: 12.5px; }
-.imp-previa th { white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+.imp-previa th { white-space: nowrap; position: sticky; top: 0; z-index: 1; background: var(--superficie-2); }
 .imp-previa th span { display: block; font-size: 11px; color: var(--acao-forte, var(--acao)); font-weight: 700; }
 .imp-previa td { white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; }
 .imp-previa .imp-usada { background: color-mix(in srgb, var(--acao) 10%, transparent); }
@@ -1814,3 +1814,6 @@ html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
 .imp-resultado ul { margin: 8px 0 12px; padding-left: 18px; display: grid; gap: 4px; }
 .imp-alerta { color: var(--c-mat); }
 .imp-dif { font-size: 12.5px; color: var(--tinta-2); }
+/* prévia da importação: o cabeçalho gruda no topo da própria caixa (não no topo da página) e é opaco */
+.importar .imp-previa table thead th { position: sticky; top: 0; z-index: 2; background: var(--superficie-2); }
+.importar .imp-previa table thead th.imp-usada { background: color-mix(in srgb, var(--acao) 16%, var(--superficie-2)); }

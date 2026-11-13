@@ -149,6 +149,7 @@ def normal(t):
 
 # palavras de cabeçalho de cada papel, da mais específica para a mais genérica
 PALAVRAS = [
+    ('data', ['data do preco', 'data da cotacao', 'data base', 'data de referencia', 'data']),
     ('total', ['preco total', 'valor total', 'custo total', 'total']),
     ('comp_codigo', ['codigo do servico', 'cod servico', 'codigo servico', 'codigo da composicao', 'cod composicao', 'codigo composicao']),
     ('comp_descricao', ['descricao do servico', 'descricao da composicao', 'servico', 'composicao']),
@@ -255,14 +256,73 @@ def codigo(v):
     return re.sub(r'\s+', '', t)[:40]
 
 
+def data_iso(v, padrao=''):
+    """12/02/2025, 2025-02-12, 12-02-25 ou data do Excel -> '2025-02-12' (ou o padrão)."""
+    t = texto(v)
+    m = re.match(r'(\d{4})-(\d{2})-(\d{2})', t)
+    if m:
+        return m.group(0)
+    m = re.match(r'(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{2,4})', t)
+    if m:
+        d, mes, a = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        a = a + 2000 if a < 100 else a
+        if 1 <= d <= 31 and 1 <= mes <= 12:
+            return f'{a:04d}-{mes:02d}-{d:02d}'
+    return padrao
+
+
+def detalhe(descricao):
+    """Parte que distingue variações do mesmo insumo. O SIENGE usa o mesmo código para "Cimento / Detalhe: CP-II F-40"
+    e "Cimento / Detalhe: CP-V ARI"; o detalhe vira parte do código de origem."""
+    d = normal(descricao)
+    m = re.search(r'detalhe\s*:\s*(.+)$', d)
+    return re.sub(r'[^a-z0-9]+', ' ', (m.group(1) if m else d)).strip()[:60]
+
+
+def chave_origem(cod, descricao, repetidos):
+    """Código de origem gravado: o código, ou código#detalhe quando o código se repete com descrições diferentes."""
+    return f'{cod}#{detalhe(descricao)}' if cod and cod in repetidos else cod
+
+
+def achar_insumo(ins_ja, cod, descricao):
+    """Insumo da base pelo código do item: primeiro código + detalhe, depois só o código, depois a primeira variação."""
+    if not cod:
+        return None
+    k = f'{cod}#{detalhe(descricao)}'
+    if k in ins_ja:
+        return ins_ja[k]
+    if cod in ins_ja:
+        return ins_ja[cod]
+    variacoes = sorted(v for c, v in ins_ja.items() if c.startswith(cod + '#'))
+    return variacoes[0] if variacoes else None
+
+
+MAO_DE_OBRA_PALAVRAS = ('servente', 'pedreiro', 'carpinteiro', 'armador', 'pintor', 'eletricista', 'encanador', 'bombeiro hidraulico',
+                        'ajudante', 'auxiliar', 'encarregado', 'mestre de obra', 'operador', 'motorista', 'soldador', 'serralheiro',
+                        'azulejista', 'gesseiro', 'vidraceiro', 'montador', 'estagiario', 'engenheiro', 'tecnico', 'apontador',
+                        'almoxarife', 'vigia', 'mao de obra', 'oficial', 'marceneiro', 'jardineiro', 'calceteiro', 'impermeabilizador')
+EQUIPAMENTO_PALAVRAS = ('betoneira', 'caminhao', 'retroescavadeira', 'escavadeira', 'guindaste', 'grua', 'vibrador', 'compactador',
+                        'rolo compactador', 'motoniveladora', 'trator', 'gerador', 'bomba', 'andaime', 'aluguel', 'locacao', 'martelete',
+                        'serra circular', 'furadeira', 'equipamento', 'maquina', 'perfuratriz', 'pa carregadeira')
+
+
 def tipo_insumo(v, descricao=''):
-    t = normal(v) + ' ' + normal(descricao)[:0]
-    if any(p in t for p in ('mao de obra', 'pessoal', 'salario', 'mo ')) or t.strip() in ('mo', 'm.o.', 'mao'):
+    """Tipo pela coluna do arquivo; sem ela, pela descrição (servente, pedreiro... = mão de obra; betoneira... = equipamento)."""
+    t = normal(v)
+    if t:
+        if any(p in t for p in ('mao de obra', 'pessoal', 'salario')) or t in ('mo', 'm.o.', 'mao'):
+            return 'MAO_DE_OBRA'
+        if 'equip' in t or 'maquin' in t:
+            return 'EQUIPAMENTO'
+        if 'terceir' in t or 'servic' in t or 'empreit' in t:
+            return 'SERVICO_TERCEIRO'
+        if 'materia' in t or 'insumo' in t:
+            return 'MATERIAL'
+    d = ' ' + re.sub(r'[^a-z0-9]+', ' ', normal(descricao)) + ' '
+    if d.strip() and ('mao de obra' in d or re.match(r'\s*(' + '|'.join(MAO_DE_OBRA_PALAVRAS) + r')\b', d)):
         return 'MAO_DE_OBRA'
-    if 'equip' in t or 'maquin' in t or 'ferrament' in t:
+    if any(f' {p}' in d for p in EQUIPAMENTO_PALAVRAS):
         return 'EQUIPAMENTO'
-    if 'terceir' in t or 'servic' in t or 'empreit' in t:
-        return 'SERVICO_TERCEIRO'
     return 'MATERIAL'
 
 
@@ -339,26 +399,36 @@ def importar_insumos(d: Pedido):
     with proprias.gravando() as c:
         base_id, nome = _base_destino(c, d)
         ja = _existentes(c, 'insumo_proprio', base_id)
-        novos, atualizar, ignoradas, vistos = [], [], [], set()
+        novos, atualizar, ignoradas, vistos, linhas = [], [], [], set(), []
         for k, r in _linhas(d):
             desc, cod = texto(r.get('descricao'))[:400], codigo(r.get('codigo'))
             if not desc:
                 ignoradas.append(k + 1); continue
             if not cod and not texto(r.get('unidade')) and numero(r.get('preco')) is None:
                 continue  # só texto: título, subtotal ou cabeçalho de página
-            if cod and cod in vistos:
-                continue
-            vistos.add(cod)
-            x = {'descricao': desc, 'unidade': texto(r.get('unidade'))[:20] or 'un', 'tipo': tipo_insumo(r.get('tipo')),
-                 'preco': numero(r.get('preco')), 'data_preco': d.data_preco, 'fonte': d.fonte, 'codigo_origem': cod}
-            if cod and cod in ja:
-                atualizar.append(x | {'id': ja[cod]})
+            linhas.append((cod, desc, r))
+        # códigos que se repetem com descrições diferentes (variações do mesmo insumo, como no SIENGE)
+        descs = {}
+        for cod, desc, _ in linhas:
+            if cod:
+                descs.setdefault(cod, set()).add(detalhe(desc))
+        repetidos = {c for c, v in descs.items() if len(v) > 1}
+        for cod, desc, r in linhas:
+            chave = chave_origem(cod, desc, repetidos)
+            if chave and chave in vistos:
+                continue  # a mesma linha repetida no arquivo
+            vistos.add(chave)
+            x = {'descricao': desc, 'unidade': texto(r.get('unidade'))[:20] or 'un', 'tipo': tipo_insumo(r.get('tipo'), desc),
+                 'preco': numero(r.get('preco')), 'data_preco': data_iso(r.get('data'), d.data_preco), 'fonte': d.fonte, 'codigo_origem': chave}
+            if chave and chave in ja:
+                atualizar.append(x | {'id': ja[chave]})
             else:
                 novos.append(x)
         if not d.simular:
             _gravar_insumos(c, base_id, novos, atualizar, agora)
     return {'base_id': base_id, 'base': nome, 'novos': len(novos), 'atualizados': len(atualizar),
-            'sem_preco': sum(1 for x in novos + atualizar if x['preco'] is None), 'ignoradas': ignoradas[:50], 'simulado': d.simular}
+            'sem_preco': sum(1 for x in novos + atualizar if x['preco'] is None), 'ignoradas': ignoradas[:50], 'simulado': d.simular,
+            'codigos_com_variacoes': len(repetidos), 'variacoes': sum(1 for cod, _, _ in linhas if cod in repetidos)}
 
 
 # ---------- composições ----------
@@ -438,8 +508,9 @@ def importar_composicoes(d: Pedido):
                     itens.append((ids[cc], n, 'servico', proprias.BASE, proprias.cod_comp(ids[cod]), it['coef'], it['descricao'], it['unidade'])); continue
                 if cod and cod in comps_ja and cod != cc:
                     itens.append((ids[cc], n, 'servico', proprias.BASE, proprias.cod_comp(comps_ja[cod]), it['coef'], it['descricao'], it['unidade'])); continue
-                if cod and cod in ins_ja:
-                    itens.append((ids[cc], n, 'insumo', proprias.BASE, proprias.cod_ins(ins_ja[cod]), it['coef'], it['descricao'], it['unidade'])); continue
+                iid = achar_insumo(ins_ja, cod, it['descricao'])
+                if iid:
+                    itens.append((ids[cc], n, 'insumo', proprias.BASE, proprias.cod_ins(iid), it['coef'], it['descricao'], it['unidade'])); continue
                 achado = None
                 for b in d.oficiais if cod else []:
                     for t in ('insumo', 'servico'):
@@ -451,11 +522,11 @@ def importar_composicoes(d: Pedido):
                 if achado:
                     oficiais += 1
                     itens.append((ids[cc], n, achado[0], achado[1], achado[2], it['coef'], it['descricao'], it['unidade'])); continue
-                chave = cod or (normal(it['descricao']) + '|' + it['unidade'])
+                chave = f"{cod}#{detalhe(it['descricao'])}" if cod else (normal(it['descricao']) + '|' + it['unidade'])
                 if chave not in criados:
                     criados[chave] = prox_ins + len(ins_novos)
-                    ins_novos.append({'id': criados[chave], 'descricao': it['descricao'] or cod, 'unidade': it['unidade'], 'tipo': tipo_insumo(it['tipo']),
-                                      'preco': it['preco'], 'data_preco': d.data_preco, 'fonte': d.fonte, 'codigo_origem': cod})
+                    ins_novos.append({'id': criados[chave], 'descricao': it['descricao'] or cod, 'unidade': it['unidade'], 'tipo': tipo_insumo(it['tipo'], it['descricao']),
+                                      'preco': it['preco'], 'data_preco': d.data_preco, 'fonte': d.fonte, 'codigo_origem': chave if cod else ''})
                 itens.append((ids[cc], n, 'insumo', proprias.BASE, proprias.cod_ins(criados[chave]), it['coef'], it['descricao'], it['unidade']))
         resumo = {'base_id': base_id, 'base': nome, 'composicoes_novas': len(novas), 'composicoes_atualizadas': len(atualizadas),
                   'itens': len(itens), 'insumos_criados': len(ins_novos), 'itens_de_base_oficial': oficiais, 'simulado': d.simular,
@@ -552,8 +623,9 @@ def importar_orcamento(d: PedidoOrcamento):
             cod = it['codigo']
             if cod and cod in comps_ja:
                 it['ref'] = ('servico', proprias.BASE, proprias.cod_comp(comps_ja[cod])); contagem['composicao_da_base'] += 1; continue
-            if cod and cod in ins_ja:
-                it['ref'] = ('insumo', proprias.BASE, proprias.cod_ins(ins_ja[cod])); contagem['insumo_da_base'] += 1; continue
+            iid = achar_insumo(ins_ja, cod, it['descricao'])
+            if iid:
+                it['ref'] = ('insumo', proprias.BASE, proprias.cod_ins(iid)); contagem['insumo_da_base'] += 1; continue
             achado = None
             for bo in d.oficiais if cod else []:
                 for t in ('servico', 'insumo'):
