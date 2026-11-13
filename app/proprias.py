@@ -8,6 +8,7 @@ Códigos: composição própria P0001, P0002...; insumo próprio I0001, I0002...
 """
 import contextvars
 import re
+import threading
 import unicodedata
 from contextlib import contextmanager
 from typing import Literal, Optional
@@ -54,12 +55,72 @@ def ler_refs(refs: str):
     return dict(x.split(':', 1) for x in (refs or '').split(',') if ':' in x)
 
 
+# ---------- acervo em memória ----------
+# As composições e os insumos próprios mudam pouco e são lidos o tempo todo (a busca os consulta a cada letra digitada,
+# o orçamento a cada cálculo). Em vez de ir ao banco a cada leitura, o servidor guarda uma cópia e a descarta sempre
+# que algo é gravado (`gravando`). Junto ficam os cálculos já feitos para cada combinação de meses.
+_ACERVO = None
+_TRAVA = threading.RLock()
+NOME_PADRAO = 'Base própria'
+
+
+def acervo():
+    global _ACERVO
+    a = _ACERVO
+    if a is None:
+        with _TRAVA:
+            if _ACERVO is None:
+                with orc() as c:
+                    comps = {r['id']: dict(r) for r in c.execute('SELECT * FROM composicao_propria').fetchall()}
+                    itens = {}
+                    for r in c.execute('SELECT * FROM composicao_propria_item ORDER BY composicao_id, ordem, id').fetchall():
+                        itens.setdefault(r['composicao_id'], []).append(dict(r))
+                    insumos = {r['id']: dict(r) for r in c.execute('SELECT * FROM insumo_proprio').fetchall()}
+                    n = c.execute("SELECT valor FROM config WHERE chave = 'nome_base_propria'").fetchone()
+                _ACERVO = {'comps': comps, 'itens': itens, 'insumos': insumos, 'calcs': {},
+                           'nome': (n['valor'] if n and n['valor'] else NOME_PADRAO)}
+            a = _ACERVO
+    return a
+
+
+def invalidar():
+    global _ACERVO
+    _ACERVO = None
+
+
+@contextmanager
+def gravando():
+    """Conexão para gravar: ao terminar (com sucesso ou não), a cópia em memória é descartada."""
+    try:
+        with orc() as c:
+            yield c
+    finally:
+        invalidar()
+
+
+def calculo_guardado(refs: dict):
+    """Cálculo reaproveitado entre pedidos, para a mesma combinação de meses, enquanto nada for gravado."""
+    a = acervo()
+    k = tuple(sorted((refs or {}).items()))
+    calc = a['calcs'].get(k)
+    if calc is None:
+        if len(a['calcs']) > 24:
+            a['calcs'].clear()
+        calc = a['calcs'][k] = Calculo(None, dict(refs or {}), a)
+    return calc
+
+
 # ---------- preço de cada item ----------
 class Calculo:
-    """Calcula composições próprias com a data-base de cada base. Guarda o que já calculou e impede ciclos."""
+    """Calcula composições próprias com a data-base de cada base. Guarda o que já calculou e impede ciclos.
+    Com conexão `c`, lê o banco na hora (usado logo depois de gravar); sem ela, lê o acervo em memória."""
 
-    def __init__(self, c, refs: dict):
+    def __init__(self, c, refs: dict, dados=None):
         self.c, self.refs, self.memo, self.pilha, self.memo_oficial = c, refs, {}, set(), {}
+        self.dados = dados if c is None else None
+        if c is None and dados is None:
+            self.dados = acervo()
+        self.trava = threading.RLock()
         with orc_mod._base_conn() as b:
             self.ultimos = orc_mod.ultimo_por_base(b)
 
@@ -93,7 +154,8 @@ class Calculo:
                 'secao': secao, 'div': div, 'tem_composicao': bool(r and r['tem_composicao']) if tipo == 'servico' else False}
 
     def insumo_proprio(self, codigo):
-        i = self.c.execute('SELECT * FROM insumo_proprio WHERE id = ?', (id_de(codigo, 'I'),)).fetchone()
+        iid = id_de(codigo, 'I')
+        i = self.dados['insumos'].get(iid) if self.c is None else self.c.execute('SELECT * FROM insumo_proprio WHERE id = ?', (iid,)).fetchone()
         if not i:
             return None
         secao = i['tipo'] if i['tipo'] in TIPOS_INSUMO else 'MATERIAL'
@@ -103,23 +165,32 @@ class Calculo:
     def composicao(self, codigo):
         """Composição própria inteira: itens com preço, total e divisão do custo."""
         cid = id_de(codigo, 'P')
-        if cid in self.memo:
-            return self.memo[cid]
-        if cid in self.pilha:
-            raise HTTPException(422, f'{cod_comp(cid)} usa a si mesma (direta ou indiretamente).')
-        cp = self.c.execute('SELECT * FROM composicao_propria WHERE id = ?', (cid,)).fetchone()
-        if not cp:
-            raise HTTPException(404, f'A composição própria {codigo} não existe.')
-        self.pilha.add(cid)
-        try:
-            return self._montar(cid, cp)
-        finally:
-            self.pilha.discard(cid)
+        r = self.memo.get(cid)
+        if r is not None:
+            return r
+        with self.trava:  # o mesmo cálculo pode servir a vários pedidos ao mesmo tempo
+            if cid in self.memo:
+                return self.memo[cid]
+            if cid in self.pilha:
+                raise HTTPException(422, f'{cod_comp(cid)} usa a si mesma (direta ou indiretamente).')
+            cp = self.dados['comps'].get(cid) if self.c is None else self.c.execute('SELECT * FROM composicao_propria WHERE id = ?', (cid,)).fetchone()
+            if not cp:
+                raise HTTPException(404, f'A composição própria {codigo} não existe.')
+            self.pilha.add(cid)
+            try:
+                return self._montar(cid, cp)
+            finally:
+                self.pilha.discard(cid)
+
+    def _itens(self, cid):
+        if self.c is None:
+            return self.dados['itens'].get(cid, [])
+        return self.c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall()
 
     def _montar(self, cid, cp):
         itens, total, div, faltam = [], 0.0, {'mo': 0.0, 'mat': 0.0, 'equip': 0.0, 'terc': 0.0}, 0
         compl = 0.0  # encargos complementares embutidos nos itens oficiais
-        for it in self.c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall():
+        for it in self._itens(cid):
             if it['base'] == BASE:
                 if it['tipo'] == 'servico':
                     sub = self.composicao(it['codigo'])
@@ -167,16 +238,15 @@ def datas_usadas(calc, comp):
 
 # ---------- usado pela consulta e pelo orçamento ----------
 def ficha_composicao(codigo, refs: str = ''):
-    with orc() as c:
-        calc = Calculo(c, ler_refs(refs))
-        comp = calc.composicao(codigo)
-        comp['datas'] = datas_usadas(calc, comp)
-        if comp['origem_base'] in BASES_OFICIAIS and comp['origem_codigo']:
-            o = calc.oficial('servico', comp['origem_base'], comp['origem_codigo'])
-            comp['origem'] = o and {'base': comp['origem_base'], 'codigo': o['codigo'], 'descricao': o['descricao'], 'custo': o['preco'], 'referencia': o['referencia']}
-        comp['usada_em'] = len(c.execute("SELECT DISTINCT composicao_id FROM composicao_propria_item WHERE base = ? AND tipo = 'servico' AND codigo = ?",
-                                         (BASE, comp['codigo'])).fetchall())
-        return comp
+    calc = calculo_guardado(ler_refs(refs))
+    comp = dict(calc.composicao(codigo))  # cópia: o cálculo guardado não é alterado
+    comp['datas'] = datas_usadas(calc, comp)
+    if comp['origem_base'] in BASES_OFICIAIS and comp['origem_codigo']:
+        o = calc.oficial('servico', comp['origem_base'], comp['origem_codigo'])
+        comp['origem'] = o and {'base': comp['origem_base'], 'codigo': o['codigo'], 'descricao': o['descricao'], 'custo': o['preco'], 'referencia': o['referencia']}
+    comp['usada_em'] = sum(1 for itens in acervo()['itens'].values()
+                           if any(it['base'] == BASE and it['tipo'] == 'servico' and it['codigo'] == comp['codigo'] for it in itens))
+    return comp
 
 
 def ficha_insumo(codigo):
@@ -221,14 +291,7 @@ def _refs_do_mes(ref):
 
 @contextmanager
 def _calculo(ref):
-    s = _SESSAO.get()
-    if s is None:
-        with orc() as c:
-            yield Calculo(c, _refs_do_mes(ref))
-        return
-    if ref not in s['calcs']:
-        s['calcs'][ref] = Calculo(s['c'], _refs_do_mes(ref))
-    yield s['calcs'][ref]
+    yield calculo_guardado(_refs_do_mes(ref))
 
 
 def preco(tipo, codigo, ref=None):
@@ -266,10 +329,13 @@ def buscar(q: str, tipo: str, refs: str, limite: int = 40):
     """Itens próprios que batem com o texto (todas as palavras, sem acento), no formato dos resultados da busca."""
     termos = [t for t in re.findall(r'[a-z0-9]+', sem_acento(q))]
     out = []
-    with orc() as c:
-        calc = Calculo(c, ler_refs(refs))
+    a = acervo()
+    if not a['comps'] and not a['insumos']:
+        return out
+    if True:
+        calc = calculo_guardado(ler_refs(refs))
         if tipo in ('todos', 'servico'):
-            for cp in c.execute('SELECT id, descricao, unidade, grupo FROM composicao_propria ORDER BY descricao').fetchall():
+            for cp in sorted(a['comps'].values(), key=lambda x: x['descricao']):
                 alvo = sem_acento(f"{cp['descricao']} {cod_comp(cp['id'])}")
                 if all(t in alvo for t in termos):
                     try:
@@ -282,7 +348,7 @@ def buscar(q: str, tipo: str, refs: str, limite: int = 40):
                                 'tem_composicao': 1, 'usos': 0, 'pct_mo': d['mo'], 'pct_mat': d['mat'], 'pct_equip': d['equip'], 'pct_terc': d['terc'],
                                 'referencia': None, 'trecho': None})
         if tipo in ('todos', 'insumo'):
-            for i in c.execute('SELECT * FROM insumo_proprio ORDER BY descricao').fetchall():
+            for i in sorted(a['insumos'].values(), key=lambda x: x['descricao']):
                 if all(t in sem_acento(f"{i['descricao']} {cod_ins(i['id'])}") for t in termos):
                     out.append({'tipo': 'insumo', 'base': BASE, 'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'],
                                 'preco': i['preco'], 'categoria': i['tipo'], 'grupo': 'Insumos próprios', 'tem_composicao': 0, 'usos': 0,
@@ -336,10 +402,11 @@ class EdicaoItem(BaseModel):
 
 @router.get('/proprias')
 def listar(refs: str = ''):
-    with orc() as c:
-        calc = Calculo(c, ler_refs(refs))
+    a = acervo()
+    if True:
+        calc = calculo_guardado(ler_refs(refs))
         comps = []
-        for cp in c.execute('SELECT * FROM composicao_propria ORDER BY atualizado_em DESC, id DESC').fetchall():
+        for cp in sorted(a['comps'].values(), key=lambda x: (x['atualizado_em'] or '', x['id']), reverse=True):
             try:
                 k = calc.composicao(cod_comp(cp['id']))
                 total, n, faltam = k['custo_total'], len(k['itens']), k['itens_sem_preco']
@@ -350,20 +417,13 @@ def listar(refs: str = ''):
                           'origem_base': cp['origem_base'] or '', 'origem_codigo': cp['origem_codigo'] or ''})
         ins = [{'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'tipo': i['tipo'], 'preco': i['preco'],
                 'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'atualizado_em': i['atualizado_em']}
-               for i in c.execute('SELECT * FROM insumo_proprio ORDER BY descricao').fetchall()]
-        return {'composicoes': comps, 'insumos': ins, 'nome_base': nome_base(c)}
+               for i in sorted(a['insumos'].values(), key=lambda x: x['descricao'])]
+        return {'composicoes': comps, 'insumos': ins, 'nome_base': a['nome']}
 
 
 # ---------- nome da base própria (a empresa escolhe como chamar) ----------
-NOME_PADRAO = 'Base própria'
-
-
 def nome_base(c=None):
-    if c is None:
-        with orc() as c2:
-            return nome_base(c2)
-    r = c.execute("SELECT valor FROM config WHERE chave = 'nome_base_propria'").fetchone()
-    return (r['valor'] if r and r['valor'] else NOME_PADRAO)
+    return acervo()['nome']
 
 
 class NomeBase(BaseModel):
@@ -377,7 +437,7 @@ def renomear_base(d: NomeBase):
         raise HTTPException(422, 'Dê um nome à base.')
     if nome.upper() in BASES_OFICIAIS:
         raise HTTPException(422, f'{nome.upper()} é o nome de uma base oficial. Escolha outro para a sua.')
-    with orc() as c:
+    with gravando() as c:
         if c.execute("SELECT 1 FROM config WHERE chave = 'nome_base_propria'").fetchone():
             c.execute("UPDATE config SET valor = ? WHERE chave = 'nome_base_propria'", (nome,))
         else:
@@ -387,7 +447,7 @@ def renomear_base(d: NomeBase):
 
 @router.post('/proprias/insumos', status_code=201)
 def criar_insumo(d: NovoInsumo):
-    with orc() as c:
+    with gravando() as c:
         cur = c.execute('INSERT INTO insumo_proprio (descricao, unidade, tipo, preco, data_preco, fonte, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?)',
                         (d.descricao.strip(), d.unidade.strip(), d.tipo, d.preco, d.data_preco, d.fonte.strip(), orc_mod.agora(), orc_mod.agora()))
         return ficha_insumo_c(c, cur.lastrowid)
@@ -403,7 +463,7 @@ def ficha_insumo_c(c, iid):
 def editar_insumo(codigo: str, d: EdicaoInsumo):
     iid = id_de(codigo, 'I')
     campos = {k: (v.strip() if isinstance(v, str) else v) for k, v in d.model_dump(exclude_unset=True).items()}
-    with orc() as c:
+    with gravando() as c:
         if not c.execute('SELECT 1 FROM insumo_proprio WHERE id = ?', (iid,)).fetchone():
             raise HTTPException(404, f'O insumo próprio {codigo} não existe.')
         if campos:
@@ -419,7 +479,7 @@ def _quem_usa(c, base_tipo, codigo):
 @router.delete('/proprias/insumos/{codigo}')
 def excluir_insumo(codigo: str):
     iid = id_de(codigo, 'I')
-    with orc() as c:
+    with gravando() as c:
         usam = _quem_usa(c, 'insumo', cod_ins(iid))
         if usam:
             raise HTTPException(409, f'O insumo {cod_ins(iid)} é usado em {", ".join(usam)}. Tire-o dessas composições antes de excluir.')
@@ -429,7 +489,7 @@ def excluir_insumo(codigo: str):
 
 @router.post('/proprias/composicoes', status_code=201)
 def criar_composicao(d: NovaComposicao, refs: str = ''):
-    with orc() as c:
+    with gravando() as c:
         cur = c.execute('INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, criado_em, atualizado_em) VALUES (?,?,?,?,?,?)',
                         (d.descricao.strip(), d.unidade.strip(), d.grupo.strip(), d.observacoes.strip(), orc_mod.agora(), orc_mod.agora()))
         novo = cur.lastrowid
@@ -445,7 +505,7 @@ def obter_composicao(codigo: str, refs: str = ''):
 def editar_composicao(codigo: str, d: EdicaoComposicao, refs: str = ''):
     cid = id_de(codigo, 'P')
     campos = {k: v.strip() for k, v in d.model_dump(exclude_unset=True).items() if v is not None}
-    with orc() as c:
+    with gravando() as c:
         if not c.execute('SELECT 1 FROM composicao_propria WHERE id = ?', (cid,)).fetchone():
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
         if campos:
@@ -456,7 +516,7 @@ def editar_composicao(codigo: str, d: EdicaoComposicao, refs: str = ''):
 @router.delete('/proprias/composicoes/{codigo}')
 def excluir_composicao(codigo: str):
     cid = id_de(codigo, 'P')
-    with orc() as c:
+    with gravando() as c:
         usam = [x for x in _quem_usa(c, 'servico', cod_comp(cid)) if x != cod_comp(cid)]
         if usam:
             raise HTTPException(409, f'{cod_comp(cid)} é usada em {", ".join(usam)}. Tire-a dessas composições antes de excluir.')
@@ -472,7 +532,7 @@ def _tocar(c, cid):
 @router.post('/proprias/composicoes/{codigo}/itens', status_code=201)
 def novo_item(codigo: str, d: NovoItem, refs: str = ''):
     cid = id_de(codigo, 'P')
-    with orc() as c:
+    with gravando() as c:
         if not c.execute('SELECT 1 FROM composicao_propria WHERE id = ?', (cid,)).fetchone():
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
         calc = Calculo(c, ler_refs(refs))
@@ -520,7 +580,7 @@ def _item(c, iid):
 
 @router.patch('/proprias/itens/{iid}')
 def editar_item(iid: int, d: EdicaoItem, refs: str = ''):
-    with orc() as c:
+    with gravando() as c:
         it = _item(c, iid)
         c.execute('UPDATE composicao_propria_item SET qtd = ? WHERE id = ?', (d.qtd, iid)); _tocar(c, it['composicao_id'])
     return ficha_composicao(cod_comp(it['composicao_id']), refs)
@@ -528,7 +588,7 @@ def editar_item(iid: int, d: EdicaoItem, refs: str = ''):
 
 @router.delete('/proprias/itens/{iid}')
 def excluir_item(iid: int, refs: str = ''):
-    with orc() as c:
+    with gravando() as c:
         it = _item(c, iid)
         c.execute('DELETE FROM composicao_propria_item WHERE id = ?', (iid,)); _tocar(c, it['composicao_id'])
     r = ficha_composicao(cod_comp(it['composicao_id']), refs)
@@ -538,7 +598,7 @@ def excluir_item(iid: int, refs: str = ''):
 
 @router.post('/proprias/itens/{iid}/mover')
 def mover_item(iid: int, direcao: Literal['cima', 'baixo'], refs: str = ''):
-    with orc() as c:
+    with gravando() as c:
         it = _item(c, iid)
         ids = [r['id'] for r in c.execute('SELECT id FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (it['composicao_id'],)).fetchall()]
         k = ids.index(iid); j = k - 1 if direcao == 'cima' else k + 1
@@ -567,7 +627,7 @@ def copiar_oficial(base: str, codigo: str, ref: Optional[str] = None, refs: str 
             WHERE composicao_base = ? AND composicao = ? AND referencia = ? AND codigo != '' AND qtd IS NOT NULL ORDER BY ordem''', (base, s['codigo'], mes)).fetchall()
     # no modelo DNIT (equipe com produção), equipamento e mão de obra viram coeficiente por unidade (qtd ÷ produção)
     prod = comp['prod_equipe'] if comp['modelo'] == 'DNIT' and comp['prod_equipe'] else None
-    with orc() as c:
+    with gravando() as c:
         cur = c.execute('''INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, origem_base, origem_codigo, criado_em, atualizado_em)
             VALUES (?,?,?,?,?,?,?,?)''', (f"{s['descricao']} (ajustada)", s['unidade'], s['grupo'] or '',
                                          f'Criada a partir de {s["codigo"]}/{base} de {mes}.' + (' Sem o FIC (fator de influência de chuvas), que o DNIT calcula sobre a execução e não é um item.' if base == 'SICRO' else ''),
@@ -587,7 +647,7 @@ def copiar_oficial(base: str, codigo: str, ref: Optional[str] = None, refs: str 
 @router.post('/proprias/composicoes/{codigo}/duplicar', status_code=201)
 def duplicar(codigo: str, refs: str = ''):
     cid = id_de(codigo, 'P')
-    with orc() as c:
+    with gravando() as c:
         cp = c.execute('SELECT * FROM composicao_propria WHERE id = ?', (cid,)).fetchone()
         if not cp:
             raise HTTPException(404, f'A composição própria {codigo} não existe.')

@@ -7,6 +7,9 @@ Cada consulta trabalha com UM mês (parâmetro `ref`, padrão: o mais recente). 
 diferentes só aparecem juntos em /api/comparativo.
 """
 import base64
+from functools import lru_cache
+import threading
+from collections import OrderedDict
 import hashlib
 import hmac
 import io
@@ -76,8 +79,42 @@ async def conferir_versao(request: Request, seguir):
     Sem isso, depois de uma atualização ele podia misturar arquivo novo com antigo."""
     resposta = await seguir(request)
     if request.url.path.startswith('/static/') and 'cache-control' not in resposta.headers:
-        resposta.headers['Cache-Control'] = 'no-cache'
+        # endereço com a marca da versão (?v=...) nunca muda de conteúdo: o navegador guarda por um ano e nem pergunta.
+        # Sem a marca (ícones, acesso direto), continua conferindo.
+        com_versao = request.query_params.get('v') == VERSAO and resposta.status_code == 200
+        resposta.headers['Cache-Control'] = 'public, max-age=31536000, immutable' if com_versao else 'no-cache'
     return resposta
+
+
+# ---------- respostas guardadas ----------
+# A base de preços não muda com o servidor no ar: a mesma pergunta tem sempre a mesma resposta. As consultas que só
+# dependem dela ficam guardadas em memória (as mais recentes), e a segunda vez sai sem tocar no banco.
+GUARDAVEIS = re.compile(r'^/api/(composicao/(ORSE|SINAPI|SICRO)/|insumo/(ORSE|SINAPI|SICRO)/|encargos|comparativo|entrada)', re.I)
+_GUARDADAS, _GUARDADAS_MAX, _GUARDADAS_TRAVA = OrderedDict(), 400, threading.Lock()
+
+
+@app.middleware('http')
+async def respostas_guardadas(request: Request, seguir):
+    if request.method != 'GET' or not GUARDAVEIS.match(request.url.path):
+        return await seguir(request)
+    chave = request.url.path + '?' + request.url.query
+    with _GUARDADAS_TRAVA:
+        achada = _GUARDADAS.get(chave)
+        if achada:
+            _GUARDADAS.move_to_end(chave)
+    if achada:
+        return Response(achada[0], media_type=achada[1])
+    resposta = await seguir(request)
+    if resposta.status_code != 200:
+        return resposta
+    corpo = b''.join([parte async for parte in resposta.body_iterator])
+    tipo = resposta.headers.get('content-type', 'application/json')
+    if len(corpo) < 400_000:
+        with _GUARDADAS_TRAVA:
+            _GUARDADAS[chave] = (corpo, tipo)
+            while len(_GUARDADAS) > _GUARDADAS_MAX:
+                _GUARDADAS.popitem(last=False)
+    return Response(corpo, media_type=tipo)
 
 
 @app.middleware('http')
@@ -275,6 +312,11 @@ def montar_fts(q):
 @app.get('/api/referencia')
 def api_referencia(ref: Optional[str] = None, refs: str = '', bases: str = ''):
     """Meses de cada base e o tamanho de cada uma no mês escolhido. `ref` (mês principal: ORSE/SINAPI) segue valendo."""
+    return _referencia(ref, refs, bases) | {'base_propria': proprias.nome_base()}
+
+
+@lru_cache(maxsize=64)
+def _referencia(ref, refs, bases):
     with conn() as c:
         todas_bases = ler_refs(c, refs, ref)
         escolha = ler_refs(c, refs, ref, bases)
@@ -287,8 +329,7 @@ def api_referencia(ref: Optional[str] = None, refs: str = '', bases: str = ''):
         bases = {b: {'meses': [x for x in todas if x['id'] in meses], 'atual': meses[-1], 'fontes': {m: fonte_de(c, b, m) for m in meses}}
                  for b, meses in sorted(meses_da_base(c).items(), key=lambda kv: ORDEM_BASES.index(kv[0]) if kv[0] in ORDEM_BASES else 99)}
         return r | {'totais': [dict(t) for t in tot], 'referencias': todas, 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
-                    'encargos_detalhados': sorted(tem_enc), 'bases': bases, 'refs': todas_bases, 'ativas': list(escolha),
-                    'base_propria': proprias.nome_base()}
+                    'encargos_detalhados': sorted(tem_enc), 'bases': bases, 'refs': todas_bases, 'ativas': list(escolha)}
 
 
 @app.get('/api/busca')
