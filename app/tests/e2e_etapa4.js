@@ -15,7 +15,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !m.text().includes('404') && errs.push(m.text()));
-  await p.goto(U); await p.waitForSelector('#dt-campo');
+  await p.goto(U + '#/'); await p.waitForSelector('#dt-campo');
 
   // ---------- tela inicial limpa ----------
   ok(!(await p.isVisible('.area')) && !(await p.isVisible('#inicio')), 'Tela inicial: nada aparece abaixo dos cartões');
@@ -116,7 +116,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   }
 
   // ---------- tela de apresentação ----------
-  await p.goto(U); await p.waitForSelector('.conheca'); await p.click('.conheca'); await p.waitForSelector('.ap-heroi h1');
+  await p.goto(U + '#/'); await p.reload(); await p.waitForSelector('.conheca'); await p.click('.conheca'); await p.waitForSelector('.ap-heroi h1');
   ok(!(await p.isVisible('#pesquisa')) && norm(await p.textContent('.ap-numeros')).includes('composições'), 'Link da tela inicial abre a apresentação: ' + norm(await p.textContent('.ap-numeros')));
   await p.waitForSelector('.ap-res.escolhido', { timeout: 15000 });
   const reais = await p.$$eval('.ap-res', (r) => r.map((x) => x.querySelector('.cb-num').textContent + ' ' + x.querySelector('.res-preco').textContent.replace(/\s+/g, ' ')));

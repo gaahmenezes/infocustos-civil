@@ -3,7 +3,7 @@ const { chromium } = require('playwright'); const OUT = process.argv[2], U = 'ht
 let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); c ? ok++ : falha++; };
 const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim();
 (async () => { const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1366, height: 900 } }); const erros = []; p.on('pageerror', (e) => erros.push(e.message));
-  await p.goto(U + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForSelector('#dt-campo');
+  await p.goto(U + '/#/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForSelector('#dt-campo');
   v((await txt(p, '#dt-campo')).replace(/ /g, '') === 'ORSEago/2026SINAPIset/2026SICROjul/2026', 'Campo mostra uma etiqueta por base com o mês: ' + await txt(p, '#dt-campo'));
   await p.fill('#q', 'concreto'); await p.waitForSelector('.res'); await p.waitForTimeout(400);
   v(await p.$$eval('.chips[data-filtro="base"] .chip:not([hidden]):not([data-v="PROPRIA"]) .n', (x) => x.every((e) => +e.textContent.replace(/\D/g, '') > 0)) && (await p.$$eval('.chips[data-filtro="base"] .chip:not([hidden]):not([data-v="PROPRIA"])', (x) => x.length)) === 4, 'Pesquisa em todas as bases juntas (contagem em cada uma)');
@@ -25,8 +25,8 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await p.click('#dt-campo'); await p.click('[data-dt="todas"]'); await p.click('[data-dt="recentes"]'); await p.click('[data-dt="aplicar"]'); await p.waitForTimeout(1200);
   v((await txt(p, '#dt-campo')).replace(/ /g, '') === 'ORSEago/2026SINAPIset/2026SICROjul/2026', 'Marcar todas + Mais recentes volta ao padrão');
   await p.reload(); await p.waitForSelector('#dt-campo'); v((await txt(p, '#dt-campo')).startsWith('ORSEago'), 'A escolha fica guardada depois de recarregar');
-  for (const tema of ['dark']) { const d = await b.newPage({ viewport: { width: 1366, height: 900 }, colorScheme: tema }); await d.goto(U + '/'); await d.waitForSelector('#dt-campo'); await d.click('#dt-campo'); await d.waitForTimeout(300); await d.screenshot({ path: OUT + '/dt_escuro.png' }); await d.close(); }
-  const m = await b.newPage({ viewport: { width: 390, height: 800 } }); await m.goto(U + '/'); await m.waitForSelector('#dt-campo', { state: 'attached' }); await m.waitForTimeout(400);
+  for (const tema of ['dark']) { const d = await b.newPage({ viewport: { width: 1366, height: 900 }, colorScheme: tema }); await d.goto(U + '/#/'); await d.waitForSelector('#dt-campo'); await d.click('#dt-campo'); await d.waitForTimeout(300); await d.screenshot({ path: OUT + '/dt_escuro.png' }); await d.close(); }
+  const m = await b.newPage({ viewport: { width: 390, height: 800 } }); await m.goto(U + '/#/'); await m.waitForSelector('#dt-campo', { state: 'attached' }); await m.waitForTimeout(400);
   await m.screenshot({ path: OUT + '/dt_cel.png' }); if (await m.isVisible('#dt-campo')) { await m.click('#dt-campo'); await m.waitForTimeout(300); await m.screenshot({ path: OUT + '/dt_cel_painel.png' }); }
   v(await m.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Celular sem rolagem lateral');
   v(!erros.length, 'Sem erros de JavaScript ' + JSON.stringify(erros));

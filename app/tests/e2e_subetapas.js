@@ -46,7 +46,7 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   // --- nome da base própria
   await p.goto(U + '/#/proprias'); await p.waitForSelector('#prop-base-nome');
   await p.fill('#prop-base-nome', 'Base Roteiro'); await p.keyboard.press('Enter'); await p.waitForTimeout(700);
-  await p.goto(U + '/'); await p.waitForSelector('[data-nome-propria]');
+  await p.goto(U + '/#/'); await p.waitForSelector('[data-nome-propria]');
   v((await txt(p, '[data-nome-propria]')) === 'Base Roteiro', 'Nome novo da base aparece no filtro da busca');
   await p.reload(); await p.waitForSelector('#dt-campo'); await p.waitForTimeout(500);
   v((await txt(p, '[data-nome-propria]')) === 'Base Roteiro', 'E continua depois de recarregar a página');

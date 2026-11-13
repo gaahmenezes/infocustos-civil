@@ -10,7 +10,7 @@ const R = (h) => U + (art ? h.replace('#/', '#') : h);
   const ctx = await b.newContext({ viewport: { width: 1440, height: 900 } });
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !m.text().includes('404') && errs.push(m.text()));
-  await p.goto(U); await p.waitForSelector('#dt-campo');
+  await p.goto(U + '#/'); await p.waitForSelector('#dt-campo');
 
   // tema
   await p.click('#tema'); await p.waitForFunction(() => document.documentElement.dataset.theme === 'dark', null, { timeout: 2000 }).catch(() => {});

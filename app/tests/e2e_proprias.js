@@ -7,7 +7,7 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
 (async () => { const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1366, height: 900 } }); const erros = []; p.on('pageerror', (e) => erros.push(e.message));
   const antes = await (await p.request.get(U + '/api/proprias')).json();
   const ja = new Set(antes.composicoes.map((x) => x.codigo)), jaIns = new Set(antes.insumos.map((x) => x.codigo));
-  await p.goto(U + '/'); await p.evaluate(() => localStorage.clear()); await p.goto(U + '/#/proprias'); await p.waitForSelector('.proprias');
+  await p.goto(U + '/#/'); await p.evaluate(() => localStorage.clear()); await p.goto(U + '/#/proprias'); await p.waitForSelector('.proprias');
   if (!ja.size) v((await txt(p, '.proprias')).includes('Nenhuma composição própria ainda'), 'Aba nova: Composições próprias, com estado vazio que explica o que fazer');
   v(await p.getAttribute('.abas a[data-aba="proprias"]', 'aria-current') === 'true', 'A aba fica marcada no topo');
   await p.click('.pag-cab [data-nova-propria]'); await p.waitForSelector('#prop-descricao');
@@ -34,7 +34,7 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   v(await p.isVisible('.prop-div .mini-barra'), 'Mostra a divisão do custo (mão de obra, material...)');
   await p.screenshot({ path: OUT + '/prop_editor.png', fullPage: true });
   // preço vivo: trocar o mês da SINAPI muda o custo
-  await p.goto(U + '/'); await p.waitForSelector('#dt-campo'); await p.click('#dt-campo');
+  await p.goto(U + '/#/'); await p.waitForSelector('#dt-campo'); await p.click('#dt-campo');
   await p.selectOption('[data-dt-mes="SINAPI"]', '2026-08'); await p.click('[data-dt="aplicar"]'); await p.waitForTimeout(800);
   await p.goto(U + '/#/proprias'); await p.waitForSelector('.prop-cartao'); await p.click('.prop-cartao'); await p.waitForSelector('#prop-corpo tr.item');
   const total2 = num(await txt(p, '.preco-grande .valor'));
@@ -52,7 +52,7 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   const orcs = await (await p.request.get(U + '/api/orcamentos')).json(); const o = orcs.find((x) => x.nome === 'Obra com composição própria');
   v(o && o.total > 0 && o.divisao && o.divisao.mat < 1, `Entra no orçamento com custo e divisão do custo (total ${o && o.total})`);
   // busca geral
-  await p.goto(U + '/'); await p.fill('#q', 'porcelanato 90x90'); await p.waitForSelector('.res');
+  await p.goto(U + '/#/'); await p.fill('#q', 'porcelanato 90x90'); await p.waitForSelector('.res');
   v((await p.$$eval('.res .cb-base', (x) => x.slice(0, 2).map((e) => e.textContent))).includes('BASE PRÓPRIA'), 'Na busca geral, o que é próprio aparece primeiro');
   await p.click('.chips[data-filtro="base"] [data-v="PROPRIA"]'); await p.waitForTimeout(600);
   v((await p.$$eval('.res .cb-base', (x) => [...new Set(x.map((e) => e.textContent))])).join() === 'BASE PRÓPRIA', 'Filtro "Próprias" mostra só os itens da empresa');

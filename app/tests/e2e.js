@@ -4,7 +4,7 @@ const ok = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); if (!c) process
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1366, height: 860 } });
   const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type() === 'error' && errs.push(m.text()));
-  await p.goto('http://localhost:8000/'); await p.waitForSelector('.res');
+  await p.goto('http://localhost:8000/#/'); await p.waitForSelector('.res');
   await p.fill('#q', 'concreto fck 25'); await p.waitForTimeout(500);
   await p.press('#q', 'Enter'); await p.waitForSelector('.ficha h2');
   ok(/#\/(composicao|insumo)\//.test(p.url()), 'Enter na busca abre o primeiro resultado: ' + p.url().split('#')[1]);

@@ -7,7 +7,9 @@ let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ')
   v(p.url().includes('/entrar'), 'Sem sessão, o site leva à tela de entrada: ' + p.url());
   v(!(r.headers()['www-authenticate']), 'Sem a caixinha de senha do navegador');
   await p.waitForFunction(() => /\d{2}\.\d{3}/.test(document.querySelector('[data-n="composicoes"]').textContent)); await p.waitForTimeout(1300);
-  v((await p.textContent('[data-n="composicoes"]')) === '18.327', 'Números da base contam até o valor: ' + await p.textContent('#numeros'));
+  const qtd = (await (await p.request.get(U + '/api/entrada')).json()).composicoes.toLocaleString('pt-BR');
+  await p.waitForFunction((q) => document.querySelector('[data-n="composicoes"]').textContent === q, qtd, { timeout: 5000 }).catch(() => {});
+  v((await p.textContent('[data-n="composicoes"]')) === qtd, 'Números da base contam até o valor: ' + await p.textContent('#numeros'));
   await p.screenshot({ path: OUT + '/login.png' });
   const api = await p.request.get(U + '/api/orcamentos'); v(api.status() === 401, 'API sem sessão responde 401');
   await p.fill('#senha', 'errada'); await p.click('#entrar'); await p.waitForSelector('.campo.errado');
@@ -16,11 +18,11 @@ let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ')
   await p.click('#olho'); v(await p.getAttribute('#senha', 'type') === 'text', 'Botão do olho mostra a senha');
   await p.fill('#senha', 'obra123'); await p.keyboard.press('Enter');
   await p.waitForSelector('#entrar.certo'); await p.waitForTimeout(700); await p.screenshot({ path: OUT + '/login_cortina.png' });
-  await p.waitForURL((u) => !u.pathname.includes('entrar')); await p.waitForSelector('.pagina, #q');
+  await p.waitForURL((u) => !u.pathname.includes('entrar')); await p.waitForSelector('.ap-heroi, .pagina');
   v(p.url().endsWith('/#/orcamentos'), 'Depois de entrar, volta para onde a pessoa queria ir: ' + p.url());
   await p.waitForTimeout(900); v(!(await p.$('#abertura')), 'A cortina de chegada se recolhe e some');
   const ck = (await p.context().cookies()).find((c) => c.name === 'infocustos_sessao'); v(ck && ck.httpOnly && ck.sameSite === 'Lax', 'Sessão em cookie protegido (HttpOnly)');
-  await p.reload(); await p.waitForSelector('.pagina, #q'); v(!p.url().includes('entrar'), 'Recarregar mantém a sessão');
+  await p.reload(); await p.waitForSelector('.ap-heroi, .pagina'); v(!p.url().includes('entrar'), 'Recarregar mantém a sessão');
   await p.goto(U + '/entrar'); v(!p.url().includes('entrar'), 'Quem já entrou não vê a tela de entrada de novo');
   // sessão encerrada no meio do uso
   await p.context().clearCookies(); await p.goto(U + '/'); v(p.url().includes('/entrar'), 'Sem o cookie, volta à entrada');

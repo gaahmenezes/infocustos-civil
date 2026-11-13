@@ -922,6 +922,9 @@ const inicioHTML = $('#detalhe').innerHTML;
 // o cursor já começa na pesquisa quando a tela inicial é a consulta (em tela de toque não, para o teclado não subir sozinho);
 // nas outras telas o foco fica no começo da página, e o primeiro Tab encontra "Pular para o conteúdo"
 const focoInicial = () => { if (document.body.classList.contains('ocioso') && window.matchMedia('(hover: hover)').matches) $('#q').focus(); };
+// quem chega pelo endereço do site, sem indicar uma tela, começa pela apresentação; links diretos (#/orcamento/3,
+// #/composicao/..., #/ da Consulta) abrem a tela pedida
+if (!location.hash || location.hash === '#') history.replaceState(null, '', '#/apresentacao');
 const tAcordando = setTimeout(() => { const a = $('#abertura'); if (a) a.classList.add('acordando'); }, 3500);
 carregarReferencia().then(() => { buscar(); rota(); focoInicial(); }).finally(() => {
   clearTimeout(tAcordando);

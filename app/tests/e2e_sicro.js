@@ -2,7 +2,7 @@
 const { chromium } = require('playwright'); const OUT = process.argv[2], U = 'http://localhost:8000';
 let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ') + m); c ? ok++ : falha++; };
 (async () => { const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1366, height: 900 } }); const erros = []; p.on('pageerror', (e) => erros.push(e.message));
-  await p.goto(U + '/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForSelector('#dt-campo');
+  await p.goto(U + '/#/'); await p.evaluate(() => localStorage.clear()); await p.reload(); await p.waitForSelector('#dt-campo');
   v((await p.textContent('#pesquisa-sub')).includes('do SICRO'), 'Texto da tela inicial inclui o SICRO: ' + (await p.textContent('#pesquisa-sub')).replace(/\s+/g, ' ').trim());
   v((await p.textContent('#selo-base')).includes('SICRO de julho/2026'), 'Selo: ' + (await p.textContent('#selo-base')).replace(/\s+/g, ' ').trim());
   await p.fill('#q', 'concreto'); await p.waitForSelector('.res'); await p.waitForTimeout(500);
@@ -32,7 +32,7 @@ let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ')
   await p.click('[data-cmp=base] [data-v=SICRO]'); await p.waitForSelector('[data-cmp-base-todas]');
   v((await p.textContent('.comparativo')).includes('O SICRO tem só um mês'), 'SICRO no comparativo: avisa que só há um mês');
   await p.click('[data-cmp-base-todas]'); await p.waitForSelector('.comparativo table'); v(true, 'Volta para todas as bases');
-  const m = await b.newPage({ viewport: { width: 390, height: 800 } }); await m.goto(U + '/'); await m.waitForSelector('#dt-campo', { state: 'attached' }); await m.waitForTimeout(600); await m.screenshot({ path: OUT + '/sc_cel.png' });
+  const m = await b.newPage({ viewport: { width: 390, height: 800 } }); await m.goto(U + '/#/'); await m.waitForSelector('#dt-campo', { state: 'attached' }); await m.waitForTimeout(600); await m.screenshot({ path: OUT + '/sc_cel.png' });
   v(await m.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'Celular sem rolagem lateral');
   v(!erros.length, 'Sem erros de JavaScript ' + JSON.stringify(erros));
   console.log(`\n${ok} OK, ${falha} falhas`); await b.close(); process.exitCode = falha ? 1 : 0; })();
