@@ -926,7 +926,11 @@ const focoInicial = () => { if (document.body.classList.contains('ocioso') && wi
 // #/composicao/..., #/ da Consulta) abrem a tela pedida
 if (!location.hash || location.hash === '#') history.replaceState(null, '', '#/apresentacao');
 const tAcordando = setTimeout(() => { const a = $('#abertura'); if (a) a.classList.add('acordando'); }, 3500);
-carregarReferencia().then(() => { buscar(); rota(); focoInicial(); }).finally(() => {
+// as marcas "vai-ap"/"vai-outra" só valem até a primeira tela ser desenhada: depois disso saem, senão esconderiam
+// as outras telas (inclusive se o carregamento falhar)
+const soltarEntrada = () => document.documentElement.classList.remove('vai-ap', 'vai-outra');
+carregarReferencia().then(() => { buscar(); rota(); soltarEntrada(); focoInicial(); }).finally(() => {
+  soltarEntrada();
   clearTimeout(tAcordando);
   const a = $('#abertura'); if (!a) return;
   if (!a.classList.contains('chegada') || semMovimento()) { a.remove(); return; }
