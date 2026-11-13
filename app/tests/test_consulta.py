@@ -65,7 +65,8 @@ def test_mes_inexistente():
 def test_item_que_saiu_da_base_so_existe_no_seu_mes():
     assert c.get('/api/composicao/SINAPI/103335', params={'ref': '2026-05'}).status_code == 200
     r = c.get('/api/composicao/SINAPI/103335')
-    assert r.status_code == 404 and 'setembro/2026' in r.json()['detail']
+    ultimo = c.get('/api/referencia').json()['bases']['SINAPI']['meses'][-1]['descricao']  # mês mais recente da SINAPI
+    assert r.status_code == 404 and ultimo in r.json()['detail']
 
 
 def test_encargos_de_agosto():

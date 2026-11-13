@@ -39,6 +39,7 @@ const norm = (t) => t.replace(/\s+/g, ' ');
   ok(norm(await p.textContent('.encargos')).includes('ainda não foi carregado'), 'Maio: avisa que o detalhamento não foi carregado');
   await mudarMes(p, '2026-08');
   await p.click('.abas a[data-aba="comparativo"]'); await p.waitForSelector('.comparativo table');
+  await p.selectOption('#cmp-de', '2026-05'); await p.selectOption('#cmp-para', '2026-08'); await p.waitForFunction(() => document.querySelector('.blocos').textContent.includes('agosto/2026'));
   ok(norm(await p.textContent('.blocos')).includes('Só em agosto/2026'), 'Aba Comparativo entre meses');
   await p.fill('#cmp-q', 'chapisco'); await p.waitForFunction(() => [...document.querySelectorAll('.comparativo tbody tr')].length && [...document.querySelectorAll('.comparativo tbody .desc')].every((t) => /hapisco/.test(t.textContent)));
   ok(true, 'Filtro do comparativo: ' + (await p.$$('.comparativo tbody tr')).length + ' itens com chapisco');

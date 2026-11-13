@@ -106,8 +106,9 @@ def test_atualizar_orcamento_de_maio_para_agosto(orc):
     o = c.get(f'/api/orcamentos/{oid}').json()
     assert o['desatualizado'] is True and o['total'] == 613.00 + 1742.10  # 100 × 6,13 + 10 × 174,21
     sim = c.get(f'/api/orcamentos/{oid}/atualizacao').json()
-    # atualizar para o mais recente: cada item vai ao mês mais novo da sua base (ORSE agosto; SINAPI setembro)
-    assert sim['referencia'] == '2026-09' and sim['total_antes'] == o['total']
+    # atualizar para o mais recente: cada item vai ao mês mais novo da sua base (ORSE agosto; SINAPI o último carregado)
+    ultimo = c.get('/api/referencia').json()['referencias'][-1]['id']
+    assert sim['referencia'] == ultimo and sim['total_antes'] == o['total']
     assert [l['codigo'] for l in sim['itens']] == ['00003'] and sim['itens'][0]['custo_unit_depois'] == 5.17
     assert sim['sem_preco'][0]['codigo'] == '103335' and sim['sem_preco'][0]['motivo'] == 'saiu da base'
     assert sim['total_depois'] == 646.00 + 1742.10
@@ -115,8 +116,8 @@ def test_atualizar_orcamento_de_maio_para_agosto(orc):
     itens = {i['codigo']: i for i in n['etapas'][0]['itens']}
     assert itens['00003']['referencia'] == '2026-08' and itens['00003']['custo_unit'] == 5.17
     assert itens['103335']['referencia'] == '2026-05' and itens['103335']['custo_unit'] == 139.37  # preço antigo preservado
-    # a data-base do orçamento passa a ser a pedida (setembro); o item da ORSE fica com o mês dele (agosto)
-    assert n['referencia'] == '2026-09' and n['total'] == sim['total_depois']
+    # a data-base do orçamento passa a ser a pedida (a mais recente); o item da ORSE fica com o mês dele (agosto)
+    assert n['referencia'] == ultimo and n['total'] == sim['total_depois']
 
 
 def test_curva_abc_usa_a_composicao_da_data_base_do_item(orc):

@@ -28,7 +28,9 @@ let ok = 0, falha = 0; const v = (c, m) => { console.log((c ? 'OK  ' : 'FALHA ')
   v((await p.textContent('.capa-dados')).includes('ORSE e SICRO') && (await p.textContent('.folha-rod')).includes('SICRO julho/2026 (DNIT'), 'Relatório cita as bases e o mês de cada uma: ' + (await p.textContent('.folha-rod')).slice(0, 120));
   await p.request.delete(U + `/api/orcamentos/${o.id}`);
   await p.goto(U + '/#/comparativo'); await p.waitForSelector('.comparativo table', { timeout: 15000 });
-  v((await p.inputValue('#cmp-de')) === '2026-05' && (await p.inputValue('#cmp-para')) === '2026-08', 'Comparativo abre em maio → agosto (dois meses da mesma base)');
+  const mesesDe = (await (await p.request.get(U + '/api/referencia')).json()).bases, de = await p.inputValue('#cmp-de'), para = await p.inputValue('#cmp-para');
+  const mesma = Object.values(mesesDe).find((b) => b.meses.some((m) => m.id === de) && b.meses.some((m) => m.id === para));
+  v(de < para && mesma && mesma.fontes[de] === mesma.fontes[para], `Comparativo abre em dois meses da mesma base e da mesma fonte (${de} → ${para})`);
   await p.click('[data-cmp=base] [data-v=SICRO]'); await p.waitForSelector('[data-cmp-base-todas]');
   v((await p.textContent('.comparativo')).includes('O SICRO tem só um mês'), 'SICRO no comparativo: avisa que só há um mês');
   await p.click('[data-cmp-base-todas]'); await p.waitForSelector('.comparativo table'); v(true, 'Volta para todas as bases');
