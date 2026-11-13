@@ -34,7 +34,8 @@ function desenharImportar() {
   const ncol = f ? Math.min(40, Math.max(...f.linhas.slice(0, 200).map((l) => l.length), 1)) : 0;
   const mapa = f ? PAPEIS[IMP.tipo].map(([p, rot, obrig]) => `<label class="imp-map"><span>${esc(rot)}${obrig ? ' <b class="imp-obrig">*</b>' : ''}</span>
       <select data-imp-col="${p}"><option value="">—</option>${Array.from({ length: ncol }, (_, j) => `<option value="${j}"${IMP.col[p] === j ? ' selected' : ''}>${esc(nomeColuna(f, j))}</option>`).join('')}</select></label>`).join('') : '';
-  const dados = f ? f.linhas.slice(IMP.cab == null ? 0 : IMP.cab + 1).slice(0, 14) : [];
+  const todas = f ? f.linhas.slice(IMP.cab == null ? 0 : IMP.cab + 1) : [];
+  const MOSTRAR = 60, dados = todas.slice(0, MOSTRAR);
   const usados = new Map(Object.entries(IMP.col).filter(([, j]) => j != null).map(([p, j]) => [j, (PAPEIS[IMP.tipo].find((x) => x[0] === p) || [p, p])[1]]));
   const previa = f ? `<div class="tabela-rola imp-previa"><table class="planilha"><thead><tr>${Array.from({ length: ncol }, (_, j) => `<th class="${usados.has(j) ? 'imp-usada' : ''}">${esc(nomeColuna(f, j))}${usados.has(j) ? `<span>${esc(usados.get(j))}</span>` : ''}</th>`).join('')}</tr></thead>
       <tbody>${dados.map((l) => `<tr>${Array.from({ length: ncol }, (_, j) => `<td class="${usados.has(j) ? 'imp-usada' : ''}">${esc(l[j] === undefined ? '' : String(l[j]).slice(0, 80))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
@@ -68,6 +69,7 @@ function desenharImportar() {
       </div>
       <p class="sub">As colunas foram reconhecidas pelos títulos. Confira e corrija o que estiver trocado; <b>*</b> é obrigatória.</p>
       <div class="imp-mapa">${mapa}</div>
+      <p class="imp-contagem"><b>${todas.length.toLocaleString('pt-BR')} linhas</b> de dados no arquivo${todas.length > MOSTRAR ? `. A prévia mostra as ${MOSTRAR} primeiras; <b>todas</b> entram na importação` : ''}. Nada é gravado até você clicar em <b>Importar</b>.</p>
       ${previa}</section>
     <section class="imp-passo"><h2><span>4</span>Conferir e importar</h2>
       <div class="acoes"><button type="button" class="botao" id="imp-simular"${IMP.enviando ? ' disabled' : ''}>Conferir sem gravar</button>
@@ -84,7 +86,9 @@ function resumoImportacao(r) {
   if (IMP.tipo === 'insumos') corpo = `<li>${n(r.novos, 'insumo novo', 'insumos novos')} e ${n(r.atualizados, 'atualizado', 'atualizados')} na base ${base}</li>
     ${r.codigos_com_variacoes ? `<li>${n(r.variacoes, 'linha', 'linhas')} com o mesmo código e detalhe diferente (${n(r.codigos_com_variacoes, 'código', 'códigos')}): cada variação entra como um insumo</li>` : ''}
     ${r.sem_preco ? `<li>${n(r.sem_preco, 'insumo sem preço', 'insumos sem preço')} (coluna de preço vazia ou não indicada)</li>` : ''}
-    ${r.ignoradas && r.ignoradas.length ? `<li>Linhas sem descrição ignoradas: ${r.ignoradas.slice(0, 12).join(', ')}${r.ignoradas.length > 12 ? '…' : ''}</li>` : ''}`;
+    ${r.n_ignoradas ? `<li>${n(r.n_ignoradas, 'linha sem descrição ficou', 'linhas sem descrição ficaram')} de fora (linha ${r.ignoradas.slice(0, 10).join(', ')}${r.n_ignoradas > 10 ? '…' : ''})</li>` : ''}
+    ${r.n_titulos ? `<li>${n(r.n_titulos, 'linha só de texto (título, subtotal)', 'linhas só de texto (títulos, subtotais)')} ficaram de fora (linha ${r.titulos.slice(0, 10).join(', ')}${r.n_titulos > 10 ? '…' : ''})</li>` : ''}
+    ${r.n_repetidas ? `<li>${n(r.n_repetidas, 'linha repetida', 'linhas repetidas')} (mesmo código e descrição de outra linha) entraram uma vez só</li>` : ''}`;
   if (IMP.tipo === 'composicoes') corpo = `<li>${n(r.composicoes_novas, 'composição nova', 'composições novas')} e ${n(r.composicoes_atualizadas, 'atualizada', 'atualizadas')} na base ${base}, com ${n(r.itens, 'item', 'itens')}</li>
     <li>${n(r.insumos_criados, 'insumo criado', 'insumos criados')} a partir das linhas (códigos que a base ainda não tinha)${r.itens_de_base_oficial ? ` · ${n(r.itens_de_base_oficial, 'item ligado', 'itens ligados')} a base oficial` : ''}</li>
     ${r.vazias && r.vazias.length ? `<li class="imp-alerta">Sem itens: ${esc(r.vazias.slice(0, 8).join(', '))}${r.vazias.length > 8 ? '…' : ''}. Confira a coluna do coeficiente.</li>` : ''}
@@ -99,7 +103,9 @@ function resumoImportacao(r) {
         ${r.n_precos_diferentes ? `<li class="imp-alerta">${n(r.n_precos_diferentes, 'item com preço unitário diferente', 'itens com preço unitário diferente')} do arquivo</li>` : ''}
         ${(r.precos_diferentes || []).slice(0, 8).map((x) => `<li class="imp-dif">${esc(x.codigo_origem || '—')} ${esc(x.descricao.slice(0, 60))} · arquivo ${brl.format(x.arquivo)} · aplicativo ${brl.format(x.aplicativo)}</li>`).join('')}` : `<li>Total do arquivo, sem BDI: <b>${brl.format(r.total_arquivo || 0)}</b></li>`}`;
   }
-  return `<div class="imp-resultado${r.simulado ? '' : ' feito'}"><b>${r.simulado ? 'Conferência (nada foi gravado)' : `${VISTO}Importação concluída`}</b><ul>${corpo}</ul>
+  const lidas = folhaAtual() ? folhaAtual().linhas.length - (IMP.cab == null ? 0 : IMP.cab + 1) : 0;
+  return `<div class="imp-resultado${r.simulado ? '' : ' feito'}"><b>${r.simulado ? 'Conferência (nada foi gravado ainda: clique em Importar para gravar)' : `${VISTO}Importação concluída`}</b>
+    <ul><li>${lidas.toLocaleString('pt-BR')} linhas de dados lidas do arquivo</li>${corpo}</ul>
     ${!r.simulado && r.orcamento_id ? `<a class="botao primario" href="${rotaOrc(r.orcamento_id)}">Abrir o orçamento</a>` : ''}
     ${!r.simulado && !r.orcamento_id ? `<a class="botao" href="#/proprias" data-ir-base="${r.base_id}">Ver a base ${esc(r.base)}</a>` : ''}</div>`;
 }

@@ -399,24 +399,24 @@ def importar_insumos(d: Pedido):
     with proprias.gravando() as c:
         base_id, nome = _base_destino(c, d)
         ja = _existentes(c, 'insumo_proprio', base_id)
-        novos, atualizar, ignoradas, vistos, linhas = [], [], [], set(), []
+        novos, atualizar, ignoradas, vistos, linhas, titulos, repetidas = [], [], [], set(), [], [], []
         for k, r in _linhas(d):
             desc, cod = texto(r.get('descricao'))[:400], codigo(r.get('codigo'))
             if not desc:
                 ignoradas.append(k + 1); continue
             if not cod and not texto(r.get('unidade')) and numero(r.get('preco')) is None:
-                continue  # só texto: título, subtotal ou cabeçalho de página
-            linhas.append((cod, desc, r))
+                titulos.append(k + 1); continue  # só texto: título, subtotal ou cabeçalho de página
+            linhas.append((cod, desc, r, k + 1))
         # códigos que se repetem com descrições diferentes (variações do mesmo insumo, como no SIENGE)
         descs = {}
-        for cod, desc, _ in linhas:
+        for cod, desc, _, _ in linhas:
             if cod:
                 descs.setdefault(cod, set()).add(detalhe(desc))
         repetidos = {c for c, v in descs.items() if len(v) > 1}
-        for cod, desc, r in linhas:
+        for cod, desc, r, n in linhas:
             chave = chave_origem(cod, desc, repetidos)
             if chave and chave in vistos:
-                continue  # a mesma linha repetida no arquivo
+                repetidas.append(n); continue  # o mesmo insumo repetido no arquivo
             vistos.add(chave)
             x = {'descricao': desc, 'unidade': texto(r.get('unidade'))[:20] or 'un', 'tipo': tipo_insumo(r.get('tipo'), desc),
                  'preco': numero(r.get('preco')), 'data_preco': data_iso(r.get('data'), d.data_preco), 'fonte': d.fonte, 'codigo_origem': chave}
@@ -428,7 +428,9 @@ def importar_insumos(d: Pedido):
             _gravar_insumos(c, base_id, novos, atualizar, agora)
     return {'base_id': base_id, 'base': nome, 'novos': len(novos), 'atualizados': len(atualizar),
             'sem_preco': sum(1 for x in novos + atualizar if x['preco'] is None), 'ignoradas': ignoradas[:50], 'simulado': d.simular,
-            'codigos_com_variacoes': len(repetidos), 'variacoes': sum(1 for cod, _, _ in linhas if cod in repetidos)}
+            'codigos_com_variacoes': len(repetidos), 'variacoes': sum(1 for cod, _, _, _ in linhas if cod in repetidos),
+            'titulos': titulos[:50], 'n_titulos': len(titulos), 'repetidas': repetidas[:50], 'n_repetidas': len(repetidas),
+            'n_ignoradas': len(ignoradas)}
 
 
 # ---------- composições ----------

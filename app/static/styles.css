@@ -1817,3 +1817,5 @@ html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
 /* prévia da importação: o cabeçalho gruda no topo da própria caixa (não no topo da página) e é opaco */
 .importar .imp-previa table thead th { position: sticky; top: 0; z-index: 2; background: var(--superficie-2); }
 .importar .imp-previa table thead th.imp-usada { background: color-mix(in srgb, var(--acao) 16%, var(--superficie-2)); }
+
+.imp-contagem { margin: 0 0 8px; font-size: 13.5px; color: var(--tinta-2); }
