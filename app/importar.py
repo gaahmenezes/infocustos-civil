@@ -703,6 +703,10 @@ def resumo_sienge(r):
                 'familias': len(r['familias']), 'grupos': grupos, 'tipos': tipos, 'total_obra': r['total_obra'], 'soma': r['soma'],
                 'familias_diferentes': len(r['familias_diferentes']), 'avisos': r['avisos'],
                 'amostra': [{k: x[k] for k in ('codigo', 'descricao', 'unidade', 'preco', 'data', 'grupo', 'familia', 'tipo')} for x in r['insumos'][:12]]}
+    if r['relatorio'] == 'orcamento':
+        L = r['linhas']
+        return {'relatorio': 'orcamento', 'titulo': 'Orçamento', 'obra': r['obra'], 'paginas': r['n_paginas'], 'data_base': r['data_base'], 'bdi': r['bdi'],
+                'itens': sum(1 for x in L if x['item']), 'titulos': sum(1 for x in L if not x['item']), 'total': r['total'], 'soma': r['soma']}
     sv = r['servicos']
     distintos = {}
     for s in sv:
@@ -861,6 +865,8 @@ async def importar_sienge(request: Request, base_id: Optional[int] = None, nova_
     if not dados or len(dados) > LIMITE_BYTES:
         raise HTTPException(422, 'Envie o PDF do relatório (até 25 MB).')
     r = sienge.ler(dados)
+    if r['relatorio'] == 'orcamento':
+        raise HTTPException(422, 'Este PDF é o relatório "Orçamento" do SIENGE. Anexe-o na aba Orçamentos, em "Anexar orçamento".')
     if not r['relatorio']:
         raise HTTPException(422, 'Este PDF não é um relatório "Insumos Orçados" nem "Composições de Serviços da Obra" do SIENGE.')
     agora = orc_mod.agora()
@@ -890,3 +896,167 @@ async def importar_sienge(request: Request, base_id: Optional[int] = None, nova_
             oid, n = _sienge_orcamento(r, ids, (nome_orcamento.strip() or r['obra'] or 'Orçamento SIENGE')[:200], min(max(bdi, 0.0), 100.0), nome, fonte, agora)
             resumo |= {'orcamento_id': oid, 'itens_orcamento': n}
     return resumo
+
+
+# ---------- anexar o orçamento de uma obra (relatório "Orçamento" do SIENGE) ----------
+def chave_nome(t):
+    """Nome para comparar: sem acento, sem maiúsculas e sem pontuação nem espaços (quebras de linha do PDF não atrapalham)."""
+    return re.sub(r'[^a-z0-9]+', '', normal(t))
+
+
+_NOMES_OFICIAIS = {}
+
+
+def nomes_oficiais(base, mes):
+    """nome -> [(tipo, código, preço)] de uma base oficial no mês (montado na primeira vez que for preciso)."""
+    k = (base, mes)
+    if k not in _NOMES_OFICIAIS:
+        d = {}
+        with orc_mod._base_conn() as b:
+            for r in b.execute('SELECT tipo, codigo, descricao, preco FROM item_busca WHERE base = ? AND referencia = ? ORDER BY tipo DESC', (base, mes)):
+                d.setdefault(chave_nome(r['descricao']), []).append((r['tipo'], r['codigo'], r['preco']))
+        if len(_NOMES_OFICIAIS) > 6:
+            _NOMES_OFICIAIS.clear()
+        _NOMES_OFICIAIS[k] = d
+    return _NOMES_OFICIAIS[k]
+
+
+def _casar_itens(itens, ref):
+    """Liga cada item do orçamento a uma composição (ou insumo) pelo nome: primeiro nas bases próprias, depois ORSE,
+    SINAPI e SICRO. Com mais de um item de mesmo nome, fica o de preço mais próximo do arquivo."""
+    a = proprias.acervo()
+    calc = proprias.calculo_guardado(proprias._refs_do_mes(ref))
+    proprios = {}
+    for cid, cp in a['comps'].items():
+        proprios.setdefault(chave_nome(cp['descricao']), []).append(('servico', proprias.cod_comp(cid), cp.get('base_id') or 1))
+    for iid, i in a['insumos'].items():
+        proprios.setdefault(chave_nome(i['descricao']), []).append(('insumo', proprias.cod_ins(iid), i.get('base_id') or 1))
+    with orc_mod._base_conn() as b:
+        meses = {base: orc_mod.mes_para_base(b, base, ref) for base in proprias.BASES_OFICIAIS}
+
+    def preco_proprio(tipo, cod):
+        try:
+            return calc.composicao(cod)['custo_total'] if tipo == 'servico' else (calc.insumo_proprio(cod) or {}).get('preco')
+        except HTTPException:
+            return None
+
+    for it in itens:
+        k = chave_nome(it['descricao'])
+        cands = [(t, proprias.BASE, cod, preco_proprio(t, cod), proprias.nome_da_base(bid)) for t, cod, bid in proprios.get(k, [])]
+        if not cands:
+            for base in ('ORSE', 'SINAPI', 'SICRO'):
+                cands = [(t, base, cod, p, base) for t, cod, p in nomes_oficiais(base, meses[base]).get(k, []) if p is not None]
+                if cands:
+                    break
+        if cands:
+            t, base, cod, p, nome = min(cands, key=lambda c: (c[0] != 'servico', abs((c[3] or 0) - it['preco'])))
+            it['ref'] = (t, base, cod); it['preco_base'] = p; it['base_nome'] = nome
+            it['base_propria_id'] = next((bid for t2, cod2, bid in proprios.get(k, []) if cod2 == cod), None) if base == proprias.BASE else None
+        else:
+            it['ref'] = None
+    return itens
+
+
+@router.post('/orcamento-sienge')
+async def anexar_orcamento_sienge(request: Request, simular: bool = False, nome: str = '', bdi: Optional[float] = None, base_id: Optional[int] = None,
+                                  cliente: str = '', local: str = ''):
+    """Anexa o relatório "Orçamento" do SIENGE: cria o orçamento com as etapas e subetapas do relatório e os itens
+    ligados, pelo nome, às composições das bases. Com `simular`, só mostra o que seria feito."""
+    import sienge
+    dados = await request.body()
+    if not dados or len(dados) > LIMITE_BYTES:
+        raise HTTPException(422, 'Envie o PDF do relatório (até 25 MB).')
+    try:
+        r = sienge.ler(dados)
+    except Exception as e:
+        raise HTTPException(422, f'Não foi possível ler o PDF ({type(e).__name__}).')
+    if r['relatorio'] != 'orcamento':
+        raise HTTPException(422, 'Este arquivo não é o relatório "Orçamento" do SIENGE.')
+    with orc_mod._base_conn() as b:
+        ref = orc_mod.ref_principal(b)
+    itens = _casar_itens([dict(x) for x in r['linhas'] if x['item']], ref)
+    por_base, faltam, difs = {}, [], []
+    for it in itens:
+        if it['ref'] is None:
+            faltam.append({'codigo': it['codigo'], 'descricao': it['descricao'], 'unidade': it['unidade'], 'preco': it['preco'], 'total': it['total']})
+            continue
+        por_base[it['base_nome']] = por_base.get(it['base_nome'], 0) + 1
+        if it['preco_base'] is None or abs(it['preco_base'] - it['preco']) > max(0.02, it['preco'] * 0.001):
+            difs.append({'codigo': it['codigo'], 'descricao': it['descricao'][:120], 'arquivo': it['preco'], 'base': it['preco_base'], 'onde': it['base_nome']})
+    bdi_arquivo = numero(r['bdi']) if r['bdi'] and 'aplicado' not in normal(r['bdi']) else 0.0
+    bdi_final = min(max(bdi if bdi is not None else (bdi_arquivo or 0.0), 0.0), 100.0)
+    titulos = [x for x in r['linhas'] if not x['item']]
+    usadas = {}
+    for it in itens:
+        if it.get('base_propria_id'):
+            usadas[it['base_propria_id']] = usadas.get(it['base_propria_id'], 0) + 1
+    resumo = {'base_sugerida': max(usadas, key=usadas.get) if usadas else None,  # a base própria com mais itens encontrados
+              'obra': r['obra'], 'data_base': r['data_base'], 'bdi': bdi_final, 'itens': len(itens), 'titulos': len(titulos), 'total_arquivo': r['total'] or r['soma'],
+              'soma_arquivo': r['soma'], 'por_base': por_base, 'n_faltam': len(faltam), 'faltam': faltam[:60],
+              'total_faltam': round(sum(x['total'] for x in faltam), 2), 'n_diferentes': len(difs), 'diferentes': difs[:40], 'simulado': simular}
+    if simular:
+        return resumo
+    agora = orc_mod.agora()
+    # itens sem correspondência: viram insumos próprios com o preço do arquivo, na base escolhida
+    if faltam:
+        with proprias.gravando() as c:
+            bid = base_id or resumo['base_sugerida'] or min(proprias.acervo()['bases'])
+            proprias.checar_base_propria(c, bid)
+            ja = _existentes(c, 'insumo_proprio', bid)
+            novos, usados = [], {}
+            for it in itens:
+                if it['ref'] is not None:
+                    continue
+                chave = 'ORC:' + chave_nome(it['descricao'])[:80]
+                if chave in ja:
+                    usados[chave] = ja[chave]
+                elif chave not in usados:
+                    novos.append({'descricao': it['descricao'][:400], 'unidade': it['unidade'][:20], 'tipo': 'SERVICO_TERCEIRO', 'preco': it['preco'],
+                                  'data_preco': r['data_base'], 'fonte': f"SIENGE, orçamento da obra {r['obra']} (serviço sem composição na base)"[:400],
+                                  'codigo_origem': chave})
+                    usados[chave] = None
+            _gravar_insumos(c, bid, novos, [], agora)
+            for x in novos:
+                usados[x['codigo_origem']] = x['id']
+            for it in itens:
+                if it['ref'] is None:
+                    it['ref'] = ('insumo', proprias.BASE, proprias.cod_ins(usados['ORC:' + chave_nome(it['descricao'])[:80]]))
+    # estrutura: títulos acima do item viram etapa (todos menos o último, juntos) e subetapa (o último)
+    nomes_tit = {t['codigo']: t['descricao'] for t in titulos}
+    prof = max((t['nivel'] for t in titulos), default=0)  # quantos níveis de título o arquivo tem
+    with orc_mod.orc() as c:
+        oid = c.execute('INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?)',
+                        ((nome.strip() or r['obra'] or 'Orçamento SIENGE')[:200], cliente.strip()[:200], local.strip()[:200], ref, bdi_final,
+                         f"Anexado do relatório Orçamento do SIENGE, obra {r['obra']}, data-base do arquivo {r['data_base'] or '-'}.", agora, agora)).lastrowid
+        ordem, e_ids, s_ids, pos, linhas = 0, {}, {}, {}, []
+        with proprias.sessao(c):
+            for it in itens:
+                # níveis de título do arquivo: os primeiros formam a etapa ("TORRES › FUNDAÇÃO") e o último, a subetapa.
+                # Item lançado direto num nível mais alto (código com .000) fica na etapa, sem subetapa.
+                partes = it['codigo'].split('.')
+                tit = [nomes_tit.get('.'.join(partes[:k])) for k in range(1, len(partes))]
+                de_etapa = [t for t in tit[:max(prof - 1, 1)] if t]
+                etapa = ' › '.join(de_etapa) or 'Serviços'
+                sub = tit[prof - 1] if prof >= 2 and len(tit) >= prof else None
+                ke = '.'.join(partes[:max(prof - 1, 1)])  # pelo código, não pelo nome: duas etapas podem ter o mesmo título
+                if ke not in e_ids:
+                    ordem += 1
+                    e_ids[ke] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, etapa[:200], None)).lastrowid
+                alvo = e_ids[ke]
+                if sub:
+                    ks = '.'.join(partes[:prof])
+                    if ks not in s_ids:
+                        ordem += 1
+                        s_ids[ks] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, sub[:200], alvo)).lastrowid
+                    alvo = s_ids[ks]
+                pos[alvo] = pos.get(alvo, 0) + 1
+                tipo, base, cod = it['ref']
+                p = orc_mod.preco_na_base(tipo, base, cod, ref)
+                preco = p['preco'] if p and p['preco'] is not None else it['preco']
+                # o nome vem da base (igual ao que consta lá); sem correspondência, o do arquivo
+                linhas.append((oid, alvo, pos[alvo], tipo, base, (p or {}).get('codigo') or cod, (p or {}).get('descricao') or it['descricao'][:400],
+                               (p or {}).get('unidade') or it['unidade'][:20], it['quantidade'], preco, (p or {}).get('referencia') or ref))
+        c.executemany('''INSERT INTO item (orcamento_id, etapa_id, ordem, tipo, base, codigo, descricao, unidade, quantidade, custo_unit, referencia)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)''', linhas)
+        o = orc_mod.calcular(c, oid)
+    return resumo | {'orcamento_id': oid, 'etapas': len(e_ids), 'subetapas': len(s_ids), 'custo_aplicativo': o['custo_total'], 'total_aplicativo': o['total']}

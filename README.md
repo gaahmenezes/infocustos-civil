@@ -65,6 +65,17 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
   com o total da obra (insumos) e o custo de cada serviço (composições). Opcionalmente cria o orçamento com etapas,
   subetapas e serviços (quantidades zeradas: esse relatório não as traz).
 
+## Anexar o orçamento de uma obra
+
+Na aba Orçamentos, **Anexar orçamento** (`#/orcamentos/anexar`) recebe o relatório "Orçamento" do SIENGE em PDF (código
+hierárquico 01 › 01.002 › 01.002.005 › item, com unidade, quantidade orçada e preço). Os níveis de título viram etapa
+("TORRES › FUNDAÇÃO") e subetapa; cada item é ligado **pelo nome** à composição das bases: primeiro as próprias, depois
+ORSE, SINAPI e SICRO (sem acento, caixa nem pontuação; com nomes repetidos, vale o de preço mais próximo). O nome, a
+unidade e o preço passam a ser os da base. Itens sem correspondência entram como insumo da base escolhida, com o preço
+do arquivo. A conferência é mostrada antes de gravar; "Cancelar" descarta tudo, e depois de anexar a tela é limpa.
+Planilhas em Excel/CSV seguem para a importação com conferência de colunas. Sem BDI por item, o preço unitário mantém
+as 4 casas do custo da composição, e o total bate com o do arquivo.
+
 ## Composições e insumos próprios
 
 Aba **Bases próprias** (`#/proprias`; o nome da base é escolhido pela empresa no topo da página e aparece nas etiquetas, na busca e nos relatórios): a empresa cadastra insumos próprios (preço, data e fonte da cotação) e monta

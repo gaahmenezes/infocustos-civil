@@ -3,8 +3,11 @@
    1. escolhe o que importar e para qual base; 2. lê o arquivo; 3. confere a correspondência das colunas na prévia;
    4. confere o resumo (simulação) e importa. */
 
-const IMP = { tipo: 'insumos', arq: null, folha: 0, cab: null, col: {}, base: '', novaBase: '', fonte: 'SIENGE', oficiais: ['SINAPI'],
-  nome: '', bdi: 0, comBdi: false, simulado: null, enviando: false, file: null, criarOrc: true };
+const impInicial = () => ({ tipo: 'insumos', arq: null, folha: 0, cab: null, col: {}, base: '', novaBase: '', fonte: 'SIENGE', oficiais: ['SINAPI'],
+  nome: '', bdi: 0, comBdi: false, simulado: null, enviando: false, file: null, criarOrc: true, concluido: null });
+const IMP = impInicial();
+// volta tudo à estaca zero (arquivo, prévia, colunas, resumo). `manter` preserva o que deve continuar (ex.: a base escolhida)
+function limparImportacao(manter = {}) { Object.assign(IMP, impInicial(), manter); }
 const num4 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
 const TIPO_NOME = { MAO_DE_OBRA: 'mão de obra', MATERIAL: 'material', EQUIPAMENTO: 'equipamento', SERVICO_TERCEIRO: 'serviço de terceiro' };
 
@@ -21,7 +24,13 @@ const TIPOS_IMP = {
   orcamento: ['Orçamento', 'Planilha orçamentária: itens com quantidade. Títulos sem quantidade viram etapas e subetapas. Importe antes os insumos e as composições na mesma base, para o orçamento usar as composições.'],
 };
 
-window.rotaImportar = function () { desenharImportar(); };
+// ao entrar na página vindo de outra tela, nada da importação anterior fica preso (a não ser um arquivo passado de propósito)
+let impVeioDe = '';
+window.rotaImportar = function () {
+  if (impVeioDe !== 'importar' && !IMP.passado) limparImportacao();
+  IMP.passado = false; impVeioDe = 'importar'; desenharImportar();
+};
+window.addEventListener('hashchange', () => { if (!/^#\/importar/.test(location.hash)) impVeioDe = ''; });
 
 function folhaAtual() { return IMP.arq && IMP.arq.folhas[IMP.folha]; }
 function nomeColuna(f, j) {
@@ -46,6 +55,7 @@ function desenharImportar() {
     <a class="botao voltar-lista" href="#/proprias">Bases próprias</a>
     <header class="pag-cab"><div><h1>Importar arquivo</h1>
       <p class="sub">Traga insumos, composições e orçamentos de outros sistemas, como o SIENGE. Aceita Excel (.xlsx), CSV e PDF. Os itens entram numa base própria e guardam o código de origem: importar de novo atualiza, sem duplicar.</p></div></header>
+    ${IMP.concluido ? `<section class="imp-passo imp-final" aria-live="polite">${IMP.concluido}<p class="imp-contagem">Os dados do arquivo já foram limpos desta tela. Para importar outro, escolha o arquivo abaixo.</p></section>` : ''}
     <section class="imp-passo"><h2><span>1</span>O que você vai importar</h2>
       ${sg ? `<p class="imp-reconhecido">${VISTO}Relatório do SIENGE reconhecido: <b>${esc(sg.titulo)}</b>, obra ${esc(sg.obra)}. A leitura é automática, sem conferir colunas.</p>`
         : `<div class="imp-tipos" role="radiogroup" aria-label="Tipo de importação">${Object.entries(TIPOS_IMP).map(([k, [n, t]]) => `<button type="button" role="radio" data-imp-tipo="${k}" aria-checked="${IMP.tipo === k}"><b>${n}</b><span>${esc(t)}</span></button>`).join('')}</div>`}
@@ -71,7 +81,8 @@ function desenharImportar() {
     ${sg ? `<section class="imp-passo"><h2><span>3</span>O que foi lido</h2>${painelSienge(sg)}</section>
     <section class="imp-passo"><h2><span>4</span>Conferir e importar</h2>
       <div class="acoes"><button type="button" class="botao" id="imp-simular"${IMP.enviando ? ' disabled' : ''}>Conferir sem gravar</button>
-        <button type="button" class="botao primario" id="imp-ir"${IMP.enviando ? ' disabled' : ''}>Importar</button></div>
+        <button type="button" class="botao primario" id="imp-ir"${IMP.enviando ? ' disabled' : ''}>Importar</button>
+        <button type="button" class="botao" id="imp-cancelar"${IMP.enviando ? ' disabled' : ''}>Cancelar</button></div>
       <div id="imp-resumo" aria-live="polite">${r ? resumoSienge(r) : ''}</div></section>` : ''}
     ${f && !sg ? `<section class="imp-passo"><h2><span>3</span>Colunas</h2>
       <div class="imp-campos">
@@ -84,7 +95,8 @@ function desenharImportar() {
       ${previa}</section>
     <section class="imp-passo"><h2><span>4</span>Conferir e importar</h2>
       <div class="acoes"><button type="button" class="botao" id="imp-simular"${IMP.enviando ? ' disabled' : ''}>Conferir sem gravar</button>
-        <button type="button" class="botao primario" id="imp-ir"${IMP.enviando ? ' disabled' : ''}>Importar</button></div>
+        <button type="button" class="botao primario" id="imp-ir"${IMP.enviando ? ' disabled' : ''}>Importar</button>
+        <button type="button" class="botao" id="imp-cancelar"${IMP.enviando ? ' disabled' : ''}>Cancelar</button></div>
       <div id="imp-resumo" aria-live="polite">${r ? resumoImportacao(r) : ''}</div></section>` : ''}
   </div>`;
   ligarImportar();
@@ -181,9 +193,10 @@ async function enviarSienge(simular) {
     const j = await resp.json().catch(() => ({}));
     if (!resp.ok) throw new Error(Array.isArray(j.detail) ? 'Confira os campos.' : (j.detail || `Erro ${resp.status}`));
     IMP.simulado = j;
-    if (!simular) { IMP.novaBase = ''; IMP.base = String(j.base_id); lembrarBase(j.base_id); await recarregarBases(); MEMORIA.clear(); }
+    if (!simular) { lembrarBase(j.base_id); await recarregarBases(); MEMORIA.clear(); limparImportacao({ base: String(j.base_id), concluido: resumoSienge(j) }); }
   } catch (e) { IMP.simulado = null; avisar(esc(e.message), 9000); }
   IMP.enviando = false; desenharImportar();
+  if (IMP.concluido) { window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' }); return; }
   const res = $('#imp-resumo'); if (res) res.scrollIntoView({ block: 'nearest', behavior: semMovimento() ? 'auto' : 'smooth' });
 }
 
@@ -206,7 +219,8 @@ async function lerArquivo(arquivo) {
     if (r.status === 401) { sessaoEncerrada(); return; }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || `Erro ${r.status}`);
-    IMP.arq = j; IMP.file = arquivo; IMP.folha = 0; IMP.simulado = null; aplicarPalpite();
+    if (j.sienge && j.sienge.relatorio === 'orcamento') { avisar('Este é o relatório "Orçamento" do SIENGE: ele é anexado na aba Orçamentos.', 7000); ANX.passado = arquivo; location.hash = '#/orcamentos/anexar'; return; }
+    IMP.arq = j; IMP.file = arquivo; IMP.folha = 0; IMP.simulado = null; IMP.concluido = null; aplicarPalpite();
     if (j.sienge) IMP.nome = '';
     if (IMP.tipo === 'orcamento' && !IMP.nome) IMP.nome = arquivo.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
     desenharImportar();
@@ -239,9 +253,10 @@ async function enviarImportacao(simular) {
   try {
     const r = await req(`/api/importar/${IMP.tipo}`, 'POST', corpo);
     IMP.simulado = r;
-    if (!simular) { IMP.novaBase = ''; IMP.base = String(r.base_id); lembrarBase(r.base_id); await recarregarBases(); MEMORIA.clear(); }
+    if (!simular) { lembrarBase(r.base_id); await recarregarBases(); MEMORIA.clear(); const tipo = IMP.tipo, html = resumoImportacao(r); limparImportacao({ base: String(r.base_id), tipo, concluido: html }); }
   } catch (e) { IMP.simulado = null; avisar(esc(e.message), 8000); }
   IMP.enviando = false; desenharImportar();
+  if (IMP.concluido) { window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' }); return; }
   const res = $('#imp-resumo'); if (res) res.scrollIntoView({ block: 'nearest', behavior: semMovimento() ? 'auto' : 'smooth' });
 }
 
@@ -254,6 +269,7 @@ function ligarImportar() {
     if (e.target.id === 'imp-simular') (sienge ? enviarSienge : enviarImportacao)(true);
     if (e.target.id === 'imp-ir') (sienge ? enviarSienge : enviarImportacao)(false);
     const ib = e.target.closest('[data-ir-base]'); if (ib) lembrarBase(Number(ib.dataset.irBase));
+    if (e.target.id === 'imp-cancelar') { limparImportacao(); desenharImportar(); window.scrollTo(0, 0); avisar('Importação cancelada. Nada foi gravado e a tela voltou ao início.'); }
   });
   pg.addEventListener('change', (e) => {
     const t = e.target;
@@ -270,3 +286,117 @@ function ligarImportar() {
   z.addEventListener('dragleave', () => z.classList.remove('sobre'));
   z.addEventListener('drop', (e) => { e.preventDefault(); z.classList.remove('sobre'); lerArquivo(e.dataTransfer.files[0]); });
 }
+
+
+// ---------- anexar o orçamento de uma obra (aba Orçamentos) ----------
+// O arquivo é lido e conferido sem gravar nada. "Anexar" cria o orçamento; "Cancelar" volta tudo à estaca zero.
+const anxInicial = () => ({ file: null, sim: null, nome: '', cliente: '', local: '', bdi: null, base: '', lendo: false, enviando: false, erro: '', passado: null });
+const ANX = anxInicial();
+function limparAnexo() { Object.assign(ANX, anxInicial()); }
+let anxVeioDe = '';
+window.addEventListener('hashchange', () => { if (!/^#\/orcamentos\/anexar/.test(location.hash)) { anxVeioDe = ''; if (!ANX.passado) limparAnexo(); } });
+
+window.desenharAnexar = function () {
+  if (anxVeioDe !== 'anexar') { const passado = ANX.passado; limparAnexo(); anxVeioDe = 'anexar'; if (passado) { lerAnexo(passado); return; } }
+  const d = $('#detalhe'), r = ANX.sim, bases = basesProprias();
+  const n = (v, um, varios) => `<b>${(v || 0).toLocaleString('pt-BR')}</b> ${v === 1 ? um : varios}`;
+  if (!ANX.base) ANX.base = String(PROP.base || (bases[0] && bases[0].id) || 1);
+  const conferencia = r ? `
+    <section class="imp-passo"><h2><span>2</span>O que foi lido</h2>
+      <ul class="imp-lido">
+        <li>Obra <b>${esc(r.obra)}</b>${r.data_base ? `, data-base do arquivo ${esc(r.data_base.split('-').reverse().join('/'))}` : ''}: ${n(r.itens, 'item', 'itens')} em ${n(r.titulos, 'título', 'títulos')} (etapas e subetapas)</li>
+        <li>${Math.abs(r.soma_arquivo - r.total_arquivo) < 0.05 ? `${VISTO}A soma dos itens lidos confere com o total do arquivo: <b>${brl.format(r.total_arquivo)}</b>` : `<span class="imp-alerta">A soma lida (${brl.format(r.soma_arquivo)}) difere do total do arquivo (${brl.format(r.total_arquivo)})</span>`}</li>
+        <li>Itens encontrados nas bases pelo nome: ${Object.entries(r.por_base).map(([b, q]) => `<b>${q.toLocaleString('pt-BR')}</b> em ${esc(b)}`).join(' · ') || 'nenhum'}. O nome, a unidade e o preço desses itens vêm da base</li>
+        ${r.n_diferentes ? `<li class="imp-alerta">${n(r.n_diferentes, 'item encontrado tem', 'itens encontrados têm')} preço na base diferente do arquivo (vale o da base):</li>
+          ${r.diferentes.slice(0, 10).map((x) => `<li class="imp-dif">${esc(x.codigo)} ${esc(x.descricao.slice(0, 70))} · arquivo ${brl.format(x.arquivo)} · ${esc(x.onde)} ${x.base == null ? 'sem preço' : brl.format(x.base)}</li>`).join('')}` : ''}
+        ${r.n_faltam ? `<li class="imp-alerta">${n(r.n_faltam, 'item não foi encontrado', 'itens não foram encontrados')} em nenhuma base (${brl.format(r.total_faltam)} do total). ${r.n_faltam === 1 ? 'Ele entra' : 'Eles entram'} com o nome e o preço do arquivo, como insumo da base escolhida abaixo:</li>` : `<li>${VISTO}Todos os itens foram encontrados nas bases</li>`}
+      </ul>
+      ${r.n_faltam ? `<div class="tabela-rola imp-previa"><table class="planilha"><thead><tr><th>Item</th><th>Descrição no arquivo</th><th>Un.</th><th class="num">Preço unit.</th><th class="num">Total</th></tr></thead>
+        <tbody>${r.faltam.map((x) => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td><td class="num">${num4.format(x.preco)}</td><td class="num">${num2.format(x.total)}</td></tr>`).join('')}</tbody></table></div>` : ''}
+    </section>
+    <section class="imp-passo"><h2><span>3</span>Dados do orçamento</h2>
+      <div class="imp-campos">
+        <label>Nome do orçamento<input id="anx-nome" maxlength="200" value="${esc(ANX.nome || r.obra)}"></label>
+        <label>Cliente<input id="anx-cliente" maxlength="200" value="${esc(ANX.cliente)}" placeholder="—"></label>
+        <label>Local<input id="anx-local" maxlength="200" value="${esc(ANX.local)}" placeholder="—"></label>
+        <label class="curto">BDI (%)<input id="anx-bdi" inputmode="decimal" value="${num2.format(ANX.bdi == null ? r.bdi : ANX.bdi)}"></label>
+        ${r.n_faltam ? `<label>Base para os itens não encontrados<select id="anx-base">${bases.map((b) => `<option value="${b.id}"${String(b.id) === ANX.base ? ' selected' : ''}>${esc(b.nome)}</option>`).join('')}</select></label>` : ''}
+      </div>
+      <div class="acoes imp-acoes"><button type="button" class="botao primario" id="anx-ir"${ANX.enviando ? ' disabled' : ''}>Anexar orçamento</button>
+        <button type="button" class="botao" id="anx-cancelar"${ANX.enviando ? ' disabled' : ''}>Cancelar</button></div>
+      <p class="imp-contagem">Nada foi gravado até aqui. "Cancelar" descarta o arquivo e a conferência.</p>
+    </section>` : '';
+  d.innerHTML = `<div class="pagina importar anexar">
+    <a class="botao voltar-lista" href="#/orcamentos">Todos os orçamentos</a>
+    <header class="pag-cab"><div><h1>Anexar orçamento</h1>
+      <p class="sub">Envie o orçamento da obra emitido por outro sistema (relatório "Orçamento" do SIENGE, em PDF). As etapas e subetapas são recriadas e cada item é ligado, pelo nome, à composição que já existe nas bases: próprias, ORSE, SINAPI ou SICRO.</p></div></header>
+    <section class="imp-passo"><h2><span>1</span>Arquivo</h2>
+      <label class="imp-arquivo${ANX.lendo ? ' lendo' : ''}" id="anx-zona"><input type="file" id="anx-file" accept=".pdf,.xlsx,.xlsm,.csv">
+        <b>${ANX.lendo ? 'Lendo o arquivo…' : ANX.file ? esc(ANX.file.name) : 'Escolha o arquivo ou arraste para cá'}</b>
+        <span>${ANX.file && !ANX.lendo ? 'trocar arquivo' : 'PDF do relatório "Orçamento" do SIENGE. Planilhas em Excel ou CSV seguem para a importação com conferência de colunas.'}</span></label>
+      ${ANX.erro ? `<p class="erro" role="alert">${esc(ANX.erro)}</p>` : ''}
+      ${ANX.file && !r && !ANX.lendo ? '<div class="acoes imp-acoes"><button type="button" class="botao" id="anx-cancelar">Cancelar</button></div>' : ''}
+    </section>
+    ${conferencia}
+  </div>`;
+  const z = $('#anx-zona');
+  z.addEventListener('dragover', (e) => { e.preventDefault(); z.classList.add('sobre'); });
+  z.addEventListener('dragleave', () => z.classList.remove('sobre'));
+  z.addEventListener('drop', (e) => { e.preventDefault(); z.classList.remove('sobre'); lerAnexo(e.dataTransfer.files[0]); });
+};
+
+function guardarCamposAnexo() {
+  const v = (id) => { const e = $(id); return e ? e.value.trim() : null; };
+  if (v('#anx-nome') != null) ANX.nome = v('#anx-nome');
+  if (v('#anx-cliente') != null) ANX.cliente = v('#anx-cliente');
+  if (v('#anx-local') != null) ANX.local = v('#anx-local');
+  if (v('#anx-bdi') != null) { const b = lerNum(v('#anx-bdi')); ANX.bdi = b >= 0 && b <= 100 ? b : 0; }
+  if ($('#anx-base')) ANX.base = $('#anx-base').value;
+}
+
+async function enviarAnexo(simular) {
+  const p = new URLSearchParams({ simular: String(simular) });
+  if (!simular) { p.set('nome', ANX.nome || ''); p.set('cliente', ANX.cliente); p.set('local', ANX.local); if (ANX.bdi != null) p.set('bdi', String(ANX.bdi)); p.set('base_id', ANX.base); }
+  const resp = await fetch(`/api/importar/orcamento-sienge?${p}`, { method: 'POST', body: ANX.file });
+  if (resp.status === 401) { sessaoEncerrada(); throw new Error('Sessão encerrada.'); }
+  const j = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(Array.isArray(j.detail) ? 'Confira os campos.' : (j.detail || `Erro ${resp.status}`));
+  return anotarBasesProprias(j);
+}
+
+async function lerAnexo(arquivo) {
+  if (!arquivo) return;
+  limparAnexo(); anxVeioDe = 'anexar'; ANX.file = arquivo; ANX.lendo = true; window.desenharAnexar();
+  try {
+    const resp = await fetch('/api/importar/ler', { method: 'POST', body: arquivo, headers: { 'X-Nome-Arquivo': encodeURIComponent(arquivo.name) } });
+    if (resp.status === 401) { sessaoEncerrada(); return; }
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(j.detail || `Erro ${resp.status}`);
+    if (j.sienge && j.sienge.relatorio === 'orcamento') { ANX.sim = await enviarAnexo(true); if (ANX.sim.base_sugerida) ANX.base = String(ANX.sim.base_sugerida); }
+    else if (j.sienge) throw new Error(`Este PDF é o relatório "${j.sienge.titulo}" do SIENGE, e não o orçamento. Ele entra pela aba Bases próprias, em "Importar arquivo".`);
+    else {
+      // planilha comum: segue para a importação com conferência de colunas, já como orçamento
+      limparAnexo(); limparImportacao({ tipo: 'orcamento', arq: j, file: arquivo, passado: true, nome: arquivo.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ') });
+      aplicarPalpite(); location.hash = '#/importar'; return;
+    }
+  } catch (e) { const nome = ANX.file; limparAnexo(); anxVeioDe = 'anexar'; ANX.erro = e.message; ANX.file = null; void nome; }
+  ANX.lendo = false; if (/^#\/orcamentos\/anexar/.test(location.hash)) window.desenharAnexar();
+}
+
+document.addEventListener('change', (e) => { if (e.target.id === 'anx-file') lerAnexo(e.target.files[0]); else if (e.target.closest && e.target.closest('.anexar')) guardarCamposAnexo(); });
+document.addEventListener('click', async (e) => {
+  if (e.target.id === 'anx-cancelar') {
+    limparAnexo(); location.hash = '#/orcamentos'; avisar('Anexo cancelado. Nada foi gravado.'); return;
+  }
+  if (e.target.id !== 'anx-ir') return;
+  guardarCamposAnexo();
+  if (!ANX.nome && !(ANX.sim && ANX.sim.obra)) { avisar('Dê um nome ao orçamento.'); return; }
+  ANX.enviando = true; e.target.disabled = true; e.target.textContent = 'Anexando…';
+  try {
+    const r = await enviarAnexo(false);
+    await recarregarBases(); MEMORIA.clear();
+    limparAnexo();  // nada do arquivo fica preso na tela
+    location.hash = rotaOrc(r.orcamento_id);
+    avisar(`${VISTO}Orçamento anexado: ${r.itens.toLocaleString('pt-BR')} itens em ${r.etapas} etapas e ${r.subetapas} subetapas · total ${brl.format(r.total_aplicativo)} (no arquivo, ${brl.format(r.total_arquivo)}).`, 12000);
+  } catch (err) { ANX.enviando = false; avisar(esc(err.message), 9000); window.desenharAnexar(); }
+});

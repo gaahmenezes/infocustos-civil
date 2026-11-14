@@ -47,6 +47,7 @@ window.rotaOrcamento = async function () {
   const m = location.hash.match(/^#\/orcamento\/(\d+)(?:\/(planilha|abc-servicos|abc-insumos|relatorio))?/);
   const d = $('#detalhe');
   try {
+    if (/^#\/orcamentos\/anexar/.test(location.hash)) { window.desenharAnexar(); return; }
     if (m) { ORC.aba = m[2] || 'planilha'; await abrirOrcamento(Number(m[1])); }
     else await listarOrcamentos();
   } catch (e) {
@@ -137,7 +138,8 @@ async function listarOrcamentos() {
   $('#detalhe').innerHTML = `<div class="pagina orcamentos">
     <header class="pag-cab">
       <div><h1>Orçamentos</h1><p class="sub" id="orc-resumo"></p></div>
-      <button type="button" class="botao primario" id="novo-orc" data-novo-orc>Novo orçamento</button>
+      <div class="acoes"><a class="botao" href="#/orcamentos/anexar" id="anexar-orc">Anexar orçamento</a>
+        <button type="button" class="botao primario" id="novo-orc" data-novo-orc>Novo orçamento</button></div>
     </header>
     ${tem ? `<div class="pag-barra">
         <input type="search" id="orc-q" class="cmp-q" placeholder="Filtrar por nome, cliente ou local" value="${esc(LISTA.q)}" aria-label="Filtrar orçamentos">
@@ -324,7 +326,7 @@ function recalcular(o, mudar, manter) {
     e.itens.forEach((i, ni) => {
       if (mudar) mudar(i);
       i.numero = `${e.numero}.${ni + 1}`;
-      i.preco_unit = arred2(i.custo_unit * fator); i.custo_total = arred2(i.quantidade * i.custo_unit); i.total = arred2(i.quantidade * i.preco_unit);
+      i.preco_unit = fator === 1 ? i.custo_unit : arred2(i.custo_unit * fator); i.custo_total = arred2(i.quantidade * i.custo_unit); i.total = arred2(i.quantidade * i.preco_unit);
     });
     e.custo_total = arred2(e.itens.reduce((s, i) => s + i.custo_total, 0)); e.total = arred2(e.itens.reduce((s, i) => s + i.total, 0));
     if (e !== mae) { mae.custo_total = arred2(mae.custo_total + e.custo_total); mae.total = arred2(mae.total + e.total); }

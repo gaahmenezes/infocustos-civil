@@ -258,3 +258,37 @@ def test_sienge_pdf_insumos_orcados_e_composicoes_de_servicos():
 def test_pdf_grande_desconhecido_nao_trava():
     r = c.post('/api/importar/ler', content=_pdf_celulas([[['página', str(k)]] for k in range(70)]), headers={'X-Nome-Arquivo': 'grande.pdf'})
     assert r.status_code == 413 and 'Excel' in r.json()['detail']
+
+
+def test_anexar_orcamento_do_sienge_liga_os_itens_pelo_nome():
+    # base com duas composições: os nomes do orçamento batem com elas (uma com quebra de linha diferente e outra caixa)
+    bid = c.post('/api/proprias/bases', json={'nome': 'Obra anexo'}).json()['id']
+    i1 = c.post('/api/proprias/insumos', json={'descricao': 'Servente', 'unidade': 'h', 'preco': 9.6736, 'base_id': bid}).json()['codigo']
+    comps = {}
+    for nome, un, coef in (('Regularização Manual', 'm2', 1), ('Tela aço CA-60, Q-61, malha 15x15cm', 'm2', 2)):
+        k = c.post('/api/proprias/composicoes', json={'descricao': nome, 'unidade': un, 'base_id': bid}).json()['codigo']
+        c.post(f'/api/proprias/composicoes/{k}/itens', json={'tipo': 'insumo', 'base': 'PROPRIA', 'codigo': i1, 'qtd': coef})
+        comps[nome] = k
+    col = ['Código', 'Descrição', 'Un.', 'Quantidade orçada', 'Preço unitário', 'Preço total']
+    topo = [['Orçamento'], ['Obra', '9 - OBRA ANEXO'], ['Data base', '16/09/2026'], ['BDI', 'não aplicado'], col]
+    pdf = _pdf_celulas([topo + [['01', 'TORRES', '1.354,31'], ['01.001', 'FUNDAÇÃO', '1.354,31'], ['01.001.001', 'Radier', '1.160,83'],
+                               ['01.001.001.001', 'REGULARIZAÇÃO MANUAL', 'm2', '100,0000', '9,6736', '967,36'],
+                               ['01.001.001.002', 'Tela aço CA-60, Q-', '61, malha 15x15cm', 'm2', '10,0000', '19,3472', '193,47'],
+                               ['01.001.000.001', 'Serviço que não existe em base nenhuma', 'vb', '1,0000', '193,4800', '193,48'],
+                               ['Total da unidade construtiva', '1.354,31'], ['14/11/2026 - 16:12:21'], ['SIENGE / STARIAN'], ['1 de 1']]])
+    assert ler('orcamento.pdf', pdf)['sienge']['relatorio'] == 'orcamento'
+    assert c.post('/api/importar/sienge?base_id=1', content=pdf).status_code == 422  # não é relatório de base: vai pela aba Orçamentos
+    antes = len(c.get('/api/orcamentos').json())
+    s = c.post('/api/importar/orcamento-sienge?simular=true', content=pdf).json()
+    assert s['itens'] == 3 and s['por_base'] == {'Obra anexo': 2} and s['n_faltam'] == 1 and s['n_diferentes'] == 0 and s['base_sugerida'] == bid
+    assert abs(s['soma_arquivo'] - s['total_arquivo']) < 0.01 and len(c.get('/api/orcamentos').json()) == antes  # simular não grava
+    r = c.post('/api/importar/orcamento-sienge?nome=Obra%20anexada', content=pdf).json()
+    o = c.get(f"/api/orcamentos/{r['orcamento_id']}").json()
+    assert [(e['numero'], e['titulo']) for e in o['etapas']] == [('1', 'TORRES › FUNDAÇÃO'), ('1.2', 'Radier')] and o['bdi'] == 0
+    itens = {i['numero']: i for e in o['etapas'] for i in e['itens']}
+    assert itens['1.2.1']['codigo'] == comps['Regularização Manual'] and itens['1.2.1']['descricao'] == 'Regularização Manual'  # nome como está na base
+    assert itens['1.2.2']['codigo'] == comps['Tela aço CA-60, Q-61, malha 15x15cm']
+    assert itens['1.1']['tipo'] == 'insumo' and itens['1.1']['custo_unit'] == 193.48 and itens['1.1']['base_nome'] == 'Obra anexo'
+    assert abs(o['total'] - 1354.31) < 0.01 and itens['1.2.1']['total'] == 967.36  # preço com 4 casas, total igual ao do arquivo
+    c.delete(f"/api/orcamentos/{r['orcamento_id']}")
+    c.delete(f'/api/proprias/bases/{bid}')

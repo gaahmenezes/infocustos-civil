@@ -310,7 +310,8 @@ def _calcular(c, oid):
             i['base_nome'] = proprias.base_do_codigo(i['codigo'])
         if o['sem_complementares']:
             i['custo_unit'] = r2(i['custo_cheio'] - i['custo_compl'])
-        i['preco_unit'] = r2(i['custo_unit'] * fator_bdi)
+        # sem BDI no item (BDI zero ou só no total), o preço é o próprio custo, com as casas que ele tiver
+        i['preco_unit'] = i['custo_unit'] if fator_bdi == 1 else r2(i['custo_unit'] * fator_bdi)
         i['custo_total'] = r2(i['quantidade'] * i['custo_unit'])
         i['total'] = r2(i['quantidade'] * i['preco_unit'])
         por_etapa[i['etapa_id']].append(i)
@@ -786,7 +787,7 @@ def _simular_itens(c, oid, ref=None):
             efetivo = p['preco']
             if o['sem_complementares']:
                 efetivo = r2(p['preco'] - min(complementares(i['tipo'], i['base'], i['codigo'], p['referencia'], p['descricao'], p['preco']), p['preco']))
-            nt = r2(i['quantidade'] * r2(efetivo * fator))
+            nt = r2(i['quantidade'] * (efetivo if fator == 1 else r2(efetivo * fator)))
             novo_total += nt
             linhas.append({'id': i['id'], 'numero': i['numero'], 'codigo': i['codigo'], 'base': i['base'], 'descricao': i['descricao'],
                            'unidade': i['unidade'], 'quantidade': i['quantidade'], 'de_referencia': i['referencia'], 'para_referencia': p['referencia'],

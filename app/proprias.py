@@ -232,7 +232,7 @@ class Calculo:
                           'descricao': d['descricao'] if d else (it['descricao'] or '') + ' — não encontrado na data-base escolhida',
                           'unidade': d['unidade'] if d else it['unidade'], 'qtd': it['qtd'], 'custo_unit': preco, 'custo_total': custo,
                           'referencia': d['referencia'] if d else None, 'tem_composicao': bool(d and d['tem_composicao'])})
-        total = round(total, 2)
+        total = round(total, 4)  # 4 casas, como os sistemas de onde as composições são importadas (SIENGE)
         fr = {k: (v / total if total else 0) for k, v in div.items()}
         r = {'base': BASE, 'codigo': cod_comp(cid), 'id': cid, 'descricao': cp['descricao'], 'unidade': cp['unidade'], 'grupo': cp['grupo'] or 'Composições próprias',
              'subgrupo': '', 'observacoes': cp['observacoes'] or '', 'modelo': 'PROPRIA', 'prod_equipe': None, 'encargo_social': None, 'referencia': None,

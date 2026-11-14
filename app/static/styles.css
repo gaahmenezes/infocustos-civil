@@ -1825,3 +1825,8 @@ html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
 .imp-lido { margin: 0 0 14px; padding-left: 18px; display: grid; gap: 5px; max-width: 110ch; }
 
 .prop-grupo { display: block; font-size: 12px; color: var(--tinta-3); }
+
+/* fim da importação e anexo de orçamento */
+.imp-final { border-color: var(--acao); }
+.imp-final .imp-resultado { margin-top: 0; }
+.imp-acoes { margin-top: 14px; }

@@ -200,6 +200,53 @@ def ler_servicos(paginas):
     return {'relatorio': 'servicos', 'obra': obra, 'servicos': servicos, 'servicos_diferentes': difs}
 
 
+COD_ORC = re.compile(r'^\d{2}(?:\.\d{3})*$')
+RODAPE = re.compile(r'^\d{2}/\d{2}/\d{4} - \d{2}:\d{2}:\d{2}$|^SIENGE / STARIAN$|^\d+ de \d+$')
+
+
+def ler_orcamento(paginas):
+    """Relatório "Orçamento": código hierárquico (01, 01.002, 01.002.005, 01.002.005.003), descrição e, nos itens,
+    unidade, quantidade orçada, preço unitário e preço total. Linhas só com o total são títulos (níveis)."""
+    obra = data_base = bdi = ''
+    linhas, total_geral = [], None
+    for cel in paginas:
+        cel = _juntar_numeros([t for t in cel if not RODAPE.match(t)])
+        n = len(cel)
+        for k, t in enumerate(cel[:40]):
+            if t == 'Obra' and not obra and k + 1 < n:
+                obra = cel[k + 1]
+            if t == 'Data base' and not data_base and k + 1 < n:
+                data_base = cel[k + 1]
+            if t == 'BDI' and not bdi and k + 1 < n:
+                bdi = cel[k + 1]
+        try:
+            i = cel.index('Preço total') + 1  # fim do cabeçalho da página
+        except ValueError:
+            i = 0
+        while i < n:
+            t = cel[i]
+            if t.startswith('Total da unidade') or t.startswith('Total do orçamento') or t.startswith('Total geral'):
+                if i + 1 < n and NUM.match(cel[i + 1]):
+                    total_geral = num(cel[i + 1])
+                i += 2; continue
+            if COD_ORC.match(t):
+                j = i + 1
+                while j < n and not COD_ORC.match(cel[j]) and not cel[j].startswith('Total da unidade'):
+                    j += 1
+                corpo = cel[i + 1:j]
+                if len(corpo) >= 5 and all(NUM.match(x) for x in corpo[-3:]):
+                    linhas.append({'codigo': t, 'nivel': t.count('.') + 1, 'descricao': ' '.join(' '.join(corpo[:-4]).split()), 'unidade': corpo[-4],
+                                   'quantidade': num(corpo[-3]), 'preco': num(corpo[-2]), 'total': num(corpo[-1]), 'item': True})
+                elif len(corpo) >= 2 and NUM.match(corpo[-1]):
+                    linhas.append({'codigo': t, 'nivel': t.count('.') + 1, 'descricao': ' '.join(' '.join(corpo[:-1]).split()), 'total': num(corpo[-1]), 'item': False})
+                i = j; continue
+            i += 1
+    itens = [x for x in linhas if x['item']]
+    m = re.match(r'(\d{2})/(\d{2})/(\d{4})', data_base)
+    return {'relatorio': 'orcamento', 'obra': obra, 'data_base': f'{m.group(3)}-{m.group(2)}-{m.group(1)}' if m else '', 'bdi': bdi, 'linhas': linhas,
+            'total': total_geral, 'soma': round(sum(x['total'] for x in itens), 2)}
+
+
 _GUARDADOS, _TRAVA = OrderedDict(), threading.Lock()
 
 
@@ -217,6 +264,8 @@ def ler(dados):
         r = ler_insumos(pags)
     elif 'Composições de Serviços' in inicio:
         r = ler_servicos(pags)
+    elif pags and pags[0][:1] == ['Orçamento']:
+        r = ler_orcamento(pags)
     else:
         r = {'relatorio': None, 'paginas': pags}
     r['n_paginas'] = len(pags)
