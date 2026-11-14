@@ -177,3 +177,84 @@ def test_sienge_mesmo_codigo_com_detalhes_e_data_do_preco():
     comp = c.get(f'/api/proprias?base_id={bid}').json()['composicoes'][0]
     assert abs(comp['custo_total'] - (400 * 0.6925 + 1.1 * 64 + 8 * 15.87)) < 0.01
     c.delete(f'/api/proprias/bases/{bid}')
+
+
+def _pdf_celulas(paginas):
+    """PDF em que cada célula é escrita separada e na ordem da linha, como nos relatórios do SIENGE."""
+    import io
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    b = io.BytesIO(); cv = canvas.Canvas(b, pagesize=A4)
+    for linhas in paginas:
+        y = 800; cv.setFont('Helvetica', 7)
+        for ln in linhas:
+            x = 30
+            for cel in ln:
+                cv.drawString(x, y, cel); x += max(60, 4 * len(cel) + 14)
+            y -= 11
+        cv.showPage()
+    cv.save()
+    return b.getvalue()
+
+
+def test_sienge_pdf_insumos_orcados_e_composicoes_de_servicos():
+    cab = [['Insumos Orçados'], ['Obra', '9 - OBRA TESTE'], ['Tipo de obra', '1 - Construção Civil']]
+    col = ['Código', 'Insumo', 'Un.', 'Quantidade', 'Preço unitário', 'Preço total', 'Data do preço']
+    ins = _pdf_celulas([cab + [['Grupo', '01 - Mão-de-obra'], ['Família', '01.001 - Mão-de-Obra Própria (Horista)'], col,
+                               ['1', 'Servente', 'h', '100,0000', '15,8700', '1.587,00', '12/02/2025'], ['Total Família', '1.587,00'],
+                               ['Família', '01.008 - Serviços de Terceiros'], col, ['5', 'Pintor', 'm2', '10,0000', '3,5231', '35,23', '26/03/2024'],
+                               ['Total Família', '35,23'], ['Total Grupo', '1.622,23']],
+                        cab + [['Grupo', '02 - Materiais'], ['Família', '02.001 - Aglomerantes'], col,
+                               ['24', 'Cimento / Detalhe: CP-II F-40', 'kg', '1.000,0000', '0,5908', '590,80', '25/04/2022'],
+                               ['24', 'Cimento / Detalhe: CP-V ARI para', 'concreto de alta resistência', 'kg', '200,0000', '0,6925', '138,50', '22/06/2021'],
+                               ['Total Família', '729,30'], ['Total Grupo', '729,30'], ['Total da obra', '2.351,53']]])
+    r = ler('insumos_orcados.pdf', ins)
+    sg = r['sienge']
+    assert r['formato'] == 'SIENGE' and sg['relatorio'] == 'insumos' and sg['insumos'] == 4 and sg['familias_diferentes'] == 0
+    assert abs(sg['soma'] - sg['total_obra']) < 0.01 and sg['tipos'] == {'MAO_DE_OBRA': 1, 'SERVICO_TERCEIRO': 1, 'MATERIAL': 2}
+    s = c.post('/api/importar/sienge?nova_base=SIENGE%20PDF&simular=true', content=ins).json()
+    assert s['novos'] == 4 and s['simulado'] and s['base_id'] is None
+    r = c.post('/api/importar/sienge?nova_base=SIENGE%20PDF', content=ins).json()
+    bid = r['base_id']
+    lista = {i['codigo_origem']: i for i in c.get(f'/api/proprias?base_id={bid}').json()['insumos']}
+    ari = lista['24#cpvariparaconcretodealtaresistencia']
+    assert ari['preco'] == 0.6925 and ari['data_preco'] == '2021-06-22' and ari['grupo'] == 'Materiais › Aglomerantes' and ari['tipo'] == 'MATERIAL'
+    assert lista['1']['tipo'] == 'MAO_DE_OBRA' and lista['5']['tipo'] == 'SERVICO_TERCEIRO' and lista['5']['grupo'] == 'Mão-de-obra › Serviços de Terceiros'
+    # composições: etapa > subetapa > serviço > itens; um serviço usa o outro (SE); a página de rosto se repete
+    topo = [['Composições de Serviços da Obra'], ['Obra', '9 - OBRA TESTE']]
+    colc = ['Tipo', 'Código', 'Descrição', 'Unidade', 'Quantidade', 'Preço unitário', 'Mão-de-obra', 'Materiais']
+    srv = _pdf_celulas([topo + [['Etapa', '006 - FUNDAÇÕES'], ['Subetapa', '006.016 - LASTRO DE CONCRETO'],
+                                ['Serviço', '1547 - Concreto magro para lastro', 'Unidade', 'm3'], ['Preço total por grupo'], colc,
+                                ['MO', '1', 'Servente', 'h', '10,000000', '15,8700', '158,7000'],
+                                ['MC', '24', 'Cimento / CP-V ARI para', 'concreto de alta resistência', 'kg', '100,000000', '0,6925', '69,2500'],
+                                ['Total do serviço', '158,7000', '69,2500'], ['Percentual por grupo', '69,6205%', '30,3795%']],
+                        topo + [['Etapa', '007 - ESTRUTURA'], ['Subetapa', '007.001 - PISO'],
+                                ['Serviço', '2000 - Piso em concreto', 'Unidade', 'm2'], ['Preço total por grupo'], colc,
+                                ['SE', '1547', 'Concreto magro para lastro', 'm3', '0,050000', '227,9500', '7,9350', '3,4625'],
+                                ['MC', '999', 'Tela / Q-92', 'm2', '1,000000', '20,0000', '20,0000'],
+                                ['Total do serviço', '7,9350', '23,4625'],
+                                ['Serviço', '1547 - Concreto magro para lastro', 'Unidade', 'm3'], colc,
+                                ['MO', '1', 'Servente', 'h', '10,000000', '15,8700', '158,7000'],
+                                ['MC', '24', 'Cimento / CP-V ARI para', 'concreto de alta resistência', 'kg', '100,000000', '0,6925', '69,2500'],
+                                ['Total do serviço', '158,7000', '69,2500']]])
+    sg = ler('servicos.pdf', srv)['sienge']
+    assert sg['relatorio'] == 'servicos' and sg['servicos'] == 2 and sg['ocorrencias'] == 3 and sg['etapas'] == 2
+    r = c.post(f'/api/importar/sienge?base_id={bid}&criar_orcamento=true&nome_orcamento=Obra%20teste', content=srv).json()
+    assert r['composicoes_novas'] == 2 and r['n_diferentes'] == 0 and r['conferidas'] == 2, r
+    assert r['origem_dos_itens'] == {'insumo_da_base': 2, 'servico': 1, 'insumo_criado': 1, 'servico_sem_composicao': 0}
+    comps = {x['codigo_origem']: x for x in c.get(f'/api/proprias?base_id={bid}').json()['composicoes']}
+    assert comps['1547']['grupo'] == 'FUNDAÇÕES › LASTRO DE CONCRETO' and abs(comps['1547']['custo_total'] - 227.95) < 0.01
+    assert abs(comps['2000']['custo_total'] - (0.05 * 227.95 + 20)) < 0.01
+    o = c.get(f"/api/orcamentos/{r['orcamento_id']}").json()
+    assert [(e['numero'], e['titulo']) for e in o['etapas']] == [('1', 'FUNDAÇÕES'), ('1.1', 'LASTRO DE CONCRETO'), ('2', 'ESTRUTURA'), ('2.1', 'PISO')]
+    assert o['qtd_itens'] == 3 and o['total'] == 0
+    # de novo: atualiza, não duplica
+    r2 = c.post(f'/api/importar/sienge?base_id={bid}', content=srv).json()
+    assert r2['composicoes_novas'] == 0 and r2['composicoes_atualizadas'] == 2 and r2['origem_dos_itens']['insumo_criado'] == 0
+    c.delete(f"/api/orcamentos/{r['orcamento_id']}")
+    assert c.delete(f'/api/proprias/bases/{bid}').json()['composicoes'] == 2
+
+
+def test_pdf_grande_desconhecido_nao_trava():
+    r = c.post('/api/importar/ler', content=_pdf_celulas([[['página', str(k)]] for k in range(70)]), headers={'X-Nome-Arquivo': 'grande.pdf'})
+    assert r.status_code == 413 and 'Excel' in r.json()['detail']

@@ -4,7 +4,9 @@
    4. confere o resumo (simulação) e importa. */
 
 const IMP = { tipo: 'insumos', arq: null, folha: 0, cab: null, col: {}, base: '', novaBase: '', fonte: 'SIENGE', oficiais: ['SINAPI'],
-  nome: '', bdi: 0, comBdi: false, simulado: null, enviando: false };
+  nome: '', bdi: 0, comBdi: false, simulado: null, enviando: false, file: null, criarOrc: true };
+const num4 = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+const TIPO_NOME = { MAO_DE_OBRA: 'mão de obra', MATERIAL: 'material', EQUIPAMENTO: 'equipamento', SERVICO_TERCEIRO: 'serviço de terceiro' };
 
 const PAPEIS = {
   insumos: [['codigo', 'Código'], ['descricao', 'Descrição', true], ['unidade', 'Unidade'], ['tipo', 'Tipo (material, mão de obra...)'], ['preco', 'Preço unitário'], ['data', 'Data do preço']],
@@ -29,7 +31,7 @@ function nomeColuna(f, j) {
 }
 
 function desenharImportar() {
-  const d = $('#detalhe'), bases = basesProprias(), f = folhaAtual();
+  const d = $('#detalhe'), bases = basesProprias(), f = folhaAtual(), sg = IMP.arq && IMP.arq.sienge;
   if (!IMP.base && !IMP.novaBase) IMP.base = String(PROP.base || (bases[0] && bases[0].id) || 1);
   const ncol = f ? Math.min(40, Math.max(...f.linhas.slice(0, 200).map((l) => l.length), 1)) : 0;
   const mapa = f ? PAPEIS[IMP.tipo].map(([p, rot, obrig]) => `<label class="imp-map"><span>${esc(rot)}${obrig ? ' <b class="imp-obrig">*</b>' : ''}</span>
@@ -45,24 +47,33 @@ function desenharImportar() {
     <header class="pag-cab"><div><h1>Importar arquivo</h1>
       <p class="sub">Traga insumos, composições e orçamentos de outros sistemas, como o SIENGE. Aceita Excel (.xlsx), CSV e PDF. Os itens entram numa base própria e guardam o código de origem: importar de novo atualiza, sem duplicar.</p></div></header>
     <section class="imp-passo"><h2><span>1</span>O que você vai importar</h2>
-      <div class="imp-tipos" role="radiogroup" aria-label="Tipo de importação">${Object.entries(TIPOS_IMP).map(([k, [n, t]]) => `<button type="button" role="radio" data-imp-tipo="${k}" aria-checked="${IMP.tipo === k}"><b>${n}</b><span>${esc(t)}</span></button>`).join('')}</div>
+      ${sg ? `<p class="imp-reconhecido">${VISTO}Relatório do SIENGE reconhecido: <b>${esc(sg.titulo)}</b>, obra ${esc(sg.obra)}. A leitura é automática, sem conferir colunas.</p>`
+        : `<div class="imp-tipos" role="radiogroup" aria-label="Tipo de importação">${Object.entries(TIPOS_IMP).map(([k, [n, t]]) => `<button type="button" role="radio" data-imp-tipo="${k}" aria-checked="${IMP.tipo === k}"><b>${n}</b><span>${esc(t)}</span></button>`).join('')}</div>`}
       <div class="imp-campos">
         <label>Base própria de destino<select id="imp-base">${bases.map((b) => `<option value="${b.id}"${String(b.id) === IMP.base && !IMP.novaBase ? ' selected' : ''}>${esc(b.nome)} (${b.composicoes} comp., ${b.insumos} ins.)</option>`).join('')}
           <option value="nova"${IMP.novaBase ? ' selected' : ''}>Nova base…</option></select></label>
         <label${IMP.novaBase ? '' : ' hidden'} id="imp-nova-wrap">Nome da nova base<input id="imp-nova" maxlength="40" value="${esc(IMP.novaBase)}" placeholder="Ex.: SIENGE Residencial Aurora"></label>
         <label>Fonte (vai junto com os itens)<input id="imp-fonte" maxlength="200" value="${esc(IMP.fonte)}" placeholder="Ex.: SIENGE, orçamento 2026-14"></label>
-        ${IMP.tipo === 'orcamento' ? `<label>Nome do orçamento<input id="imp-nome" maxlength="200" value="${esc(IMP.nome)}" placeholder="Ex.: Residencial Aurora"></label>
+        ${sg && sg.relatorio === 'servicos' ? `<label class="imp-check"><input type="checkbox" id="imp-criar-orc"${IMP.criarOrc ? ' checked' : ''}> Criar também o orçamento, com as etapas, subetapas e serviços</label>
+          <label>Nome do orçamento<input id="imp-nome" maxlength="200" value="${esc(IMP.nome || sg.obra)}"></label>
+          <label class="curto">BDI (%)<input id="imp-bdi" inputmode="decimal" value="${num2.format(IMP.bdi)}"></label>` : ''}
+        ${!sg && IMP.tipo === 'orcamento' ? `<label>Nome do orçamento<input id="imp-nome" maxlength="200" value="${esc(IMP.nome)}" placeholder="Ex.: Residencial Aurora"></label>
           <label class="curto">BDI (%)<input id="imp-bdi" inputmode="decimal" value="${num2.format(IMP.bdi)}"></label>
           <label class="imp-check"><input type="checkbox" id="imp-com-bdi"${IMP.comBdi ? ' checked' : ''}> Os preços do arquivo já incluem esse BDI</label>` : ''}
-        ${IMP.tipo !== 'insumos' ? `<fieldset class="imp-oficiais"><legend>Códigos que podem ser de base oficial</legend>${['SINAPI', 'ORSE', 'SICRO'].map((b) => `<label class="imp-check"><input type="checkbox" data-imp-oficial="${b}"${IMP.oficiais.includes(b) ? ' checked' : ''}> ${b}</label>`).join('')}
+        ${!sg && IMP.tipo !== 'insumos' ? `<fieldset class="imp-oficiais"><legend>Códigos que podem ser de base oficial</legend>${['SINAPI', 'ORSE', 'SICRO'].map((b) => `<label class="imp-check"><input type="checkbox" data-imp-oficial="${b}"${IMP.oficiais.includes(b) ? ' checked' : ''}> ${b}</label>`).join('')}
           <small>Um código que não estiver na base própria é procurado nessas bases, no mês mais recente delas.</small></fieldset>` : ''}
       </div></section>
     <section class="imp-passo"><h2><span>2</span>Arquivo</h2>
       <label class="imp-arquivo" id="imp-zona"><input type="file" id="imp-file" accept=".xlsx,.xlsm,.csv,.txt,.pdf">
         <b>${IMP.arq ? esc(IMP.arq.arquivo) : 'Escolha o arquivo ou arraste para cá'}</b>
-        <span>${IMP.arq ? `${esc(IMP.arq.formato)} · ${IMP.arq.folhas.length} ${IMP.arq.folhas.length === 1 ? 'folha' : 'folhas'} · trocar arquivo` : 'Excel (.xlsx), CSV ou PDF, até 25 MB. No SIENGE, prefira exportar em Excel.'}</span></label>
+        <span>${IMP.arq && IMP.arq.sienge ? `Relatório do SIENGE · ${IMP.arq.sienge.paginas} páginas · trocar arquivo` : IMP.arq ? `${esc(IMP.arq.formato)} · ${IMP.arq.folhas.length} ${IMP.arq.folhas.length === 1 ? 'folha' : 'folhas'} · trocar arquivo` : 'Excel (.xlsx), CSV ou PDF, até 25 MB. No SIENGE, prefira exportar em Excel.'}</span></label>
       ${IMP.arq && IMP.arq.aviso ? `<p class="aviso-fonte" role="note">${esc(IMP.arq.aviso)}</p>` : ''}</section>
-    ${f ? `<section class="imp-passo"><h2><span>3</span>Colunas</h2>
+    ${sg ? `<section class="imp-passo"><h2><span>3</span>O que foi lido</h2>${painelSienge(sg)}</section>
+    <section class="imp-passo"><h2><span>4</span>Conferir e importar</h2>
+      <div class="acoes"><button type="button" class="botao" id="imp-simular"${IMP.enviando ? ' disabled' : ''}>Conferir sem gravar</button>
+        <button type="button" class="botao primario" id="imp-ir"${IMP.enviando ? ' disabled' : ''}>Importar</button></div>
+      <div id="imp-resumo" aria-live="polite">${r ? resumoSienge(r) : ''}</div></section>` : ''}
+    ${f && !sg ? `<section class="imp-passo"><h2><span>3</span>Colunas</h2>
       <div class="imp-campos">
         ${IMP.arq.folhas.length > 1 ? `<label>Folha<select id="imp-folha">${IMP.arq.folhas.map((x, k) => `<option value="${k}"${k === IMP.folha ? ' selected' : ''}>${esc(x.nome)} (${x.linhas.length} linhas)</option>`).join('')}</select></label>` : ''}
         <label>Linha do cabeçalho<select id="imp-cab"><option value="">Sem cabeçalho</option>${f.linhas.slice(0, 60).map((l, k) => `<option value="${k}"${IMP.cab === k ? ' selected' : ''}>${k + 1}: ${esc(l.filter((v) => v !== '').slice(0, 4).join(' | ').slice(0, 70))}</option>`).join('')}</select></label>
@@ -110,12 +121,79 @@ function resumoImportacao(r) {
     ${!r.simulado && !r.orcamento_id ? `<a class="botao" href="#/proprias" data-ir-base="${r.base_id}">Ver a base ${esc(r.base)}</a>` : ''}</div>`;
 }
 
+function painelSienge(sg) {
+  const n = (v) => (v || 0).toLocaleString('pt-BR');
+  if (sg.relatorio === 'insumos') {
+    const bate = Math.abs((sg.total_obra || 0) - sg.soma) < 1 && !sg.familias_diferentes;
+    return `<ul class="imp-lido"><li><b>${n(sg.insumos)} insumos</b> em ${n(sg.familias)} famílias, ${sg.paginas} páginas</li>
+      <li>Pelo grupo e pela família: ${Object.entries(sg.tipos).map(([t, q]) => `${n(q)} de ${TIPO_NOME[t] || t}`).join(' · ')}</li>
+      <li>${bate ? `${VISTO}A soma dos insumos lidos (<b>${brl.format(sg.soma)}</b>) confere com o "Total da obra" do relatório, família por família`
+        : `<span class="imp-alerta">A soma lida (${brl.format(sg.soma)}) não confere com o total do relatório (${brl.format(sg.total_obra || 0)}); ${sg.familias_diferentes} famílias diferentes</span>`}</li>
+      <li>Cada variação ("Cimento / Detalhe: CP-V ARI") entra como um insumo, com o preço e a data do preço do relatório</li></ul>
+      <div class="tabela-rola imp-previa"><table class="planilha"><thead><tr><th>Código</th><th>Insumo</th><th>Un.</th><th class="num">Preço</th><th>Data</th><th>Grupo › Família</th><th>Tipo</th></tr></thead>
+      <tbody>${sg.amostra.map((x) => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td><td class="num">${num4.format(x.preco)}</td><td>${esc(x.data.split('-').reverse().join('/'))}</td><td>${esc(x.grupo)} › ${esc(x.familia)}</td><td>${esc(TIPO_NOME[x.tipo] || x.tipo)}</td></tr>`).join('')}</tbody></table></div>
+      <p class="imp-contagem">Amostra das 12 primeiras linhas; todos os ${n(sg.insumos)} insumos entram na importação.</p>`;
+  }
+  return `<ul class="imp-lido"><li><b>${n(sg.servicos)} serviços (composições)</b> com ${n(sg.itens)} itens, em ${n(sg.etapas)} etapas e ${n(sg.subetapas)} subetapas, ${sg.paginas} páginas</li>
+    <li>O mesmo serviço aparece em mais de uma subetapa (${n(sg.ocorrencias)} ocorrências): a composição entra uma vez, e a etapa e a subetapa ficam como o grupo dela</li>
+    <li>Cada item é ligado ao insumo da base pelo código e pelo detalhe. Importe antes o relatório <b>Insumos Orçados</b> na mesma base, para os insumos virem com grupo, família e data do preço</li>
+    <li>O relatório não traz a quantidade de cada serviço na obra: o orçamento é criado com a estrutura completa e as quantidades zeradas, para preencher</li></ul>
+    <div class="tabela-rola imp-previa"><table class="planilha"><thead><tr><th>Serviço</th><th>Descrição</th><th>Un.</th><th class="num">Custo</th><th class="num">Itens</th><th>Etapa › Subetapa</th></tr></thead>
+    <tbody>${sg.amostra.map((x) => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td><td class="num">${num2.format(x.custo)}</td><td class="num">${x.itens}</td><td>${esc(x.etapa)} › ${esc(x.subetapa)}</td></tr>`).join('')}</tbody></table></div>
+    <p class="imp-contagem">Amostra dos 12 primeiros; todos os ${n(sg.servicos)} serviços entram na importação.</p>`;
+}
+
+function resumoSienge(r) {
+  const n = (v, um, varios) => `<b>${(v || 0).toLocaleString('pt-BR')}</b> ${v === 1 ? um : varios}`;
+  const base = r.base_id ? `<a href="#/proprias" data-ir-base="${r.base_id}">${esc(r.base)}</a>` : `<b>${esc(r.base)}</b> (nova)`;
+  let corpo;
+  if (r.relatorio === 'insumos') corpo = `<li>${n(r.novos, 'insumo novo', 'insumos novos')} e ${n(r.atualizados, 'atualizado', 'atualizados')} na base ${base}</li>
+    <li>${Object.entries(r.tipos).map(([t, q]) => `${q.toLocaleString('pt-BR')} de ${TIPO_NOME[t] || t}`).join(' · ')}</li>
+    <li>Soma do relatório: <b>${brl.format(r.soma)}</b>${r.familias_diferentes ? ` · <span class="imp-alerta">${r.familias_diferentes} famílias com total diferente</span>` : ' · confere com o total da obra'}</li>`;
+  else {
+    const o = r.origem_dos_itens || {};
+    corpo = `<li>${n(r.composicoes_novas, 'composição nova', 'composições novas')} e ${n(r.composicoes_atualizadas, 'atualizada', 'atualizadas')} na base ${base}, com ${n(r.itens, 'item', 'itens')}</li>
+      <li>Itens ligados a ${n(o.insumo_da_base, 'insumo', 'insumos')} que a base já tinha e a ${n(o.servico, 'outra composição', 'outras composições')} do relatório</li>
+      ${o.insumo_criado ? `<li class="imp-alerta">${n(o.insumo_criado, 'insumo não estava na base e foi criado', 'insumos não estavam na base e foram criados')} com o preço do relatório de serviços (sem grupo e família)</li>` : ''}
+      ${o.servico_sem_composicao ? `<li>${n(o.servico_sem_composicao, 'serviço usado como item não tem composição', 'serviços usados como item não têm composição')} no relatório e ${o.servico_sem_composicao === 1 ? 'entra' : 'entram'} com o preço dele</li>` : ''}
+      ${r.conferidas != null ? `<li>${r.n_diferentes ? `<span class="imp-alerta">${n(r.n_diferentes, 'composição com custo diferente', 'composições com custo diferente')} do relatório</span>` : `${VISTO}Custo das ${r.conferidas.toLocaleString('pt-BR')} composições conferido com o relatório: <b>igual</b>`}</li>` : ''}
+      ${(r.diferentes || []).slice(0, 8).map((x) => `<li class="imp-dif">${esc(x.codigo_origem)} ${esc(x.descricao.slice(0, 60))} · relatório ${brl.format(x.arquivo)} · aplicativo ${brl.format(x.calculado)}</li>`).join('')}
+      ${r.orcamento_id ? `<li>Orçamento criado com ${n(r.etapas, 'etapa', 'etapas')}, ${n(r.subetapas, 'subetapa', 'subetapas')} e ${n(r.itens_orcamento, 'serviço', 'serviços')}; as quantidades estão zeradas, para preencher</li>` : ''}`;
+  }
+  return `<div class="imp-resultado${r.simulado ? '' : ' feito'}"><b>${r.simulado ? 'Conferência (nada foi gravado ainda: clique em Importar para gravar)' : `${VISTO}Importação concluída`}</b><ul>${corpo}</ul>
+    ${!r.simulado && r.orcamento_id ? `<a class="botao primario" href="${rotaOrc(r.orcamento_id)}">Abrir o orçamento</a> ` : ''}
+    ${!r.simulado ? `<a class="botao" href="#/proprias" data-ir-base="${r.base_id}">Ver a base ${esc(r.base)}</a>` : ''}</div>`;
+}
+
+async function enviarSienge(simular) {
+  lerCampos();
+  const sg = IMP.arq.sienge;
+  if ($('#imp-base').value === 'nova' && !IMP.novaBase) { avisar('Dê um nome à nova base.'); $('#imp-nova').focus(); return; }
+  if (!IMP.file) { avisar('Escolha o arquivo de novo.'); return; }
+  const p = new URLSearchParams({ simular: String(!!simular), fonte: IMP.fonte && IMP.fonte !== 'SIENGE' ? IMP.fonte : '' });
+  if (IMP.novaBase) p.set('nova_base', IMP.novaBase); else p.set('base_id', $('#imp-base').value);
+  if (sg.relatorio === 'servicos' && IMP.criarOrc) { p.set('criar_orcamento', 'true'); p.set('nome_orcamento', IMP.nome || sg.obra); p.set('bdi', String(IMP.bdi)); }
+  IMP.enviando = true; $('#imp-simular').disabled = true; $('#imp-ir').disabled = true;
+  $('#imp-resumo').innerHTML = `<p class="carregando">${simular ? 'Conferindo' : 'Importando'}…</p>`;
+  try {
+    const resp = await fetch(`/api/importar/sienge?${p}`, { method: 'POST', body: IMP.file });
+    if (resp.status === 401) { sessaoEncerrada(); return; }
+    const j = await resp.json().catch(() => ({}));
+    if (!resp.ok) throw new Error(Array.isArray(j.detail) ? 'Confira os campos.' : (j.detail || `Erro ${resp.status}`));
+    IMP.simulado = j;
+    if (!simular) { IMP.novaBase = ''; IMP.base = String(j.base_id); lembrarBase(j.base_id); await recarregarBases(); MEMORIA.clear(); }
+  } catch (e) { IMP.simulado = null; avisar(esc(e.message), 9000); }
+  IMP.enviando = false; desenharImportar();
+  const res = $('#imp-resumo'); if (res) res.scrollIntoView({ block: 'nearest', behavior: semMovimento() ? 'auto' : 'smooth' });
+}
+
 function lerCampos() {
   const v = (id) => { const e = $(id); return e ? e.value : ''; };
   IMP.fonte = v('#imp-fonte').trim();
   if ($('#imp-nome')) IMP.nome = v('#imp-nome').trim();
   if ($('#imp-bdi')) { const b = lerNum(v('#imp-bdi')); IMP.bdi = b >= 0 && b <= 100 ? b : 0; }
   if ($('#imp-com-bdi')) IMP.comBdi = $('#imp-com-bdi').checked;
+  if ($('#imp-criar-orc')) IMP.criarOrc = $('#imp-criar-orc').checked;
   if ($('#imp-nova')) IMP.novaBase = $('#imp-base').value === 'nova' ? v('#imp-nova').trim() : '';
 }
 
@@ -128,7 +206,8 @@ async function lerArquivo(arquivo) {
     if (r.status === 401) { sessaoEncerrada(); return; }
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.detail || `Erro ${r.status}`);
-    IMP.arq = j; IMP.folha = 0; IMP.simulado = null; aplicarPalpite();
+    IMP.arq = j; IMP.file = arquivo; IMP.folha = 0; IMP.simulado = null; aplicarPalpite();
+    if (j.sienge) IMP.nome = '';
     if (IMP.tipo === 'orcamento' && !IMP.nome) IMP.nome = arquivo.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
     desenharImportar();
   } catch (e) { avisar(esc(e.message), 7000); if (z) z.classList.remove('lendo'); }
@@ -171,8 +250,9 @@ function ligarImportar() {
   pg.addEventListener('click', (e) => {
     const t = e.target.closest('[data-imp-tipo]');
     if (t) { lerCampos(); IMP.tipo = t.dataset.impTipo; IMP.simulado = null; aplicarPalpite(); desenharImportar(); return; }
-    if (e.target.id === 'imp-simular') enviarImportacao(true);
-    if (e.target.id === 'imp-ir') enviarImportacao(false);
+    const sienge = IMP.arq && IMP.arq.sienge;
+    if (e.target.id === 'imp-simular') (sienge ? enviarSienge : enviarImportacao)(true);
+    if (e.target.id === 'imp-ir') (sienge ? enviarSienge : enviarImportacao)(false);
     const ib = e.target.closest('[data-ir-base]'); if (ib) lembrarBase(Number(ib.dataset.irBase));
   });
   pg.addEventListener('change', (e) => {

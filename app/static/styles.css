@@ -1819,3 +1819,9 @@ html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
 .importar .imp-previa table thead th.imp-usada { background: color-mix(in srgb, var(--acao) 16%, var(--superficie-2)); }
 
 .imp-contagem { margin: 0 0 8px; font-size: 13.5px; color: var(--tinta-2); }
+
+/* relatório do SIENGE reconhecido */
+.imp-reconhecido { margin: 0 0 14px; padding: 10px 14px; border-radius: var(--raio); background: var(--planta-claro); border: 1px solid var(--planta-borda); }
+.imp-lido { margin: 0 0 14px; padding-left: 18px; display: grid; gap: 5px; max-width: 110ch; }
+
+.prop-grupo { display: block; font-size: 12px; color: var(--tinta-3); }

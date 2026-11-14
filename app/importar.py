@@ -206,6 +206,13 @@ async def ler(request: Request):
     ext = nome.lower().rsplit('.', 1)[-1] if '.' in nome else ''
     try:
         if dados[:4] == b'%PDF' or ext == 'pdf':
+            import sienge
+            r = sienge.ler(dados)  # relatórios do SIENGE têm leitura própria, conferida com os totais do relatório
+            if r['relatorio']:
+                return {'arquivo': nome, 'formato': 'SIENGE', 'folhas': [], 'aviso': '', 'sienge': resumo_sienge(r)}
+            if r['n_paginas'] > 60:
+                raise HTTPException(413, f'PDF com {r["n_paginas"]} páginas e leiaute não reconhecido. Para PDFs grandes, exporte o relatório em Excel '
+                                         '(ou envie um relatório padrão do SIENGE: Insumos Orçados ou Composições de Serviços da Obra).')
             folhas, formato = ler_pdf(dados), 'PDF'
         elif dados[:2] == b'PK' or ext in ('xlsx', 'xlsm'):
             folhas, formato = ler_xlsx(dados), 'Excel'
@@ -683,3 +690,203 @@ def importar_orcamento(d: PedidoOrcamento):
     total_arq = resumo['total_arquivo'] * (1 if d.precos_com_bdi else (1 + d.bdi / 100))
     return resumo | {'orcamento_id': oid, 'total_aplicativo': o['total'], 'custo_aplicativo': o['custo_total'],
                      'total_arquivo_com_bdi': round(total_arq, 2), 'precos_diferentes': difs[:50], 'n_precos_diferentes': len(difs)}
+
+
+# ---------- relatórios padrão do SIENGE (PDF) ----------
+def resumo_sienge(r):
+    if r['relatorio'] == 'insumos':
+        tipos, grupos = {}, {}
+        for x in r['insumos']:
+            tipos[x['tipo']] = tipos.get(x['tipo'], 0) + 1
+            grupos[x['grupo']] = grupos.get(x['grupo'], 0) + 1
+        return {'relatorio': 'insumos', 'titulo': 'Insumos Orçados', 'obra': r['obra'], 'paginas': r['n_paginas'], 'insumos': len(r['insumos']),
+                'familias': len(r['familias']), 'grupos': grupos, 'tipos': tipos, 'total_obra': r['total_obra'], 'soma': r['soma'],
+                'familias_diferentes': len(r['familias_diferentes']), 'avisos': r['avisos'],
+                'amostra': [{k: x[k] for k in ('codigo', 'descricao', 'unidade', 'preco', 'data', 'grupo', 'familia', 'tipo')} for x in r['insumos'][:12]]}
+    sv = r['servicos']
+    distintos = {}
+    for s in sv:
+        distintos.setdefault(s['codigo'], s)
+    return {'relatorio': 'servicos', 'titulo': 'Composições de Serviços da Obra', 'obra': r['obra'], 'paginas': r['n_paginas'],
+            'servicos': len(distintos), 'ocorrencias': len(sv), 'itens': sum(len(s['itens']) for s in distintos.values()),
+            'etapas': len({s['etapa'] for s in sv}), 'subetapas': len({(s['etapa'], s['subetapa']) for s in sv}),
+            'amostra': [{'codigo': s['codigo'], 'descricao': s['descricao'], 'unidade': s['unidade'], 'custo': s['calculado'], 'itens': len(s['itens']),
+                         'etapa': s['etapa'][1] if s['etapa'] else '', 'subetapa': s['subetapa'][1] if s['subetapa'] else ''} for s in list(distintos.values())[:12]]}
+
+
+def _origem_insumo(codigo, detalhe):
+    import sienge
+    k = sienge.chave_detalhe(detalhe)
+    return f'{codigo}#{k}' if k else codigo
+
+
+def _sienge_insumos(c, r, base_id, fonte, simular, agora):
+    ja = _existentes(c, 'insumo_proprio', base_id)
+    novos, atualizar, vistos = [], [], set()
+    for x in r['insumos']:
+        chave = _origem_insumo(x['codigo'], x['detalhe'])
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        linha = {'descricao': x['descricao'][:400], 'unidade': x['unidade'][:20], 'tipo': x['tipo'], 'preco': x['preco'], 'data_preco': x['data'],
+                 'fonte': fonte, 'codigo_origem': chave, 'grupo': f"{x['grupo']} › {x['familia']}"[:200]}
+        (atualizar.append(linha | {'id': ja[chave]}) if chave in ja else novos.append(linha))
+    if not simular:
+        _gravar_insumos(c, base_id, novos, atualizar, agora)
+        c.executemany('UPDATE insumo_proprio SET grupo = ? WHERE id = ?', [(x['grupo'], x['id']) for x in novos + atualizar])
+    tipos = {}
+    for x in novos + atualizar:
+        tipos[x['tipo']] = tipos.get(x['tipo'], 0) + 1
+    return {'novos': len(novos), 'atualizados': len(atualizar), 'tipos': tipos, 'total_obra': r['total_obra'], 'soma': r['soma'],
+            'familias': len(r['familias']), 'familias_diferentes': len(r['familias_diferentes'])}
+
+
+def _sienge_servicos(c, r, base_id, fonte, simular, agora):
+    import sienge
+    distintos = {}
+    for s in r['servicos']:
+        distintos.setdefault(s['codigo'], s)
+    comps_ja = _existentes(c, 'composicao_propria', base_id)
+    # insumos da base, por código do SIENGE: [(chave do detalhe, preço, id)]
+    por_codigo = {}
+    if base_id is not None:
+        for i in c.execute("SELECT id, codigo_origem, preco FROM insumo_proprio WHERE base_id = ? AND codigo_origem <> ''", (base_id,)).fetchall():
+            cod, _, det = i['codigo_origem'].partition('#')
+            por_codigo.setdefault(cod, []).append((det, i['preco'], i['id']))
+    prox = _proximo_id(c, 'composicao_propria')
+    ids, novas, atualizadas = {}, [], []
+    for cod in distintos:
+        if cod in comps_ja:
+            ids[cod] = comps_ja[cod]; atualizadas.append(cod)
+        else:
+            ids[cod] = prox; prox += 1; novas.append(cod)
+    prox_ins = _proximo_id(c, 'insumo_proprio')
+    ins_novos, criados, itens = [], {}, []
+    cont = {'insumo_da_base': 0, 'servico': 0, 'insumo_criado': 0, 'servico_sem_composicao': 0}
+
+    def achar(cod, det, preco):
+        cands = por_codigo.get(cod, [])
+        k = sienge.chave_detalhe(det)
+        for d, _, iid in cands:
+            if d == k:
+                return iid
+        if k:
+            for d, _, iid in cands:
+                if d and (d.startswith(k) or k.startswith(d)):
+                    return iid
+        mesmos = [iid for _, p, iid in cands if p is not None and abs(p - preco) < 0.00005]
+        if len(mesmos) == 1 or (mesmos and not k):
+            return mesmos[0]
+        return cands[0][2] if len(cands) == 1 else None
+
+    for cod, s in distintos.items():
+        for n, it in enumerate(s['itens'], 1):
+            if it['tipo'] == 'SE' and it['codigo'] in ids and it['codigo'] != cod:
+                cont['servico'] += 1
+                itens.append((ids[cod], n, 'servico', proprias.BASE, proprias.cod_comp(ids[it['codigo']]), it['qtd'], it['descricao'][:400], it['unidade'][:20])); continue
+            _, det = sienge.separar_detalhe(it['descricao'])
+            # serviço usado como item mas sem composição no relatório: fica como insumo próprio ("SE:código"), com o preço do relatório
+            iid = achar(('SE:' if it['tipo'] == 'SE' else '') + it['codigo'], det, it['preco'])
+            if iid is None:
+                chave = ('SE:' if it['tipo'] == 'SE' else '') + _origem_insumo(it['codigo'], det)
+                if chave not in criados:
+                    criados[chave] = prox_ins + len(ins_novos)
+                    tipo = 'SERVICO_TERCEIRO' if it['tipo'] == 'SE' else sienge.TIPOS_ITEM.get(it['tipo'], 'MATERIAL')
+                    ins_novos.append({'id': criados[chave], 'descricao': it['descricao'][:400], 'unidade': it['unidade'][:20], 'tipo': tipo, 'preco': it['preco'],
+                                      'data_preco': '', 'fonte': fonte + (' (serviço sem composição no relatório)' if it['tipo'] == 'SE' else ''),
+                                      'codigo_origem': chave})
+                    cont['servico_sem_composicao' if it['tipo'] == 'SE' else 'insumo_criado'] += 1
+                iid = criados[chave]
+            else:
+                cont['insumo_da_base'] += 1
+            itens.append((ids[cod], n, 'insumo', proprias.BASE, proprias.cod_ins(iid), it['qtd'], it['descricao'][:400], it['unidade'][:20]))
+    grupo = lambda s: ' › '.join(x[1] for x in (s['etapa'], s['subetapa']) if x)[:120]
+    resumo = {'composicoes_novas': len(novas), 'composicoes_atualizadas': len(atualizadas), 'itens': len(itens), 'origem_dos_itens': cont,
+              'etapas': len({s['etapa'] for s in r['servicos']}), 'subetapas': len({(s['etapa'], s['subetapa']) for s in r['servicos']})}
+    if simular:
+        return resumo, ids, distintos
+    if novas:
+        c.executemany('''INSERT INTO composicao_propria (id, descricao, unidade, grupo, observacoes, criado_em, atualizado_em, base_id, codigo_origem)
+            VALUES (?,?,?,?,?,?,?,?,?)''', [(ids[k], distintos[k]['descricao'][:400], distintos[k]['unidade'][:20] or 'un', grupo(distintos[k]),
+                                             f'Importada do SIENGE ({fonte}). Serviço {k}.', agora, agora, base_id, k) for k in novas])
+        c.ajustar_sequencia('composicao_propria')
+    if atualizadas:
+        c.executemany('UPDATE composicao_propria SET descricao = ?, unidade = ?, grupo = ?, atualizado_em = ? WHERE id = ?',
+                      [(distintos[k]['descricao'][:400], distintos[k]['unidade'][:20] or 'un', grupo(distintos[k]), agora, ids[k]) for k in atualizadas])
+        c.executemany('DELETE FROM composicao_propria_item WHERE composicao_id = ?', [(ids[k],) for k in atualizadas])
+    if ins_novos:
+        _gravar_insumos(c, base_id, ins_novos, [], agora)
+    c.executemany('INSERT INTO composicao_propria_item (composicao_id, ordem, tipo, base, codigo, qtd, descricao, unidade) VALUES (?,?,?,?,?,?,?,?)', itens)
+    return resumo, ids, distintos
+
+
+def _sienge_orcamento(r, ids, nome, bdi, nome_base, fonte, agora):
+    """Orçamento com as etapas, subetapas e serviços do relatório. O relatório de composições não traz a quantidade de
+    cada serviço na obra, então os itens entram com quantidade zero, para preencher."""
+    with orc_mod._base_conn() as b:
+        ref = orc_mod.ref_principal(b)
+    with orc_mod.orc() as c:
+        oid = c.execute('INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?)',
+                        (nome, '', '', ref, bdi, f'Estrutura importada do SIENGE ({fonte}). Base própria: {nome_base}. Quantidades a preencher.', agora, agora)).lastrowid
+        ordem, e_ids, s_ids, linhas, pos = 0, {}, {}, [], {}
+        calc = proprias.calculo_guardado(proprias._refs_do_mes(ref))
+        for s in r['servicos']:
+            if s['etapa'] not in e_ids:
+                ordem += 1
+                e_ids[s['etapa']] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, (s['etapa'][1] if s['etapa'] else 'Serviços')[:200], None)).lastrowid
+            alvo = e_ids[s['etapa']]
+            if s['subetapa']:
+                k = (s['etapa'], s['subetapa'])
+                if k not in s_ids:
+                    ordem += 1
+                    s_ids[k] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, s['subetapa'][1][:200], alvo)).lastrowid
+                alvo = s_ids[k]
+            pos[alvo] = pos.get(alvo, 0) + 1
+            cod = proprias.cod_comp(ids[s['codigo']])
+            try:
+                custo = calc.composicao(cod)['custo_total']
+            except HTTPException:
+                custo = s['calculado']
+            linhas.append((oid, alvo, pos[alvo], 'servico', proprias.BASE, cod, s['descricao'][:400], s['unidade'][:20] or 'un', 0.0, custo, ref))
+        c.executemany('''INSERT INTO item (orcamento_id, etapa_id, ordem, tipo, base, codigo, descricao, unidade, quantidade, custo_unit, referencia)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)''', linhas)
+    return oid, len(linhas)
+
+
+@router.post('/sienge')
+async def importar_sienge(request: Request, base_id: Optional[int] = None, nova_base: str = '', simular: bool = False, fonte: str = '',
+                          criar_orcamento: bool = False, nome_orcamento: str = '', bdi: float = 0.0):
+    import sienge
+    dados = await request.body()
+    if not dados or len(dados) > LIMITE_BYTES:
+        raise HTTPException(422, 'Envie o PDF do relatório (até 25 MB).')
+    r = sienge.ler(dados)
+    if not r['relatorio']:
+        raise HTTPException(422, 'Este PDF não é um relatório "Insumos Orçados" nem "Composições de Serviços da Obra" do SIENGE.')
+    agora = orc_mod.agora()
+    fonte = (fonte.strip() or f"SIENGE, obra {r['obra']}")[:200]
+    d = Pedido(linhas=[], base_id=base_id, nova_base=nova_base[:40], fonte=fonte, simular=simular)
+    ids = None
+    with proprias.gravando() as c:
+        bid, nome = _base_destino(c, d)
+        if r['relatorio'] == 'insumos':
+            resumo = _sienge_insumos(c, r, bid, fonte, simular, agora)
+        else:
+            resumo, ids, distintos = _sienge_servicos(c, r, bid, fonte, simular, agora)
+    resumo |= {'relatorio': r['relatorio'], 'base_id': bid, 'base': nome, 'simulado': simular, 'obra': r['obra']}
+    if r['relatorio'] == 'servicos' and not simular:
+        # conferência: custo calculado no aplicativo x custo da composição no relatório
+        calc = proprias.calculo_guardado({})
+        difs = []
+        for cod, s in distintos.items():
+            try:
+                v = calc.composicao(proprias.cod_comp(ids[cod]))['custo_total']
+            except HTTPException:
+                continue
+            if abs(v - s['calculado']) > max(0.02, abs(s['calculado']) * 0.0005):
+                difs.append({'codigo_origem': cod, 'codigo': proprias.cod_comp(ids[cod]), 'descricao': s['descricao'][:120], 'arquivo': round(s['calculado'], 2), 'calculado': v})
+        resumo |= {'conferidas': len(distintos), 'n_diferentes': len(difs), 'diferentes': difs[:30]}
+        if criar_orcamento:
+            oid, n = _sienge_orcamento(r, ids, (nome_orcamento.strip() or r['obra'] or 'Orçamento SIENGE')[:200], min(max(bdi, 0.0), 100.0), nome, fonte, agora)
+            resumo |= {'orcamento_id': oid, 'itens_orcamento': n}
+    return resumo

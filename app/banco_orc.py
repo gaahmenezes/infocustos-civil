@@ -84,7 +84,8 @@ COLUNAS_NOVAS = (('orcamento', 'sem_complementares', 'INTEGER NOT NULL DEFAULT 0
                  ('composicao_propria', 'base_id', 'INTEGER NOT NULL DEFAULT 1'),
                  ('composicao_propria', 'codigo_origem', "TEXT DEFAULT ''"),
                  ('insumo_proprio', 'base_id', 'INTEGER NOT NULL DEFAULT 1'),
-                 ('insumo_proprio', 'codigo_origem', "TEXT DEFAULT ''"))
+                 ('insumo_proprio', 'codigo_origem', "TEXT DEFAULT ''"),
+                 ('insumo_proprio', 'grupo', "TEXT DEFAULT ''"))  # grupo e família de onde o insumo veio (SIENGE)
 
 if POSTGRES:
     import psycopg

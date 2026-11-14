@@ -276,7 +276,7 @@ def ficha_insumo(codigo):
             JOIN composicao_propria cp ON cp.id = it.composicao_id WHERE it.base = ? AND it.tipo = 'insumo' AND it.codigo = ?""",
                          (BASE, cod_ins(i['id']))).fetchall()
         return {'base': BASE, 'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'preco': i['preco'],
-                'tipo': i['tipo'], 'categoria': i['tipo'], 'grupo': 'Insumos próprios', 'marcador': '', 'referencia': None,
+                'tipo': i['tipo'], 'categoria': i['tipo'], 'grupo': i['grupo'] or 'Insumos próprios', 'marcador': '', 'referencia': None,
                 'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'usado_em': len(usos),
                 'base_id': i['base_id'] or 1, 'base_nome': nome_da_base(i['base_id']), 'codigo_origem': i['codigo_origem'] or '',
                 'usos': [{'base': BASE, 'codigo': cod_comp(u['id']), 'descricao': u['descricao'], 'unidade': u['unidade'], 'qtd': u['qtd'],
@@ -374,7 +374,7 @@ def buscar(q: str, tipo: str, refs: str, limite: int = 40, base_id: Optional[int
                     continue
                 if all(t in sem_acento(f"{i['descricao']} {cod_ins(i['id'])} {i.get('codigo_origem') or ''}") for t in termos):
                     out.append({'tipo': 'insumo', 'base': BASE, 'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'],
-                                'preco': i['preco'], 'categoria': i['tipo'], 'grupo': 'Insumos próprios', 'tem_composicao': 0, 'usos': 0,
+                                'preco': i['preco'], 'categoria': i['tipo'], 'grupo': i.get('grupo') or 'Insumos próprios', 'tem_composicao': 0, 'usos': 0,
                                 'pct_mo': None, 'pct_mat': None, 'pct_equip': None, 'pct_terc': None, 'referencia': None, 'trecho': None,
                                 'base_nome': nome_da_base(i.get('base_id')), 'codigo_origem': i.get('codigo_origem') or ''})
     return out[:limite]
@@ -448,7 +448,8 @@ def listar(refs: str = '', base_id: Optional[int] = None):
                           'base_id': cp.get('base_id') or 1, 'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or ''})
         ins = [{'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'tipo': i['tipo'], 'preco': i['preco'],
                 'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'atualizado_em': i['atualizado_em'],
-                'base_id': i.get('base_id') or 1, 'base_nome': nome_da_base(i.get('base_id')), 'codigo_origem': i.get('codigo_origem') or ''}
+                'base_id': i.get('base_id') or 1, 'base_nome': nome_da_base(i.get('base_id')), 'codigo_origem': i.get('codigo_origem') or '',
+                'grupo': i.get('grupo') or ''}
                for i in sorted(a['insumos'].values(), key=lambda x: x['descricao']) if not base_id or (i.get('base_id') or 1) == base_id]
         return {'composicoes': comps, 'insumos': ins, 'nome_base': a['nome'], 'bases': lista_bases()}
 

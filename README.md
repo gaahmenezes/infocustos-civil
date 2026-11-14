@@ -57,6 +57,13 @@ Abra http://localhost:8000. Atalho: `/` foca a busca; setas navegam nos resultad
   - *Orçamento* (planilha orçamentária): títulos viram etapas e subetapas, itens com quantidade ligam às composições
     e insumos da base pelo código de origem; o que não tiver composição entra com o preço do arquivo.
   Cada item guarda o código de origem: importar de novo atualiza em vez de duplicar.
+- **Relatórios padrão do SIENGE em PDF** (`app/sienge.py`): "Insumos Orçados" e "Composições de Serviços da Obra" são
+  reconhecidos pelo título e lidos sem conferir colunas, com o pdfium (309 páginas em poucos segundos). Nos insumos, o
+  grupo e a família definem o tipo (mão de obra, material, equipamento, serviço de terceiro) e ficam gravados; cada
+  variação "Nome / Detalhe: ..." é um insumo. Nas composições, a etapa e a subetapa viram o grupo, os itens ligam aos
+  insumos da base por código e detalhe, e serviços dentro de serviços viram composições aninhadas. A leitura é conferida
+  com o total da obra (insumos) e o custo de cada serviço (composições). Opcionalmente cria o orçamento com etapas,
+  subetapas e serviços (quantidades zeradas: esse relatório não as traz).
 
 ## Composições e insumos próprios
 

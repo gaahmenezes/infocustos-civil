@@ -47,10 +47,10 @@ async function desenharListaProprias() {
       <span class="orc-c-meta">${c.qtd_itens} ${c.qtd_itens === 1 ? 'item' : 'itens'} · alterada em ${dataFmt(c.atualizado_em)}</span></a></li>`).join('')}</ul>`
     : vazio('folha', 'Nenhuma composição própria ainda', 'Monte uma do zero ou abra uma composição da ORSE, da SINAPI ou do SICRO e use "Criar composição própria a partir desta".',
       '<button type="button" class="botao primario" data-nova-propria>Nova composição</button>');
-  const tabela = insumos.length ? `<div class="tabela-rola"><table class="planilha prop-insumos"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Tipo</th>
+  const tabela = insumos.length ? `<div class="tabela-rola"><table class="planilha prop-insumos"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Tipo e grupo</th>
       <th class="num">Preço</th><th>Data e fonte</th><th class="ctrl"><span class="sr">Ações</span></th></tr></thead><tbody>
       ${insumos.map((i) => `<tr><td class="cod">${codLink('insumo', 'PROPRIA', i.codigo)}</td><td class="desc">${esc(i.descricao)}</td><td>${unid(i.unidade)}</td>
-        <td>${esc(TIPO_INSUMO[i.tipo] || i.tipo)}</td><td class="num">${i.preco == null ? '<span class="sem-preco">sem preço</span>' : money(i.preco)}</td>
+        <td>${esc(TIPO_INSUMO[i.tipo] || i.tipo)}${i.grupo ? `<span class="prop-grupo">${esc(i.grupo)}</span>` : ''}</td><td class="num">${i.preco == null ? '<span class="sem-preco">sem preço</span>' : money(i.preco)}</td>
         <td class="prop-fonte">${esc([dataBr(i.data_preco), i.fonte].filter(Boolean).join(' · ')) || '—'}</td>
         <td class="ctrl"><button type="button" class="mini" data-editar-insumo="${esc(i.codigo)}" aria-label="Editar ${esc(i.codigo)}">✎</button>
           <button type="button" class="mini" data-excluir-insumo="${esc(i.codigo)}" aria-label="Excluir ${esc(i.codigo)}">✕</button></td></tr>`).join('')}</tbody></table></div>`
