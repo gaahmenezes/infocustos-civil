@@ -647,6 +647,7 @@ async function rota() {
       if (tipo === 'composicao') desenharComposicao(dados); else desenharInsumo(dados);
     });
     if (tipo === 'composicao' && window.montarFluxo) window.montarFluxo();
+    if (window.carregarHistoricoFicha) window.carregarHistoricoFicha(tipo === 'composicao' ? 'servico' : 'insumo', base, dados.codigo, dados.referencia, dados.unidade);
     registrarAberto(dados, tipo === 'composicao' ? 'servico' : 'insumo');
     // a ficha começa visível: no celular volta ao topo; no computador só sobe se o começo ficou fora da tela
     if (window.innerWidth <= 900 || d.getBoundingClientRect().top < 70) window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' });
@@ -766,6 +767,7 @@ function desenharComposicao(c) {
     ${dnit ? '<p class="fonte">No modelo DNIT, equipamentos e mão de obra formam o custo horário da equipe, que é dividido pela produção da equipe. Serviços auxiliares entram por unidade.</p>' : ''}
     ${c.base === 'SICRO' ? `<p class="fonte">SICRO: o FIC (fator de influência de chuvas) incide sobre o custo de execução. O momento de transporte não tem custo na tabela do DNIT: depende da distância de cada obra, definida no projeto. Preços sem desoneração.</p>` : ''}
     ${c.base === 'PROPRIA' ? `<p class="fonte">Composição própria da empresa. Custo calculado agora, cada item no mês escolhido para a sua base.${c.observacoes ? ` Observações: ${esc(c.observacoes)}` : ''}</p>` : ''}
+    ${c.base === 'PROPRIA' ? '' : '<div class="ficha-hist" id="ficha-hist"></div>'}
     <p class="fonte"${c.base === 'PROPRIA' ? ' hidden' : ''}>Fonte: ${esc(c.base)}${c.fonte === 'DNIT' ? ' (DNIT), Sergipe' : c.fonte === 'CAIXA' ? ' (relatórios da CAIXA), Aracaju/SE, sem desoneração' : c.fonte === 'CEHOP' ? ' (programa ORSE da CEHOP)' : ''}, referência ${esc(nomeRef(c.referencia) || ref)}. Valores em R$, sem BDI.</p>
     ${c.fonte === 'CAIXA' ? '<p class="fonte">SINAPI da CAIXA: a composição aparece como a CAIXA publica, com composições auxiliares (abra o + para ver os itens). Insumo sem preço coletado em Sergipe usa o preço de São Paulo (AS), como no cálculo oficial.</p>' : ''}
   </article>`;
@@ -844,6 +846,7 @@ function desenharInsumo(i) {
     <p class="sub">Composições ordenadas pela participação do insumo no custo${i.usado_em > i.usos.length ? `; mostrando ${i.usos.length} de ${i.usado_em.toLocaleString('pt-BR')}` : ''}.</p></div>${seletorDensidade()}</div>
     <table class="uso"><thead><tr><th>Composição</th><th>Descrição</th><th class="num">Coeficiente</th><th class="num">Custo no serviço</th><th class="num">Participação</th></tr></thead><tbody>${linhas}</tbody></table>`
     : vazio('folha', 'Nenhuma composição usa este insumo', `Em ${esc(nomeRef(i.referencia) || ref)}, ele aparece só na tabela de preços.`)}
+    ${i.base === 'PROPRIA' ? '' : '<div class="ficha-hist" id="ficha-hist"></div>'}
     <p class="fonte">Fonte: ${esc(i.base)}${i.fonte === 'DNIT' ? ' (DNIT), Sergipe' : i.fonte === 'CAIXA' ? ' (relatórios da CAIXA), Aracaju/SE, sem desoneração' : i.fonte === 'CEHOP' ? ' (programa ORSE da CEHOP)' : ''}, referência ${esc(nomeRef(i.referencia) || ref)}.</p>
   </article>`;
   contarPreco(`i|${i.base}|${i.codigo}`, i.preco);
@@ -964,8 +967,14 @@ async function desenharComparativo() {
   const semEsq = d.querySelector('.comparativo') ? () => {} : comEsqueleto(d, `<div class="pagina"><section class="ficha">${esqueletoTabela(12)}</section></div>`);
   let r;
   const pedido = Object.fromEntries(Object.entries({ ...CMP, limite: 150 }).filter(([, v]) => v !== null && v !== undefined));
-  try { r = await api(`/api/comparativo?${new URLSearchParams(pedido)}`); semEsq(); }
-  catch (e) { semEsq(); d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  let oposto = null;
+  try {
+    // o placar mostra as maiores altas e as maiores quedas ao mesmo tempo: pede também o outro sentido
+    [r, oposto] = await Promise.all([api(`/api/comparativo?${new URLSearchParams(pedido)}`),
+      api(`/api/comparativo?${new URLSearchParams({ ...pedido, sentido: CMP.sentido === 'alta' ? 'baixa' : 'alta', limite: 8 })}`).catch(() => null)]);
+    semEsq();
+  } catch (e) { semEsq(); d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  if (window.lembrarPlacar) window.lembrarPlacar();
   const meses = r.referencias || [];
   if (!r.de) {
     const qual = CMP.base !== 'todas' ? `O ${CMP.base} tem` : 'Há';
@@ -998,6 +1007,7 @@ async function desenharComparativo() {
       ${bloco('Iguais', (rs.iguais || 0).toLocaleString('pt-BR'), `${parte(rs.iguais)} dos comparados`, '--linha-forte')}
       ${bloco(`Só em ${esc(para)}`, (rs.novos || 0).toLocaleString('pt-BR'), `${(rs.retirados || 0).toLocaleString('pt-BR')} só em ${esc(de)}`, '--acao')}
     </div>
+    ${window.placarComparativo && oposto ? window.placarComparativo(CMP.sentido === 'alta' ? r.itens : oposto.itens, CMP.sentido === 'alta' ? oposto.itens : r.itens, de, para) : ''}
     <section class="ficha">
       <div class="var-filtros">${seg('tipo', [['servico', 'Composições'], ['insumo', 'Insumos']])}${seg('base', [['todas', 'Todas as bases'], ...basesCarregadas().map((b) => [b, b])])}${seg('sentido', [['alta', 'Maiores altas'], ['baixa', 'Maiores quedas']])}
         <input id="cmp-q" class="cmp-q" type="search" placeholder="Filtrar por descrição ou código" value="${esc(CMP.q)}" aria-label="Filtrar itens do comparativo"></div>
@@ -1019,6 +1029,7 @@ async function desenharComparativo() {
   q.addEventListener('input', () => { clearTimeout(tCmp); tCmp = setTimeout(() => { CMP.q = q.value; desenharComparativo(); }, 300); });
   if (foco === 'cmp-q') { q.focus(); q.setSelectionRange(q.value.length, q.value.length); }
   d.querySelectorAll('[data-hist]').forEach((b) => b.addEventListener('click', () => historicoDoItem(...b.dataset.hist.split('|'))));
+  if (window.animarPlacar) window.animarPlacar();
 }
 
 async function historicoDoItem(tipo, base, codigo) {
@@ -1027,10 +1038,7 @@ async function historicoDoItem(tipo, base, codigo) {
     const r = await api(`/api/comparativo/item/${tipo}/${base}/${codigo}`);
     caixa.innerHTML = `<div class="cmp-detalhe"><div class="cmp-detalhe-cab">${codigoBase(codigo, base)}<span>${esc(r.descricao)}</span>
       <button type="button" class="mini" aria-label="Fechar" onclick="this.closest('.cmp-detalhe').remove()">✕</button></div>
-      ${blocoHistorico(r.meses.map((m, k, l) => {
-        const ant = l.slice(0, k).reverse().find((x) => x.preco != null);
-        return { ...m, variacao: m.preco != null && ant ? m.preco / ant.preco - 1 : null };
-      }), r.unidade)}</div>`;
+      ${window.graficoHistorico(r.meses, { unidade: r.unidade, atual: CMP.para, base, titulo: 'Preço em cada mês' })}</div>`;
     caixa.scrollIntoView({ block: 'nearest' });
   } catch (e) { caixa.innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
 }

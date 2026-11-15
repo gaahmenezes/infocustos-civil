@@ -138,15 +138,24 @@ document.addEventListener('focusin', (e) => { const a = e.target.closest && e.ta
 document.addEventListener('focusout', (e) => { if (e.target.closest && e.target.closest('#fluxo')) realcar(null); });
 
 // ---------- alternância Tabela | Fluxo na ficha ----------
-const vistaAtual = () => (PREF.ler('infocustos-vista', 'tabela') === 'fluxo' ? 'fluxo' : 'tabela');
+const vistaAtual = () => { const v = PREF.ler('infocustos-vista', 'tabela'); return v === 'fluxo' || v === 'aneis' ? v : 'tabela'; };
 window.seletorVista = () => `<div class="segmentos" role="radiogroup" aria-label="Como ver a composição" data-vista>
   <button type="button" role="radio" data-v="tabela" aria-checked="${vistaAtual() === 'tabela'}">Tabela</button>
-  <button type="button" role="radio" data-v="fluxo" aria-checked="${vistaAtual() === 'fluxo'}">Fluxo</button></div>`;
+  <button type="button" role="radio" data-v="fluxo" aria-checked="${vistaAtual() === 'fluxo'}">Fluxo</button>
+  <button type="button" role="radio" data-v="aneis" aria-checked="${vistaAtual() === 'aneis'}">Anéis</button></div>`;
 function aplicarVista(animar) {
   const ficha = $('#detalhe .ficha'); if (!ficha || !ficha.querySelector('.arvore')) return;
   const v = vistaAtual();
   ficha.dataset.vista = v;
   ficha.querySelectorAll('.segmentos[data-vista] button').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.v === v)));
+  if (v === 'aneis') {
+    let an = ficha.querySelector('.aneis-caixa');
+    if (!an) { an = document.createElement('div'); an.className = 'aneis-caixa'; ficha.querySelector('.arvore').before(an); }
+    if (!an.firstChild || an.dataset.de !== `${estado.comp.base}|${estado.comp.codigo}|${estado.comp.referencia}`) {
+      an.innerHTML = window.htmlAneis(estado.comp); an.dataset.de = `${estado.comp.base}|${estado.comp.codigo}|${estado.comp.referencia}`;
+      if (animar && !semMovimento()) { an.classList.remove('an-entra'); void an.offsetWidth; an.classList.add('an-entra'); }
+    }
+  }
   let caixa = ficha.querySelector('.fluxo-caixa');
   if (v === 'fluxo') {
     if (!caixa) { caixa = document.createElement('div'); caixa.className = 'fluxo-caixa'; ficha.querySelector('.arvore').before(caixa); }

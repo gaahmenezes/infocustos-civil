@@ -59,7 +59,7 @@ const dataFmt = (iso) => iso ? new Date(iso).toLocaleDateString('pt-BR', { day: 
 
 // ---------- rotas ----------
 window.rotaOrcamento = async function () {
-  const m = location.hash.match(/^#\/orcamento\/(\d+)(?:\/(planilha|abc-servicos|abc-insumos|relatorio))?/);
+  const m = location.hash.match(/^#\/orcamento\/(\d+)(?:\/(planilha|mapa|abc-servicos|abc-insumos|relatorio))?/);
   const d = $('#detalhe');
   try {
     if (/^#\/orcamentos\/anexar/.test(location.hash)) { window.desenharAnexar(); return; }
@@ -176,7 +176,7 @@ async function abrirOrcamento(id, dados) {
   if (!ORC.atual || ORC.atual.id !== o.id || !o.etapas.some((e) => e.id === ORC.filtro)) ORC.filtro = null;
   ORC.atual = o; lembrar(o.id);
   if (ORC.aba === 'relatorio') { await window.desenharRelatorio(o); return; }
-  const abas = [['planilha', 'Planilha'], ['abc-servicos', 'Curva ABC de serviços'], ['abc-insumos', 'Curva ABC de insumos']];
+  const abas = [['planilha', 'Planilha'], ['mapa', 'Mapa'], ['abc-servicos', 'Curva ABC de serviços'], ['abc-insumos', 'Curva ABC de insumos']];
   $('#detalhe').innerHTML = `<article class="ficha orc">
     <a class="voltar-lista" href="#/orcamentos"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Todos os orçamentos</a>
     <div class="orc-cab">
@@ -228,6 +228,7 @@ async function abrirOrcamento(id, dados) {
   ligarCabecalho(o);
   ligarMudarMes(o);
   if (ORC.aba === 'planilha') desenharPlanilha(o);
+  else if (ORC.aba === 'mapa') window.desenharMapa(o);
   else await desenharABC(o, ORC.aba === 'abc-servicos' ? 'servicos' : 'insumos');
   conferirFaixaFixa();  // a tela foi refeita: se já estava rolada, a faixa de totais continua à vista
 }
