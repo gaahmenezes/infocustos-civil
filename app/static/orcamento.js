@@ -1,7 +1,22 @@
 'use strict';
 /* Orçamentos: lista, planilha com etapas e itens, BDI, curva ABC e diálogo "Adicionar ao orçamento". */
 
-const ORC = { atual: null, aba: 'planilha', ultimo: null };
+const ORC = { atual: null, aba: 'planilha', ultimo: null, recolhidas: new Set(), recolhidasDe: null, anel: null };
+// etapas recolhidas: lembradas por orçamento, neste navegador
+function lerRecolhidas(id) {
+  if (ORC.recolhidasDe === id) return;
+  ORC.recolhidasDe = id;
+  try { ORC.recolhidas = new Set(JSON.parse(localStorage.getItem(`orc-recolhidas-${id}`) || '[]')); } catch (_) { ORC.recolhidas = new Set(); }
+}
+function gravarRecolhidas() { try { localStorage.setItem(`orc-recolhidas-${ORC.recolhidasDe}`, JSON.stringify([...ORC.recolhidas])); } catch (_) { /* sem storage */ } }
+const CHEVRON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3" /></svg>';
+// divisão do custo de um conjunto de itens (cada item traz a sua, do servidor)
+function divisaoDe(itens) {
+  const p = { mo: 0, mat: 0, equip: 0, terc: 0 };
+  for (const i of itens) if (i.div && i.custo_total) for (const k in p) p[k] += i.custo_total * (i.div[k] || 0);
+  const s = p.mo + p.mat + p.equip + p.terc;
+  return s > 0 ? Object.fromEntries(Object.entries(p).map(([k, v]) => [k, v / s])) : null;
+}
 try { ORC.ultimo = Number(localStorage.getItem('orc-ultimo')) || null; } catch (_) { /* sem storage */ }
 const lembrar = (id) => { ORC.ultimo = id; try { localStorage.setItem('orc-ultimo', id); } catch (_) { /* ok */ } };
 
@@ -266,22 +281,34 @@ function ligarCabecalho(o) {
 }
 
 function desenharPlanilha(o) {
+  lerRecolhidas(o.id);
   const visiveis = o.etapas.filter((e) => !ORC.filtro || e.id === ORC.filtro || e.pai_id === ORC.filtro);
-  const etapas = visiveis.map((e) => `
-    <tbody class="etapa${e.nivel === 2 ? ' sub' : ''}" data-etapa="${e.id}" data-pai="${e.pai_id || ''}">
+  // régua de peso: cada item mostra quanto pesa no total (largura relativa ao maior item) e a classe ABC dele
+  const todos = o.etapas.flatMap((e) => e.itens), maiorItem = Math.max(...todos.map((i) => i.total), 0.01);
+  const somaEtapas = o.etapas.filter((e) => e.nivel !== 2).reduce((s, e) => s + e.total, 0) || 1;
+  const classe = new Map(curvaABC(o).map((x) => [x.chave, x.classe]));
+  const filhas = (e) => o.etapas.filter((x) => x.pai_id === e.id);
+  const itensDe = (e) => [...e.itens, ...filhas(e).flatMap((x) => x.itens)];
+  const etapas = visiveis.map((e) => {
+    const rec = ORC.recolhidas.has(e.id), maeRec = e.pai_id && ORC.recolhidas.has(e.pai_id) && !ORC.filtro;
+    const lista = e.nivel === 2 ? e.itens : itensDe(e), nsub = e.nivel === 2 ? 0 : filhas(e).length;
+    const tipo = e.nivel === 2 ? 'subetapa' : 'etapa';
+    return `
+    <tbody class="etapa${e.nivel === 2 ? ' sub' : ''}${rec ? ' recolhida' : ''}${maeRec ? ' mae-recolhida' : ''}" data-etapa="${e.id}" data-pai="${e.pai_id || ''}">
       <tr class="etapa-cab">
-        <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover a ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button>${e.numero}</td>
-        <td colspan="5"><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título da ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}" data-etapa="${e.id}"></td>
+        <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover a ${tipo} ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button><button type="button" class="recolher" data-recolher="${e.id}" aria-expanded="${!rec}" aria-label="${rec ? 'Mostrar' : 'Recolher'} a ${tipo} ${e.numero}" title="${rec ? 'Mostrar os itens' : 'Recolher'}">${CHEVRON}</button>${e.numero}</td>
+        <td colspan="5"><div class="etapa-linha"><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título da ${tipo} ${e.numero}" data-etapa="${e.id}">
+          <span class="etapa-resumo" aria-hidden="${!rec}">${lista.length} ${lista.length === 1 ? 'item' : 'itens'}${nsub ? ` · ${nsub} ${nsub === 1 ? 'subetapa' : 'subetapas'}` : ''}${lista.length ? barraDivisao(divisaoDe(lista)) : ''}</span></div></td>
         <td class="num"><span class="peso-etapa">${pct.format(e.peso)}</span></td>
         <td class="num"><b>${brl.format(e.total)}</b></td>
         <td class="ctrl">
           <button type="button" class="mini" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}">✕</button>
         </td>
       </tr>
-      ${e.itens.map((i) => `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
+      ${e.itens.map((i) => { const cl = classe.get(`${i.tipo}|${i.base}|${i.codigo}`) || 'C', peso = i.total / somaEtapas; return `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
         <td class="n"><button type="button" class="pega" data-pega="item" data-id="${i.id}" aria-label="Mover o item ${i.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem ou a etapa">⠿</button>${i.numero}</td>
         <td class="cod">${codLink(i.tipo, i.base, i.codigo)}</td>
-        <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}</td>
+        <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}${i.total > 0 ? `<span class="regua regua-${cl}" style="--p:${Math.max(0.6, (i.total / maiorItem) * 100).toFixed(2)}%" title="${pct.format(peso)} do total · classe ${cl} da curva ABC" aria-label="${pct.format(peso)} do total, classe ${cl}"></span>` : ''}</td>
         <td class="c-un">${unid(i.unidade)}</td>
         <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
         <td class="num c-custo" data-rotulo="Custo unit."${o.bdi_no_total ? ' colspan="2"' : ''}>${money(i.custo_unit)}</td>
@@ -289,7 +316,7 @@ function desenharPlanilha(o) {
         <td class="num total c-total" data-rotulo="Total">${money(i.total)}</td>
         <td class="ctrl">
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
-        </td></tr>`).join('')}
+        </td></tr>`; }).join('')}
       <tr class="add-linha"><td></td><td colspan="8"><div class="add-fila">
         <div class="add-busca">
           <input class="add-q" placeholder="Adicionar serviço ou insumo de ${esc(nomeRef(o.referencia))} à ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}: digite descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item à ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}" autocomplete="off">
@@ -297,9 +324,15 @@ function desenharPlanilha(o) {
         </div>
         ${e.nivel === 2 ? '' : `<button type="button" class="botao botao-p" data-acao="subetapa-nova" data-id="${e.id}" title="Criar uma subetapa dentro da etapa ${e.numero}" aria-label="Nova subetapa na etapa ${e.numero}">+ Subetapa</button>`}
       </div></td></tr>
-    </tbody>`).join('');
+    </tbody>`; }).join('');
+  const maes = o.etapas.filter((e) => e.nivel !== 2), nRec = maes.filter((e) => ORC.recolhidas.has(e.id)).length;
   const filtrada = ORC.filtro && visiveis[0];
   $('#orc-corpo').innerHTML = `
+    ${o.etapas.length > 1 ? `<div class="plan-barra">
+      <div class="segmentos plan-niveis" role="group" aria-label="Mostrar na planilha">
+        <button type="button" data-plan-nivel="etapas" aria-pressed="${nRec === maes.length}">Só etapas</button>
+        <button type="button" data-plan-nivel="tudo" aria-pressed="${ORC.recolhidas.size === 0}">Tudo aberto</button></div>
+      <p class="plan-dica"><kbd>↑</kbd><kbd>↓</kbd> ou <kbd>Enter</kbd> andam entre as quantidades · <kbd>Esc</kbd> desfaz · a faixa sob cada item mostra o peso dele no total</p></div>` : ''}
     ${filtrada ? `<p class="filtro-ativo">Mostrando só a etapa <b>${filtrada.numero}. ${esc(filtrada.titulo)}</b><button type="button" class="link-acao" data-ver-todas>Ver todas as etapas</button></p>` : ''}
     <table class="planilha planilha-orc${o.bdi_no_total ? ' bdi-no-total' : ''}">
       <thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num"${o.bdi_no_total ? ' colspan="2"' : ''}>Custo unit.</th>${o.bdi_no_total ? '' : '<th class="num c-preco">Preço c/ BDI</th>'}<th class="num">${o.bdi_no_total ? 'Total sem BDI' : 'Total'}</th><th></th></tr></thead>
@@ -345,7 +378,8 @@ function recalcular(o, mudar, manter) {
 function ligarPlanilha(o) {
   const corpo = $('#orc-corpo');
   const atualizar = (n, jaMedido) => {
-    const foco = document.activeElement && { ...document.activeElement.dataset };
+    // quem anda pelas quantidades com o teclado diz para onde o cursor vai (o campo de agora é recriado ao redesenhar)
+    const foco = ORC.focoProx ? { item: ORC.focoProx } : document.activeElement && { ...document.activeElement.dataset };
     const deslizar = jaMedido || medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
     return abrirOrcamento(n.id, n).then(() => { deslizar(); restaurarFoco(foco); });
   };
@@ -357,7 +391,9 @@ function ligarPlanilha(o) {
     // se a pessoa já está em outro campo (busca de item, nome de etapa, dados do orçamento, troca de data-base) ou arrastando uma linha, espera ela sair para não apagar o texto
     const ocupada = () => {
       const a = document.activeElement, caixa = $('#orc-mudar-mes');
-      return document.body.classList.contains('arrastando-algo') || (caixa && !caixa.hidden) || (!!a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && !a.classList.contains('qtd'));
+      // numa quantidade, só conta como ocupada se a pessoa já começou a digitar (valor diferente do mostrado)
+      return document.body.classList.contains('arrastando-algo') || (caixa && !caixa.hidden)
+        || (!!a && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName) && (!a.classList.contains('qtd') || a.value !== a.defaultValue));
     };
     const refazer = () => {
       if (ORC.atual !== n || ORC.aba !== 'planilha' || !$('#orc-corpo')) { if (ORC.atual === visto) ORC.atual = n; return; }
@@ -385,7 +421,38 @@ function ligarPlanilha(o) {
     } catch (err) { avisar(esc(err.message)); }
   });
   corpo.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && (e.target.classList.contains('qtd') || e.target.classList.contains('etapa-titulo'))) { e.preventDefault(); e.target.blur(); }
+    const t = e.target;
+    if (t.classList.contains('qtd')) {
+      // como numa planilha: setas e Enter andam entre as quantidades visíveis; Esc desfaz o que foi digitado
+      if (e.key === 'Escape') { e.preventDefault(); t.value = t.defaultValue; t.select(); return; }
+      const ir = e.key === 'ArrowDown' || (e.key === 'Enter' && !e.shiftKey) ? 1 : e.key === 'ArrowUp' || (e.key === 'Enter' && e.shiftKey) ? -1 : 0;
+      if (!ir) return;
+      e.preventDefault();
+      const todas = [...corpo.querySelectorAll('.qtd')].filter((x) => x.offsetParent !== null);
+      const prox = todas[todas.indexOf(t) + ir];
+      if (!prox) { t.blur(); return; }
+      prox.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+      // se o valor mudou, o "change" da linha anterior grava e recalcula já dentro deste focus(), e o redesenho
+      // devolve o cursor para `focoProx`
+      ORC.focoProx = prox.dataset.item;
+      prox.focus({ preventScroll: true }); ORC.focoProx = null;
+      if (document.body.contains(prox)) prox.select();
+      return;
+    }
+    if (e.key === 'Enter' && t.classList.contains('etapa-titulo')) { e.preventDefault(); t.blur(); }
+  });
+  // anel de foco que desliza de uma quantidade para a outra
+  corpo.addEventListener('focusin', (e) => { if (e.target.classList.contains('qtd')) moverAnel(e.target); });
+  corpo.addEventListener('focusout', () => setTimeout(() => { const a = document.activeElement; if (!a || !a.classList || !a.classList.contains('qtd')) esconderAnel(); }, 0));
+  corpo.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-recolher]');
+    if (b) { alternarEtapa(Number(b.dataset.recolher)); return; }
+    const nv = e.target.closest('[data-plan-nivel]');
+    if (nv) {
+      const maes = ORC.atual.etapas.filter((x) => x.nivel !== 2).map((x) => x.id);
+      ORC.recolhidas = nv.dataset.planNivel === 'etapas' ? new Set(maes) : new Set();
+      gravarRecolhidas(); aplicarRecolhidas(true);
+    }
   });
   corpo.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-acao]'); if (!b) return;
@@ -422,6 +489,49 @@ function ligarPlanilha(o) {
   });
   corpo.querySelectorAll('.add-q').forEach(ligarBuscaInline);
 }
+
+// ---------- recolher etapas ----------
+function aplicarRecolhidas(animar) {
+  const corpo = $('#orc-corpo'); if (!corpo) return;
+  corpo.querySelectorAll('tbody.etapa').forEach((tb) => {
+    const id = Number(tb.dataset.etapa), pai = Number(tb.dataset.pai) || null;
+    const rec = ORC.recolhidas.has(id), maeRec = !!pai && ORC.recolhidas.has(pai) && !ORC.filtro;
+    const abriu = (tb.classList.contains('recolhida') && !rec) || (tb.classList.contains('mae-recolhida') && !maeRec);
+    tb.classList.toggle('recolhida', rec); tb.classList.toggle('mae-recolhida', maeRec);
+    const b = tb.querySelector('[data-recolher]');
+    if (b) { b.setAttribute('aria-expanded', String(!rec)); b.setAttribute('aria-label', b.getAttribute('aria-label').replace(/^(Mostrar|Recolher)/, rec ? 'Mostrar' : 'Recolher')); b.title = rec ? 'Mostrar os itens' : 'Recolher'; }
+    const r = tb.querySelector('.etapa-resumo'); if (r) r.setAttribute('aria-hidden', String(!rec));
+    if (abriu && animar && !semMovimento()) { tb.classList.remove('abrindo'); void tb.offsetWidth; tb.classList.add('abrindo'); }
+  });
+  const maes = ORC.atual ? ORC.atual.etapas.filter((x) => x.nivel !== 2) : [];
+  corpo.querySelectorAll('[data-plan-nivel]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.planNivel === 'etapas'
+    ? maes.length > 0 && maes.every((x) => ORC.recolhidas.has(x.id)) : ORC.recolhidas.size === 0)));
+  esconderAnel();
+}
+function alternarEtapa(id) {
+  if (ORC.recolhidas.has(id)) ORC.recolhidas.delete(id); else ORC.recolhidas.add(id);
+  gravarRecolhidas(); aplicarRecolhidas(true);
+}
+
+// ---------- anel de foco ----------
+function moverAnel(el) {
+  const corpo = $('#orc-corpo'); if (!corpo) return;
+  let anel = corpo.querySelector('.anel-foco');
+  if (!anel) { anel = document.createElement('span'); anel.className = 'anel-foco'; anel.setAttribute('aria-hidden', 'true'); corpo.appendChild(anel); }
+  const rc = corpo.getBoundingClientRect(), r = el.getBoundingClientRect();
+  const pos = { x: r.left - rc.left, y: r.top - rc.top, w: r.width, h: r.height };
+  // depois de redesenhar, o anel nasce onde estava e desliza; sem anel anterior, só aparece
+  if (!anel.classList.contains('visivel')) {
+    const de = ORC.anel || pos;
+    anel.style.transition = 'none';
+    Object.assign(anel.style, { transform: `translate(${de.x}px, ${de.y}px)`, width: `${de.w}px`, height: `${de.h}px` });
+    void anel.offsetWidth; anel.style.transition = '';
+  }
+  anel.classList.add('visivel');
+  Object.assign(anel.style, { transform: `translate(${pos.x}px, ${pos.y}px)`, width: `${pos.w}px`, height: `${pos.h}px` });
+  ORC.anel = pos;
+}
+function esconderAnel() { const a = document.querySelector('#orc-corpo .anel-foco'); if (a) a.classList.remove('visivel'); }
 
 function restaurarFoco(foco) {
   if (!foco) return;

@@ -1830,3 +1830,39 @@ html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
 .imp-final { border-color: var(--acao); }
 .imp-final .imp-resultado { margin-top: 0; }
 .imp-acoes { margin-top: 14px; }
+
+/* ---------- planilha do orçamento: recolher etapas, régua de peso, teclado ---------- */
+#orc-corpo { position: relative; }
+.plan-barra { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; margin: 14px 0 10px; }
+.plan-niveis button[aria-pressed="true"] { background: var(--superficie); color: var(--tinta); box-shadow: 0 1px 2px rgb(0 0 0 / 0.08), inset 0 0 0 1px var(--linha-forte); }
+.plan-dica { margin: 0; font-size: 12.5px; color: var(--tinta-3); }
+.plan-dica kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; margin: 0 1px; border: 1px solid var(--linha-forte); border-bottom-width: 2px; border-radius: 5px; font: 600 11px/1 var(--fonte, inherit); color: var(--tinta-2); background: var(--superficie); }
+.recolher { display: inline-grid; place-items: center; width: 24px; height: 24px; margin: 0 4px 0 -2px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tinta-3); cursor: pointer; vertical-align: middle; transition: background-color var(--t-rapido), color var(--t-rapido); }
+.recolher:hover { background: var(--superficie-2); color: var(--tinta); }
+.recolher svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; transform: rotate(90deg); transition: transform 240ms var(--suave); }
+.recolher[aria-expanded="false"] svg { transform: rotate(0deg); }
+.etapa-linha { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.etapa-linha .etapa-titulo { flex: 1 1 auto; min-width: 0; }
+.etapa-resumo { display: none; align-items: center; gap: 10px; flex: 0 0 auto; font-size: 12.5px; color: var(--tinta-3); white-space: nowrap; }
+.etapa-resumo .mini-barra { flex-basis: 96px; }
+.etapa-resumo .dom { font-size: 12px; }
+tbody.etapa.recolhida .etapa-resumo { display: inline-flex; animation: entrar var(--t-medio) var(--suave) both; }
+tbody.etapa.recolhida > tr:not(.etapa-cab), tbody.etapa.mae-recolhida { display: none; }
+tbody.etapa.abrindo > tr:not(.etapa-cab) { animation: abrir-linha 300ms var(--suave) both; }
+@keyframes abrir-linha { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+/* régua de peso: faixa fina sob a descrição, do tamanho do item comparado ao maior do orçamento */
+.planilha-orc td.desc { position: relative; }
+.regua { position: absolute; left: 10px; right: 10px; bottom: 3px; height: 3px; border-radius: 3px; background: color-mix(in srgb, var(--linha) 70%, transparent); overflow: hidden; pointer-events: auto; }
+.regua::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--p); border-radius: 3px; background: var(--c-mat); opacity: 0.35; transform-origin: left; animation: regua 600ms var(--suave) both; }
+.regua-A::after { background: var(--acao); opacity: 1; }
+.regua-B::after { background: var(--acao); opacity: 0.55; }
+@keyframes regua { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.planilha-orc tr.item:hover .regua { height: 4px; }
+/* anel de foco que desliza entre as quantidades */
+.anel-foco { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none; border-radius: var(--raio-p); box-shadow: 0 0 0 2px var(--acao), 0 0 0 6px color-mix(in srgb, var(--acao) 22%, transparent); opacity: 0;
+  transition: transform 180ms var(--suave), width 180ms var(--suave), height 180ms var(--suave), opacity 120ms; }
+.anel-foco.visivel { opacity: 1; }
+.planilha-orc .qtd:focus { outline: none; }
+@media (prefers-reduced-motion: reduce) { .anel-foco, .recolher svg { transition: none; } .regua::after, tbody.etapa.abrindo > tr, tbody.etapa.recolhida .etapa-resumo { animation: none; } }
+@media (max-width: 760px) { .etapa-resumo .mini-barra, .etapa-resumo .dom, .plan-dica { display: none; } .regua { left: 0; right: 0; bottom: -4px; } }
+@media print { .plan-barra, .recolher, .anel-foco, .regua { display: none !important; } tbody.etapa.recolhida > tr, tbody.etapa.mae-recolhida { display: table-row-group !important; } tbody.etapa.recolhida > tr { display: table-row !important; } }

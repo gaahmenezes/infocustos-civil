@@ -247,32 +247,34 @@ CATEGORIA_PARTE = {'PESSOAL': 'mo', 'EQUIPAMENTOS': 'equip', 'SERVIÇOS DE TERCE
 
 def dividir_custo(b, itens, ref_orc):
     """Divisão do custo direto do orçamento em mão de obra, material, equipamento e terceiros (frações de 0 a 1).
-    Serviço: usa a divisão da própria composição. Insumo: entra inteiro na parte da sua categoria."""
+    Serviço: usa a divisão da própria composição. Insumo: entra inteiro na parte da sua categoria.
+    Cada item recebe a sua divisão em `i['div']` (a planilha soma por etapa)."""
     partes = {'mo': 0.0, 'mat': 0.0, 'equip': 0.0, 'terc': 0.0}
-    fora = 0.0  # encargos complementares desconsiderados (as bases lançam quase tudo como material)
     for i in itens:
         custo = i['quantidade'] * i.get('custo_cheio', i['custo_unit'])
-        if i.get('custo_cheio') is not None:
-            fora += custo - i['quantidade'] * i['custo_unit']
+        fora = custo - i['quantidade'] * i['custo_unit'] if i.get('custo_cheio') is not None else 0.0  # encargos complementares tirados
+        i['div'] = None
         if not custo:
             continue
         if i['base'] == 'PROPRIA':
             import proprias  # divisão calculada pelos itens da composição própria (ou o tipo do insumo próprio)
-            d = proprias.divisao(i['tipo'], i['codigo'], i['referencia'] or ref_orc)
-            for k in partes:
-                partes[k] += custo * d.get(k, 0)
-            continue
-        r = b.execute('''SELECT categoria, pct_mo, pct_mat, pct_equip, pct_terc FROM item_busca
-            WHERE tipo = ? AND base = ? AND codigo = ? AND referencia = ?''',
-                      (i['tipo'], i['base'], i['codigo'], i['referencia'] or ref_orc)).fetchone()
-        if i['tipo'] == 'servico' and r and r['pct_mo'] is not None:
-            for k in partes:
-                partes[k] += custo * (r['pct_' + k] or 0)
-        elif i['tipo'] == 'insumo':
-            partes[CATEGORIA_PARTE.get(r['categoria'] if r else '', 'mat')] += custo
+            f = dict(proprias.divisao(i['tipo'], i['codigo'], i['referencia'] or ref_orc))
         else:
-            partes['mat'] += custo  # serviço sem composição detalhada
-    partes['mat'] = max(partes['mat'] - fora, 0.0)
+            r = b.execute('''SELECT categoria, pct_mo, pct_mat, pct_equip, pct_terc FROM item_busca
+                WHERE tipo = ? AND base = ? AND codigo = ? AND referencia = ?''',
+                          (i['tipo'], i['base'], i['codigo'], i['referencia'] or ref_orc)).fetchone()
+            if i['tipo'] == 'servico' and r and r['pct_mo'] is not None:
+                f = {k: (r['pct_' + k] or 0) for k in partes}
+            elif i['tipo'] == 'insumo':
+                f = {CATEGORIA_PARTE.get(r['categoria'] if r else '', 'mat'): 1.0}
+            else:
+                f = {'mat': 1.0}  # serviço sem composição detalhada
+        v = {k: custo * f.get(k, 0) for k in partes}
+        v['mat'] = max(v['mat'] - fora, 0.0)  # as bases lançam os encargos complementares como material
+        soma_i = sum(v.values())
+        i['div'] = {k: round(x / soma_i, 4) for k, x in v.items()} if soma_i > 0 else None
+        for k in partes:
+            partes[k] += v[k]
     soma = sum(partes.values())
     return {k: round(v / soma, 4) for k, v in partes.items()} if soma > 0 else None
 
