@@ -105,9 +105,19 @@ async function folhasComposicoes(emp, o, progresso) {
   const vistos = new Map();
   for (const e of o.etapas) for (const i of e.itens) if (i.tipo === 'servico' && !vistos.has(`${i.base}|${i.codigo}`)) vistos.set(`${i.base}|${i.codigo}`, i);
   const lista = [...vistos.values()]; const blocos = [];
-  for (const [k, i] of lista.entries()) {
-    progresso(k + 1, lista.length);
-    let c; try { c = await api(`/api/composicao/${i.base}/${i.codigo}?ref=${encodeURIComponent(i.referencia || o.referencia)}&refs=${encodeURIComponent(refsDoOrcamento(o))}`); } catch (_) { continue; }
+  // seis pedidos por vez, na ordem da planilha; para se a pessoa sair da tela (ou mudar as opções) no meio
+  const vez = REL.vez; const achadas = new Array(lista.length); let prontas = 0, prox = 0;
+  const trabalhar = async () => {
+    while (prox < lista.length && vez === REL.vez) {
+      const k = prox++; const i = lista[k];
+      try { achadas[k] = await api(`/api/composicao/${i.base}/${i.codigo}?ref=${encodeURIComponent(i.referencia || o.referencia)}&refs=${encodeURIComponent(refsDoOrcamento(o))}`); } catch (_) { achadas[k] = null; }
+      prontas += 1; if (vez === REL.vez) progresso(prontas, lista.length);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, lista.length) }, trabalhar));
+  if (vez !== REL.vez) return null;
+  for (const c of achadas) {
+    if (!c) continue;
     const secoes = SECOES.map(([s, nome]) => [nome, c.itens.filter((x) => x.secao === s)]).filter((g) => g[1].length);
     blocos.push(`<article class="rel-comp"><header><span class="rel-cod">${esc(c.codigo)}<span>${esc(rotuloBase(c.base, c.codigo))}</span></span><b>${esc(c.descricao)}</b>
         <span class="rel-comp-preco">${brl.format(c.custo_total)} por ${esc(c.unidade)}</span></header>
@@ -140,8 +150,9 @@ window.desenharRelatorio = async function (o) {
   </div>`;
   const rel = $('#relatorio');
   let comps = '';
-  if (REL.comps) comps = await folhasComposicoes(emp, o, (k, n) => { rel.innerHTML = `<p class="carregando">Buscando as composições: ${k} de ${n}…</p>`; });
-  if (!document.body.contains(rel)) return;  // a pessoa saiu da tela enquanto carregava
+  REL.vez = (REL.vez || 0) + 1; const vez = REL.vez;
+  if (REL.comps) comps = await folhasComposicoes(emp, o, (k, n) => { if (document.body.contains(rel)) rel.innerHTML = `<p class="carregando">Buscando as composições: ${k} de ${n}…</p>`; else REL.vez += 1; });
+  if (vez !== REL.vez || comps === null || !document.body.contains(rel)) return;  // a pessoa saiu da tela ou mudou as opções enquanto carregava
   rel.innerHTML = (REL.capa ? folhaCapa(emp, o) : '') + folhaResumo(emp, o) + folhaPlanilha(emp, o) + (REL.abc ? folhaABC(emp, o) : '') + comps;
   d.querySelectorAll('[data-rel]').forEach((c) => c.addEventListener('change', () => {
     REL[c.dataset.rel] = c.checked;

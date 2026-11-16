@@ -310,7 +310,7 @@ def _calcular(c, oid):
         if i['base'] == 'PROPRIA':
             import proprias
             i['base_nome'] = proprias.base_do_codigo(i['codigo'])
-        if o['sem_complementares']:
+        if o['sem_complementares'] and i['custo_compl'] > 0:  # item sem encargo complementar fica com o custo que tem (sem arredondar de novo)
             i['custo_unit'] = r2(i['custo_cheio'] - i['custo_compl'])
         # sem BDI no item (BDI zero ou só no total), o preço é o próprio custo, com as casas que ele tiver
         i['preco_unit'] = i['custo_unit'] if fator_bdi == 1 else r2(i['custo_unit'] * fator_bdi)

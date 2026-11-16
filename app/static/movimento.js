@@ -31,13 +31,18 @@ function contar(el, de, para, formato = (v) => num2.format(v)) {
 
 // ---------- linhas que deslizam até o lugar novo (FLIP) ----------
 // tirar as medidas antes de redesenhar e chamar a função devolvida depois: quem mudou de lugar desliza, quem é novo surge
+// Primeiro todas as leituras, depois todas as escritas: intercalar as duas obriga o navegador a refazer o layout da página
+// inteira a cada linha (numa planilha de 500 itens isso levava segundos). Só anima o que está na tela ou perto dela.
 function medir(seletor, chave) {
-  const antes = new Map();
+  const antes = new Map(), H = window.innerHeight;
   document.querySelectorAll(seletor).forEach((el) => antes.set(chave(el), el.getBoundingClientRect()));
   return () => {
     if (semMovimento()) return;
-    document.querySelectorAll(seletor).forEach((el) => {
-      const a = antes.get(chave(el)), d = el.getBoundingClientRect();
+    const els = [...document.querySelectorAll(seletor)];
+    const depois = els.map((el) => el.getBoundingClientRect());
+    els.forEach((el, k) => {
+      const a = antes.get(chave(el)), d = depois[k];
+      if (d.bottom < -H || d.top > 2 * H) return;  // longe da tela: ninguém vê o movimento
       if (!a) { el.animate([{ opacity: 0, transform: 'translateY(-6px)' }, { opacity: 1, transform: 'none' }], { duration: 260, easing: SAIDA }); el.classList.add('chegou'); return; }
       const dx = a.left - d.left, dy = a.top - d.top;
       if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;

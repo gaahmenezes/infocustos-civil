@@ -149,6 +149,7 @@ $('#form-novo').addEventListener('submit', async (e) => {
 async function listarOrcamentos() {
   const semEsq = comEsqueleto($('#detalhe'), `<div class="pagina">${esqueletoCartoes(4)}</div>`);
   try { LISTA.todos = await req('/api/orcamentos'); } finally { semEsq(); }
+  if (location.hash !== '#/orcamentos') return;
   const tem = LISTA.todos.length > 0;
   $('#detalhe').innerHTML = `<div class="pagina orcamentos">
     <header class="pag-cab">
@@ -172,7 +173,11 @@ async function listarOrcamentos() {
 
 // ---------- orçamento ----------
 async function abrirOrcamento(id, dados) {
-  const o = dados || await req(`/api/orcamentos/${id}`);
+  const h = location.hash;
+  const semEsq = dados || (ORC.atual && ORC.atual.id === id && $('#detalhe .orc')) ? () => {} : comEsqueleto($('#detalhe'), `<div class="pagina">${esqueletoTabela(14)}</div>`);
+  let o;
+  try { o = dados || await req(`/api/orcamentos/${id}`); } finally { semEsq(); }
+  if (!dados && location.hash !== h) return;
   if (!ORC.atual || ORC.atual.id !== o.id || !o.etapas.some((e) => e.id === ORC.filtro)) ORC.filtro = null;
   ORC.atual = o; lembrar(o.id);
   if (ORC.aba === 'relatorio') { await window.desenharRelatorio(o); return; }
@@ -308,8 +313,8 @@ function desenharPlanilha(o) {
       </tr>
       ${e.itens.map((i) => { const cl = classe.get(`${i.tipo}|${i.base}|${i.codigo}`) || 'C', peso = i.total / somaEtapas; return `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
         <td class="n"><button type="button" class="pega" data-pega="item" data-id="${i.id}" aria-label="Mover o item ${i.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem ou a etapa">⠿</button>${i.numero}</td>
-        <td class="cod">${codLink(i.tipo, i.base, i.codigo)}</td>
-        <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}${i.total > 0 ? `<span class="regua regua-${cl}" style="--p:${Math.max(0.6, (i.total / maiorItem) * 100).toFixed(2)}%" title="${pct.format(peso)} do total · classe ${cl} da curva ABC" aria-label="${pct.format(peso)} do total, classe ${cl}"></span>` : ''}</td>
+        <td class="cod">${codLink(i.tipo, i.base, i.codigo, mesDoItem(o, i))}</td>
+        <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}${i.total > 0 ? `<span class="regua regua-${cl}" role="img" style="--p:${Math.max(0.6, (i.total / maiorItem) * 100).toFixed(2)}%" title="${pct.format(peso)} do total · classe ${cl} da curva ABC" aria-label="${pct.format(peso)} do total, classe ${cl}"></span>` : ''}</td>
         <td class="c-un">${unid(i.unidade)}</td>
         <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
         <td class="num c-custo" data-rotulo="Custo unit."${o.bdi_no_total ? ' colspan="2"' : ''}>${money(i.custo_unit)}</td>
@@ -581,6 +586,9 @@ function ligarBuscaInline(inp) {
   }
 }
 
+// o mês em que o item está no orçamento (cada base no seu calendário); a composição própria leva o mês de cada base
+const mesDoItem = (o, i) => (i.base === 'PROPRIA' ? { refs: refsDoOrcamento(o) } : { ref: i.referencia || mesParaBase(i.base, o.referencia) });
+
 // ---------- curva ABC ----------
 async function desenharABC(o, tipo) {
   const corpo = $('#orc-corpo');
@@ -594,7 +602,7 @@ async function desenharABC(o, tipo) {
   const barra = ['A', 'B', 'C'].filter((cl) => r.resumo[cl].valor > 0).map((cl) => `<span style="flex-grow:${r.resumo[cl].valor};background:${cores[cl]}"></span>`).join('');
   const linhas = r.linhas.map((l) => `<tr class="cl-${l.classe}">
       <td class="n">${l.posicao}</td>
-      <td class="cod">${codLink(tipo === 'servicos' && l.tipo === 'servico' ? 'servico' : 'insumo', l.base, l.codigo)}</td>
+      <td class="cod">${codLink(tipo === 'servicos' && l.tipo === 'servico' ? 'servico' : 'insumo', l.base, l.codigo, mesDoItem(o, l))}</td>
       <td class="desc">${esc(l.descricao)}</td><td>${esc(l.unidade)}</td>
       <td class="num">${qtdFmt.format(l.quantidade)}</td>
       <td class="num">${money(tipo === 'servicos' ? l.preco_unit : l.custo_unit)}</td>

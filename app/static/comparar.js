@@ -62,8 +62,11 @@ window.desenharComparar = async function (texto) {
   if (pedidos.length < 2) {
     d.innerHTML = `<div class="pagina">${vazio('planilha', 'Escolha pelo menos duas composições', 'Na consulta, use o botão "Comparar" em cada resultado.', '<a class="botao primario" href="#/">Ir para a consulta</a>')}</div>`; return;
   }
-  if (!d.querySelector('.comparar')) d.innerHTML = '<p class="carregando">Montando a comparação…</p>';
+  const semEsq = d.querySelector('.comparar') ? () => {} : comEsqueleto(d, `<div class="pagina"><section class="ficha">${esqueletoTabela(10)}</section></div>`);
+  const h = location.hash;
   const res = await Promise.all(pedidos.map((x) => api(`/api/composicao/${x.base}/${x.codigo}?${qsMesDe(x.base)}`).then((c) => ({ c }), (e) => ({ erro: e.message, ...x }))));
+  semEsq();
+  if (location.hash !== h) return;
   const ok = res.filter((r) => r.c).map((r) => r.c), falhas = res.filter((r) => r.erro);
   // cada composição vem no mês da sua base
   const mes = juntar([...new Set(ok.map((c) => `${c.base} ${nomeRef(c.referencia)}`))]);

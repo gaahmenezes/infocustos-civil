@@ -921,10 +921,13 @@ def nomes_oficiais(base, mes):
     return _NOMES_OFICIAIS[k]
 
 
-def _casar_itens(itens, ref):
+def _casar_itens(itens, ref, obra=''):
     """Liga cada item do orçamento a uma composição (ou insumo) pelo nome: primeiro nas bases próprias, depois ORSE,
-    SINAPI e SICRO. Com mais de um item de mesmo nome, fica o de preço mais próximo do arquivo."""
+    SINAPI e SICRO. Com mais de um item de mesmo nome, fica o de preço mais próximo do arquivo; empatando (a mesma obra
+    importada em duas bases), vale a base importada desta obra e, depois, a mais nova."""
     a = proprias.acervo()
+    obra_k = chave_nome(obra or '')
+    da_obra = {bid for bid, bp in a['bases'].items() if obra_k and obra_k in chave_nome(bp.get('descricao') or '')}
     calc = proprias.calculo_guardado(proprias._refs_do_mes(ref))
     proprios = {}
     for cid, cp in a['comps'].items():
@@ -942,14 +945,14 @@ def _casar_itens(itens, ref):
 
     for it in itens:
         k = chave_nome(it['descricao'])
-        cands = [(t, proprias.BASE, cod, preco_proprio(t, cod), proprias.nome_da_base(bid)) for t, cod, bid in proprios.get(k, [])]
+        cands = [(t, proprias.BASE, cod, preco_proprio(t, cod), proprias.nome_da_base(bid), bid) for t, cod, bid in proprios.get(k, [])]
         if not cands:
             for base in ('ORSE', 'SINAPI', 'SICRO'):
-                cands = [(t, base, cod, p, base) for t, cod, p in nomes_oficiais(base, meses[base]).get(k, []) if p is not None]
+                cands = [(t, base, cod, p, base, 0) for t, cod, p in nomes_oficiais(base, meses[base]).get(k, []) if p is not None]
                 if cands:
                     break
         if cands:
-            t, base, cod, p, nome = min(cands, key=lambda c: (c[0] != 'servico', abs((c[3] or 0) - it['preco'])))
+            t, base, cod, p, nome, _ = min(cands, key=lambda c: (c[0] != 'servico', round(abs((c[3] or 0) - it['preco']), 2), c[5] not in da_obra, -c[5]))
             it['ref'] = (t, base, cod); it['preco_base'] = p; it['base_nome'] = nome
             it['base_propria_id'] = next((bid for t2, cod2, bid in proprios.get(k, []) if cod2 == cod), None) if base == proprias.BASE else None
         else:
@@ -974,7 +977,7 @@ async def anexar_orcamento_sienge(request: Request, simular: bool = False, nome:
         raise HTTPException(422, 'Este arquivo não é o relatório "Orçamento" do SIENGE.')
     with orc_mod._base_conn() as b:
         ref = orc_mod.ref_principal(b)
-    itens = _casar_itens([dict(x) for x in r['linhas'] if x['item']], ref)
+    itens = _casar_itens([dict(x) for x in r['linhas'] if x['item']], ref, r.get('obra') or '')
     por_base, faltam, difs = {}, [], []
     for it in itens:
         if it['ref'] is None:

@@ -29,6 +29,8 @@ const estado = { q: '', base: 'todas', tipo: 'todos', itens: [], atual: null, re
 const rotaItem = (tipo, base, codigo) => `#/${tipo === 'servico' ? 'composicao' : 'insumo'}/${base}/${codigo}`;
 const rotaComparar = (lista) => `#/comparar/${lista.map((x) => `${x.base}-${x.codigo}`).join(',')}`;
 const lerRotaComparar = () => { const m = location.hash.match(/^#\/comparar\/(.+)/); return m ? m[1] : null; };
+// a pessoa trocou de tela enquanto a resposta vinha: a resposta atrasada não pinta por cima da tela nova
+const naTela = (h) => location.hash === h;
 const rotaOrc = (id, aba) => `#/orcamento/${id}${aba ? '/' + aba : ''}`;
 
 // ---------- preferências (ficam só neste navegador) ----------
@@ -283,10 +285,12 @@ async function aplicarDatas() {
 async function trocarMes(id, base) {
   // atalhos ("Ver em <mês>", paleta): troca o mês de uma base e a inclui na pesquisa
   const b = base || 'ORSE';
-  if (!id || (id === estado.meses[b] && basesAtivas().includes(b))) return;
+  if (!id || (id === estado.meses[b] && basesAtivas().includes(b) && !location.hash.includes('?'))) return;
   estado.meses[b] = id; if (Array.isArray(estado.ativas) && !estado.ativas.includes(b)) estado.ativas.push(b);
   gravarMeses();
   await carregarReferencia();
+  // ficha aberta com o mês fixo do orçamento (?ref=): passa a valer o mês escolhido agora
+  if (location.hash.includes('?')) { history.replaceState(null, '', location.hash.split('?')[0]); }
   buscar(); rota();
   avisar && avisar(`${esc(b)}: mostrando os preços de ${esc(nomeRef(id))}.`);
 }
@@ -520,8 +524,10 @@ function codigoBase(codigo, base, marcar) {
 }
 
 // nas tabelas: o mesmo par código + base, mais discreto, e o conjunto inteiro abre o item
-function codLink(tipo, base, codigo) {
-  return `<a class="cb cb-p" href="${rotaItem(tipo, esc(base), esc(codigo))}"><span class="cb-num">${esc(codigo)}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base, codigo))}</span></a>`;
+// `mes`: abre a ficha no mês em que o item está (ex.: o mês do orçamento), e não no mês escolhido na consulta
+function codLink(tipo, base, codigo, mes) {
+  const extra = !mes ? '' : base === 'PROPRIA' ? `?refs=${encodeURIComponent(mes.refs || '')}` : `?ref=${encodeURIComponent(mes.ref || mes)}`;
+  return `<a class="cb cb-p" href="${rotaItem(tipo, esc(base), esc(codigo))}${extra}"><span class="cb-num">${esc(codigo)}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base, codigo))}</span></a>`;
 }
 
 function desenharLista(r) {
@@ -632,11 +638,15 @@ async function rota() {
   aplicarEstado();
   const d = $('#detalhe');
   const semEsqueleto = comEsqueleto(d, esqueletoFicha());
+  const hFicha = location.hash;
   try {
     // composição própria: cada item no mês da sua base (refs)
-    const qs = base === 'PROPRIA' ? `refs=${encodeURIComponent(refsQs())}` : qsMesDe(base);
+    const pedido = new URLSearchParams(location.hash.split('?')[1] || '');  // link vindo do orçamento: o mês do item
+    const qs = base === 'PROPRIA' ? `refs=${encodeURIComponent(pedido.get('refs') || refsQs())}`
+      : pedido.get('ref') ? `ref=${encodeURIComponent(pedido.get('ref'))}` : qsMesDe(base);
     const dados = tipo === 'composicao' ? await api(`/api/composicao/${base}/${codigo}?${qs}`) : await api(`/api/insumo/${base}/${codigo}?${qs}`);
     semEsqueleto();
+    if (!naTela(hFicha)) return;
     // o código e o preço viajam do resultado clicado até o lugar deles na ficha (ou de uma ficha para a outra)
     const origem = window.innerWidth > 900 && !d.querySelector('.ficha:not(.esq-ficha)') && document.querySelector('.res[aria-current="true"]');
     const viajantes = origem ? [[origem.querySelector('.cb'), 'vt-cod'], [origem.querySelector('.res-preco'), 'vt-preco']].filter((x) => x[0]) : [];
@@ -653,8 +663,17 @@ async function rota() {
     if (window.innerWidth <= 900 || d.getBoundingClientRect().top < 70) window.scrollTo({ top: 0, behavior: semMovimento() ? 'auto' : 'smooth' });
   } catch (e) {
     semEsqueleto();
-    const outros = mesesDaBase(base).filter((r) => r.id !== estado.meses[base]);
-    d.innerHTML = `${botaoVoltar()}<div class="erro"><b>Não foi possível abrir ${esc(codigo)}/${esc(base)}.</b><br>${esc(e.message)}
+    if (!naTela(hFicha)) return;
+    // só oferece os meses em que o código existe (antes oferecia todos, e o clique levava a outro erro)
+    let existe = null;
+    if (base !== 'PROPRIA') {
+      try { existe = new Set((await api(`/api/comparativo/item/${tipo === 'composicao' ? 'servico' : 'insumo'}/${base}/${codigo}`)).meses.filter((x) => x.preco != null).map((x) => x.referencia)); }
+      catch (_) { existe = new Set(); }
+      if (!naTela(hFicha)) return;
+    }
+    const pedido = new URLSearchParams(location.hash.split('?')[1] || '').get('ref') || estado.meses[base];
+    const outros = mesesDaBase(base).filter((r) => r.id !== pedido && (!existe || existe.has(r.id)));
+    d.innerHTML = `${botaoVoltar()}<div class="erro"><b>Não foi possível abrir ${esc(codigo)}/${esc(base)}.</b><br>${esc(e.message)}${existe && !existe.size ? ' Esse código não aparece em nenhum dos meses carregados; confira o número.' : ''}
       ${outros.length ? `<div class="acoes" style="margin-top:12px">${outros.map((r) => `<button type="button" class="botao" data-mes="${esc(r.id)}" data-base-mes="${esc(base)}">Ver em ${esc(r.descricao.replace(/-1$/, ''))}</button>`).join('')}</div>` : ''}</div>`;
   }
 }
@@ -748,7 +767,7 @@ function desenharComposicao(c) {
       <div class="fatos">
         <div>Itens<b>${c.itens.length}</b></div>
         ${c.usada_em ? `<div>Usada em<b>${c.usada_em} composições</b></div>` : ''}
-        <div>Data-base<b>${c.base === 'PROPRIA' ? esc(Object.entries(c.datas || {}).map(([b, m]) => `${b} ${m.map(curto).join(', ')}`).join(' · ') || '—') : esc(nomeRef(c.referencia) || ref)}</b></div>
+        <div>Data-base<b>${c.base === 'PROPRIA' ? esc(Object.entries(c.datas || {}).map(([b, m]) => `${b} ${m.map(curto).join(', ')}`).join(' · ') || 'preços próprios') : esc(nomeRef(c.referencia) || ref)}</b></div>
       </div>
       <div class="acoes">
         <button type="button" class="botao primario" data-adicionar="servico" data-base="${esc(c.base)}" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}">Adicionar ao orçamento</button>
@@ -973,6 +992,7 @@ async function desenharComparativo() {
     [r, oposto] = await Promise.all([api(`/api/comparativo?${new URLSearchParams(pedido)}`),
       api(`/api/comparativo?${new URLSearchParams({ ...pedido, sentido: CMP.sentido === 'alta' ? 'baixa' : 'alta', limite: 8 })}`).catch(() => null)]);
     semEsq();
+    if (!/^#\/comparativo/.test(location.hash)) return;
   } catch (e) { semEsq(); d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
   if (window.lembrarPlacar) window.lembrarPlacar();
   const meses = r.referencias || [];
@@ -1047,7 +1067,9 @@ async function historicoDoItem(tipo, base, codigo) {
 async function desenharEncargos() {
   const d = $('#detalhe');
   let r;
-  try { r = await api(`/api/encargos?${qsMesDe('ORSE')}`); } catch (e) { d.innerHTML = `<div class="erro">${esc(e.message)}</div>`; return; }
+  const semEsq = d.querySelector('.encargos') ? () => {} : comEsqueleto(d, `<div class="pagina"><section class="ficha">${esqueletoTabela(12)}</section></div>`);
+  try { r = await api(`/api/encargos?${qsMesDe('ORSE')}`); } catch (e) { d.innerHTML = `<div class="pagina"><div class="erro"><b>Não foi possível abrir os encargos.</b><br>${esc(e.message)}</div></div>`; return; } finally { semEsq(); }
+  if (!/^#\/encargos/.test(location.hash)) return;
   const mesNome = nomeRef(r.referencia.id);
   const quadro = (tipo, titulo, nota) => {
     const e = r[tipo];
@@ -1077,3 +1099,14 @@ document.addEventListener('click', (e) => {
   if (alvo.id === 'detalhe') alvo.setAttribute('tabindex', '-1');
   alvo.focus();
 });
+
+// menus suspensos: abrem para o lado em que cabem (no celular, o botão pode estar na esquerda ou na direita da tela)
+document.addEventListener('toggle', (e) => {
+  const m = e.target; if (!(m instanceof HTMLDetailsElement) || !m.classList.contains('menu') || !m.open) return;
+  const l = m.querySelector('.menu-lista'); if (!l) return;
+  l.style.left = ''; l.style.right = '';
+  const W = document.documentElement.clientWidth, r = l.getBoundingClientRect();
+  if (r.right > W - 8) { l.style.left = 'auto'; l.style.right = '0'; }
+  const r2 = l.getBoundingClientRect();
+  if (r2.left < 8) { l.style.right = 'auto'; l.style.left = `${8 - m.getBoundingClientRect().left}px`; }
+}, true);

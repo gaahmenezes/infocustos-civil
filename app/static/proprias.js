@@ -29,6 +29,7 @@ async function desenharListaProprias() {
     if (!PROP.dados.bases.some((b) => b.id === PROP.base)) { lembrarBase(PROP.dados.bases[0].id); PROP.dados = await req(`/api/proprias?${qsRefs()}&base_id=${PROP.base}`); }
     semEsq();
   } catch (e) { semEsq(); d.innerHTML = `<div class="pagina"><div class="erro">${esc(e.message)}</div></div>`; return; }
+  if (!/^#\/propria/.test(location.hash)) return;
   const { composicoes, insumos, bases } = PROP.dados;
   if (estado.ref) { estado.ref.bases_proprias = bases; estado.ref.base_propria = bases[0].nome; mostrarNomeBasePropria(); }
   const base = bases.find((b) => b.id === PROP.base);

@@ -188,7 +188,8 @@ def conn():
 
 
 def referencias(c):
-    return [dict(r) for r in c.execute('SELECT * FROM referencia ORDER BY id')]
+    # a CEHOP às vezes publica o mês como "agosto/2026-1" (segunda versão do relatório): o sufixo não é para a tela
+    return [dict(r) | {'descricao': (r['descricao'] or '').removesuffix('-1')} for r in c.execute('SELECT * FROM referencia ORDER BY id')]
 
 
 def referencia_atual(c):
@@ -328,7 +329,9 @@ def _referencia(ref, refs, bases):
         todas = referencias(c)
         bases = {b: {'meses': [x for x in todas if x['id'] in meses], 'atual': meses[-1], 'fontes': {m: fonte_de(c, b, m) for m in meses}}
                  for b, meses in sorted(meses_da_base(c).items(), key=lambda kv: ORDEM_BASES.index(kv[0]) if kv[0] in ORDEM_BASES else 99)}
-        return r | {'totais': [dict(t) for t in tot], 'referencias': todas, 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
+        a = proprias.acervo()  # as bases próprias também entram nos números dos filtros (sem texto digitado)
+        tot = [dict(t) for t in tot] + [{'tipo': t, 'base': 'PROPRIA', 'n': n} for t, n in (('servico', len(a['comps'])), ('insumo', len(a['insumos']))) if n]
+        return r | {'totais': tot, 'referencias': todas, 'atual': referencia_atual(c)['id'], 'protegido': bool(SENHA),
                     'encargos_detalhados': sorted(tem_enc), 'bases': bases, 'refs': todas_bases, 'ativas': list(escolha)}
 
 
@@ -454,6 +457,8 @@ def api_insumo(base: str, codigo: str, limite: int = Query(100, le=2000), ref: O
 @app.get('/api/encargos')
 def api_encargos(ref: Optional[str] = None):
     with conn() as c:
+        if not ref:  # o encargo social é o da CEHOP: sem mês pedido, o mais recente da ORSE (não o último do SINAPI ou do SICRO)
+            ref = (meses_da_base(c).get('ORSE') or [None])[-1]
         r = mes(c, ref)
         out = {}
         for tipo in ('horista', 'mensalista'):
@@ -526,6 +531,8 @@ def api_comparativo_item(tipo: str, base: str, codigo: str):
         linhas = [dict(x) for x in c.execute('''SELECT r.id AS referencia, r.descricao, h.preco FROM referencia r
             LEFT JOIN historico h ON h.referencia = r.id AND h.tipo = ? AND h.base = ? AND h.codigo = ? ORDER BY r.id''',
                                              (tipo, base, codigo)) if x['referencia'] in meses]
+        for x in linhas:
+            x['descricao'] = (x['descricao'] or '').removesuffix('-1')
         if all(x['preco'] is None for x in linhas) and not c.execute('SELECT 1 FROM item_busca WHERE tipo = ? AND base = ? AND codigo = ?',
                                                                     (tipo, base, codigo)).fetchone():
             raise HTTPException(404, f'{codigo}/{base} não existe em nenhum mês carregado.')

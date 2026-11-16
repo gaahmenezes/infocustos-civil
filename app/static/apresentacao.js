@@ -92,7 +92,7 @@ async function apMostrar(k, automatico) {
 
 window.desenharApresentacao = async function () {
   const d = $('#detalhe'), ref = estado.ref; AP.vivo = true; apParar();
-  const n = (t) => ref ? ref.totais.filter((x) => x.tipo === t).reduce((s, x) => s + x.n, 0) : 0;
+  const n = (t) => ref ? ref.totais.filter((x) => x.tipo === t && x.base !== 'PROPRIA').reduce((s, x) => s + x.n, 0) : 0;
   const mes = nomeRef(estado.mes), meses = ref ? ref.referencias.length : 0;
   const pontos = [
     ['lupa', 'Busca que acompanha a digitação', 'Composições e insumos da ORSE, da SINAPI e do SICRO juntos ou isolados, cada base na sua data-base, com a unidade e a divisão do custo já no resultado.'],
