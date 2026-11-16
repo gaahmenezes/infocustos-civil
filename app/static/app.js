@@ -965,7 +965,10 @@ const tAcordando = setTimeout(() => { const a = $('#abertura'); if (a) a.classLi
 // as marcas "vai-ap"/"vai-outra" só valem até a primeira tela ser desenhada: depois disso saem, senão esconderiam
 // as outras telas (inclusive se o carregamento falhar)
 const soltarEntrada = () => document.documentElement.classList.remove('vai-ap', 'vai-outra');
-carregarReferencia().then(() => { buscar(); rota(); soltarEntrada(); focoInicial(); }).finally(() => {
+// a primeira tela só é desenhada depois que todos os arquivos da página chegaram: com a rede lenta, os dados podiam chegar
+// antes de apresentacao.js (ou orcamento.js...), e a tela pedida ficava vazia
+const paginaPronta = document.readyState === 'loading' ? new Promise((r) => document.addEventListener('DOMContentLoaded', r, { once: true })) : Promise.resolve();
+Promise.all([carregarReferencia(), paginaPronta]).then(() => { buscar(); rota(); soltarEntrada(); focoInicial(); }).finally(() => {
   soltarEntrada();
   clearTimeout(tAcordando);
   const a = $('#abertura'); if (!a) return;

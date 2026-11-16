@@ -63,6 +63,13 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
     const q2 = await p.$('.planilha-orc tr.item .qtd'); await q2.fill(antes); await q2.press('Tab'); await p.waitForTimeout(1500);
   } else v(true, 'Sem orçamento grande para medir');
 
+  // 8) rede lenta: os dados chegam antes do arquivo da apresentação e a tela não pode ficar vazia
+  const lenta = await b.newPage({ viewport: { width: 1440, height: 900 } });
+  await lenta.route(/apresentacao\.js/, async (r) => { await new Promise((s) => setTimeout(s, 2500)); await r.continue(); });
+  await lenta.goto(U + '/'); await lenta.waitForTimeout(5000);
+  v(!!(await lenta.$('.apresentacao')), 'Com o arquivo da apresentação chegando atrasado, a apresentação aparece');
+  await lenta.close();
+
   v(!erros.length, 'Sem erros de JavaScript ' + JSON.stringify(erros));
   await p.request.delete(U + `/api/orcamentos/${o.id}`); await p.request.delete(U + `/api/orcamentos/${o2.id}`);
   console.log(`\n${ok} OK, ${falha} falhas`); await b.close(); process.exitCode = falha ? 1 : 0;
