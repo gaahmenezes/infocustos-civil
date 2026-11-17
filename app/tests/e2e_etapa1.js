@@ -58,7 +58,7 @@ const R = (h) => U + (art ? h.replace('#/', '#') : h);
   ok(await p.evaluate(() => document.activeElement.name === 'nome'), 'Painel lateral abre com o foco no nome');
   await p.fill('[name=nome]', 'Etapa1 teste de tela'); await p.fill('[name=cliente]', 'Prefeitura'); await p.fill('[name=bdi]', '20');
   await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
-  const abre = (await p.$$('[data-acao="item-abrir"]'))[0]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[0]; await inp.fill('00003');
+  if (!(await p.$('[data-acao="item-abrir"]'))) { await p.click('tbody.n1 [data-acao="filha-nova"]'); await p.waitForSelector('[data-acao="item-abrir"]'); await p.keyboard.press('Escape'); } const abre = (await p.$$('[data-acao="item-abrir"]'))[0]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[0]; await inp.fill('00003');
   await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
   await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
   await p.keyboard.type('100'); await p.keyboard.press('Enter'); await p.waitForTimeout(350);

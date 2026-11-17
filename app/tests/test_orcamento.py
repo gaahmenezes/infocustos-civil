@@ -15,6 +15,11 @@ import server  # noqa: E402
 c = TestClient(server.app)
 
 
+def itens_de(o):
+    """Todos os itens do orçamento, na ordem da planilha (em qualquer nível)."""
+    return [i for e in o['etapas'] for i in e['itens']]
+
+
 @pytest.fixture()
 def orc():
     o = c.post('/api/orcamentos', json={'nome': 'Escola teste', 'cliente': 'Prefeitura', 'bdi': 25}).json()
@@ -28,18 +33,19 @@ def test_criar_vem_com_uma_etapa(orc):
 
 def test_item_usa_preco_da_base_e_aplica_bdi(orc):
     o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100}).json()
-    i = o['etapas'][0]['itens'][0]
+    i = itens_de(o)[0]
     assert i['custo_unit'] == 5.17 and i['preco_unit'] == 6.46  # 5,17 × 1,25 = 6,4625 → 6,46
     assert i['total'] == 646.00 and o['custo_total'] == 517.00 and o['valor_bdi'] == 129.00
     assert i['referencia'] == '2026-08' and o['desatualizado'] is False
-    assert i['numero'] == '1.1'
+    # sem etapa indicada, o serviço entra numa etapa criada dentro da célula (nunca solto na célula)
+    assert i['numero'] == '1.1.1' and [(e['titulo'], e['nivel']) for e in o['etapas']] == [('Obra', 1), ('Serviços preliminares', 2)]
 
 
 def test_bdi_e_quantidade_recalculam(orc):
     o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 10}).json()
-    iid = o['etapas'][0]['itens'][0]['id']
+    iid = itens_de(o)[0]['id']
     o = c.patch(f"/api/itens/{iid}", json={'quantidade': 20}).json()
-    assert o['etapas'][0]['itens'][0]['total'] == 129.20
+    assert itens_de(o)[0]['total'] == 129.20
     o = c.patch(f"/api/orcamentos/{orc['id']}", json={'bdi': 0}).json()
     assert o['total'] == 103.40
 
@@ -79,7 +85,7 @@ def test_exportar_excel_tem_tres_abas_e_formulas(orc):
     wb = load_workbook(io.BytesIO(r.content))
     assert wb.sheetnames == ['Orçamento', 'Curva ABC serviços', 'Curva ABC insumos']
     ws = wb['Orçamento']
-    assert ws['H7'].value.startswith('=ROUND(G7*(1+$H$2)')
+    assert ws['H8'].value.startswith('=ROUND(G8*(1+$H$2)')  # linha 6 a célula, 7 a etapa, 8 o item
 
 
 def test_duplicar(orc):
@@ -113,7 +119,7 @@ def test_atualizar_orcamento_de_maio_para_agosto(orc):
     assert sim['sem_preco'][0]['codigo'] == '103335' and sim['sem_preco'][0]['motivo'] == 'saiu da base'
     assert sim['total_depois'] == 646.00 + 1742.10
     n = c.post(f'/api/orcamentos/{oid}/atualizar').json()
-    itens = {i['codigo']: i for i in n['etapas'][0]['itens']}
+    itens = {i['codigo']: i for i in itens_de(n)}
     assert itens['00003']['referencia'] == '2026-08' and itens['00003']['custo_unit'] == 5.17
     assert itens['103335']['referencia'] == '2026-05' and itens['103335']['custo_unit'] == 139.37  # preço antigo preservado
     # a data-base do orçamento passa a ser a pedida (a mais recente); o item da ORSE fica com o mês dele (agosto)
@@ -131,9 +137,9 @@ def test_orcamento_de_maio_usa_precos_de_maio():
     try:
         assert o['referencia'] == '2026-05'
         n = c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'SINAPI', 'codigo': '103335', 'quantidade': 10}).json()
-        assert n['etapas'][0]['itens'][0]['custo_unit'] == 139.37
+        assert itens_de(n)[0]['custo_unit'] == 139.37
         n = c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100}).json()
-        assert n['etapas'][0]['itens'][1]['custo_unit'] == 4.90
+        assert itens_de(n)[1]['custo_unit'] == 4.90
     finally:
         c.delete(f"/api/orcamentos/{o['id']}")
 
@@ -148,7 +154,7 @@ def test_mudar_data_base_do_orcamento():
     try:
         c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100})
         n = c.post(f"/api/orcamentos/{o['id']}/atualizar", params={'referencia': '2026-08'}).json()
-        assert n['referencia'] == '2026-08' and n['etapas'][0]['itens'][0]['custo_unit'] == 5.17 and n['total'] == 646.00
+        assert n['referencia'] == '2026-08' and itens_de(n)[0]['custo_unit'] == 5.17 and n['total'] == 646.00
         n = c.post(f"/api/orcamentos/{o['id']}/atualizar", params={'referencia': '2026-05'}).json()
         assert n['referencia'] == '2026-05' and n['total'] == 613.00
     finally:

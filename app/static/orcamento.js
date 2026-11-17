@@ -12,6 +12,7 @@ function gravarRecolhidas() { try { localStorage.setItem(`orc-recolhidas-${ORC.r
 const CHEVRON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3" /></svg>';
 // três níveis na planilha: célula construtiva › etapa › subetapa
 const NIVEL = { 1: ['célula construtiva', 'células construtivas', 'Célula construtiva'], 2: ['etapa', 'etapas', 'Etapa'], 3: ['subetapa', 'subetapas', 'Subetapa'] };
+const NIVEL_DICA = { 1: 'Conjunto macro da obra: torre, habitação, infraestrutura...', 2: 'Conjunto construtivo dentro da célula: rede de drenagem, fundação...', 3: 'Subdivisão da etapa: assentamento de tubulação, escavação... Os serviços entram aqui.' };
 const nomeNivel = (n, plural) => (NIVEL[n] || NIVEL[2])[plural ? 1 : 0];
 const NomeNivel = (n) => (NIVEL[n] || NIVEL[2])[2];
 const artigo = (n) => (n === 1 ? 'a' : 'a');  // célula, etapa e subetapa são todas femininas
@@ -331,7 +332,7 @@ function desenharPlanilha(o) {
     <tbody class="etapa n${e.nivel}${e.nivel > 1 ? ' sub' : ''}${rec ? ' recolhida' : ''}${maeRec ? ' mae-recolhida' : ''}" data-etapa="${e.id}" data-pai="${e.pai_id || ''}" data-nivel="${e.nivel}">
       <tr class="etapa-cab">
         <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover ${artigo(e.nivel)} ${tipo} ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button><button type="button" class="recolher" data-recolher="${e.id}" aria-expanded="${!rec}" aria-label="${rec ? 'Mostrar' : 'Recolher'} ${artigo(e.nivel)} ${tipo} ${e.numero}" title="${rec ? 'Mostrar os itens' : 'Recolher'}">${CHEVRON}</button>${e.numero}</td>
-        <td colspan="5"><div class="etapa-linha"><span class="nivel-rot" aria-hidden="true">${Tipo}</span><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título d${artigo(e.nivel)} ${tipo} ${e.numero}" data-etapa="${e.id}">
+        <td colspan="5"><div class="etapa-linha"><span class="nivel-rot" aria-hidden="true" title="${NIVEL_DICA[e.nivel] || ''}">${Tipo}</span><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título d${artigo(e.nivel)} ${tipo} ${e.numero}" data-etapa="${e.id}">
           <span class="etapa-resumo" aria-hidden="${!rec}">${lista.length} ${lista.length === 1 ? 'item' : 'itens'}${nsub ? ` · ${nsub} ${nomeNivel(prox, nsub !== 1)}` : ''}${lista.length ? barraDivisao(divisaoDe(lista)) : ''}</span></div></td>
         <td class="num"><span class="peso-etapa">${pct.format(e.peso)}</span></td>
         <td class="num"><b>${brl.format(e.total)}</b></td>
@@ -355,11 +356,11 @@ function desenharPlanilha(o) {
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
         </td></tr>`; }).join('')}
       <tr class="add-linha"><td></td><td colspan="8"><div class="add-fila">
-        <button type="button" class="botao botao-p add-abrir" data-acao="item-abrir" data-id="${e.id}" aria-expanded="false" aria-controls="add-${e.id}" title="Adicionar um serviço ou insumo de ${esc(nomeRef(o.referencia))} a ${artigo(e.nivel)} ${tipo} ${e.numero}">+ Item</button>
+        ${e.nivel === 1 && !e.itens.length ? '' : `<button type="button" class="botao botao-p add-abrir" data-acao="item-abrir" data-id="${e.id}" aria-expanded="false" aria-controls="add-${e.id}" title="Adicionar um serviço ou insumo de ${esc(nomeRef(o.referencia))} a ${artigo(e.nivel)} ${tipo} ${e.numero}">+ Item</button>
         <div class="add-busca" id="add-${e.id}" hidden>
           <input class="add-q" placeholder="Serviço ou insumo de ${esc(nomeRef(o.referencia))} para ${artigo(e.nivel)} ${tipo} ${e.numero}: descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item ${artigo(e.nivel) === 'a' ? 'à' : 'ao'} ${tipo} ${e.numero}" autocomplete="off">
           <ul class="add-res" role="listbox" aria-label="Itens encontrados" tabindex="0" hidden></ul>
-        </div>
+        </div>`}
         ${e.nivel < 3 ? `<button type="button" class="botao botao-p" data-acao="filha-nova" data-id="${e.id}" data-nivel="${prox}" title="Criar uma ${nomeNivel(prox)} dentro d${artigo(e.nivel)} ${tipo} ${e.numero}" aria-label="Nova ${nomeNivel(prox)} n${artigo(e.nivel)} ${tipo} ${e.numero}">+ ${NomeNivel(prox)}</button>` : ''}
       </div></td></tr>
     </tbody>`; }).join('');
@@ -379,7 +380,7 @@ function desenharPlanilha(o) {
       ${etapas}
     </table>
     <form class="nova-etapa" id="form-etapa">
-      <input id="nova-etapa" placeholder="Nome da nova célula construtiva — ex.: Torre A, Área comum" maxlength="200" aria-label="Nome da nova célula construtiva">
+      <input id="nova-etapa" placeholder="Nova célula construtiva (conjunto macro) — ex.: Torre A, Habitação, Infraestrutura" maxlength="200" aria-label="Nome da nova célula construtiva">
       <button class="botao" type="submit">+ Célula construtiva</button>
     </form>
     <p class="fonte">${o.bdi_no_total ? 'BDI aplicado uma única vez sobre o custo direto total: itens e etapas aparecem a custo, sem BDI.' : 'Preço com BDI e total por item arredondados em 2 casas.'} Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}${ORC.analitico ? ' A divisão em mão de obra, material, equipamento e terceiros é do custo direto, sem BDI.' : ''}</p>`;
@@ -724,10 +725,16 @@ async function trocarOrc() {
   const v = $('#dlg-orc').value; const novo = v === 'novo';
   $('#dlg-novo-wrap').hidden = !novo; $('#dlg-novo').required = novo;
   const et = $('#dlg-etapa');
-  if (novo) { et.innerHTML = '<option value="">Serviços preliminares</option>'; return; }
+  if (novo) { et.innerHTML = '<option value="">Obra › Serviços preliminares</option>'; return; }
   const o = await req(`/api/orcamentos/${v}`);
-  et.innerHTML = o.etapas.map((e) => `<option value="${e.id}">${'\u00a0\u00a0\u00a0'.repeat(Math.max(0, e.nivel - 1))}${e.numero}. ${esc(e.titulo)}</option>`).join('');
-  if (o.etapas.length) et.value = String(o.etapas[o.etapas.length - 1].id);
+  // os serviços entram numa etapa ou subetapa; a célula construtiva aparece só como título do grupo
+  const temEtapa = o.etapas.some((e) => e.nivel >= 2);
+  et.innerHTML = o.etapas.map((e) => (e.nivel === 1 && temEtapa
+    ? `<option disabled>${e.numero}. ${esc(e.titulo)}</option>`
+    : `<option value="${e.id}">${'\u00a0\u00a0\u00a0'.repeat(Math.max(0, e.nivel - 1))}${e.numero}. ${esc(e.titulo)}</option>`)).join('')
+    + (temEtapa ? '' : '<option value="">Nova etapa "Serviços preliminares"</option>');
+  const alvos = o.etapas.filter((e) => e.nivel >= 2);
+  et.value = alvos.length ? String(alvos[alvos.length - 1].id) : '';
 }
 $('#dlg-orc').addEventListener('change', trocarOrc);
 $('#dlg-cancelar').addEventListener('click', () => dlg.close());

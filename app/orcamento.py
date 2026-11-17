@@ -674,8 +674,16 @@ def novo_item(oid: int, d: NovoItem):
         calcular(c, oid)
         etapa = d.etapa_id
         if etapa is None:
-            r = c.execute('SELECT id FROM etapa WHERE orcamento_id = ? ORDER BY ordem DESC, id DESC LIMIT 1', (oid,)).fetchone()
-            etapa = r['id'] if r else c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo) VALUES (?, 1, ?)', (oid, 'Serviços')).lastrowid
+            # sem etapa indicada: os serviços ficam numa etapa (ou subetapa), nunca soltos na célula construtiva
+            o_atual = calcular(c, oid)
+            dentro = [e for e in o_atual['etapas'] if e['nivel'] >= 2]
+            if dentro:
+                etapa = dentro[-1]['id']
+            else:
+                celulas = [e for e in o_atual['etapas'] if e['nivel'] == 1]
+                cel = celulas[-1]['id'] if celulas else c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo) VALUES (?, 1, ?)', (oid, 'Obra')).lastrowid
+                ordem = c.execute('SELECT COALESCE(MAX(ordem), 0) + 1 FROM etapa WHERE orcamento_id = ?', (oid,)).fetchone()[0]
+                etapa = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, 'Serviços preliminares', cel)).lastrowid
         elif not c.execute('SELECT 1 FROM etapa WHERE id = ? AND orcamento_id = ?', (etapa, oid)).fetchone():
             raise HTTPException(404, 'Etapa não encontrada neste orçamento.')
         ordem = c.execute('SELECT COALESCE(MAX(ordem), 0) + 1 FROM item WHERE etapa_id = ?', (etapa,)).fetchone()[0]

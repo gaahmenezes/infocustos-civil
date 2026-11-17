@@ -9,25 +9,26 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   const o = await api('post', '/api/orcamentos', { nome: 'Roteiro níveis', bdi: 25 });
   await p.goto(U + `/#/orcamento/${o.id}`); await p.waitForSelector('tbody.etapa.n1');
   v((await txt(p, 'tbody.n1 .nivel-rot')) === 'Célula construtiva', 'Orçamento novo começa com uma célula construtiva');
-  // "+ Item" vira a caixa de busca e volta a ser botão
-  v(await p.isVisible('tbody.n1 [data-acao="item-abrir"]') && await p.isHidden('tbody.n1 .add-q'), 'A busca de item fica recolhida no botão "+ Item"');
-  await p.click('tbody.n1 [data-acao="item-abrir"]');
-  v(await p.evaluate(() => document.activeElement.classList.contains('add-q')), '"+ Item" abre a busca com o cursor nela');
-  await p.keyboard.press('Escape'); await p.waitForTimeout(250);
-  v(await p.isVisible('tbody.n1 [data-acao="item-abrir"]'), 'Esc com a busca vazia volta ao botão');
-  // + Etapa, + Subetapa
+  // a célula construtiva é o conjunto macro: recebe etapas, não serviços soltos
+  v(!(await p.$('tbody.n1 [data-acao="item-abrir"]')) && (await txt(p, 'tbody.n1 [data-acao="filha-nova"]')) === '+ Etapa', 'A célula construtiva só oferece "+ Etapa" (os serviços entram nas etapas)');
   await p.click('tbody.n1 [data-acao="filha-nova"]'); await p.waitForSelector('tbody.n2');
   await p.keyboard.type('Fundação'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
+  // "+ Item" vira a caixa de busca e volta a ser botão
+  v(await p.isVisible('tbody.n2 [data-acao="item-abrir"]') && await p.isHidden('tbody.n2 .add-q'), 'Na etapa, a busca de item fica recolhida no botão "+ Item"');
+  await p.click('tbody.n2 [data-acao="item-abrir"]');
+  v(await p.evaluate(() => document.activeElement.classList.contains('add-q')), '"+ Item" abre a busca com o cursor nela');
+  await p.keyboard.press('Escape'); await p.waitForTimeout(250);
+  v(await p.isVisible('tbody.n2 [data-acao="item-abrir"]'), 'Esc com a busca vazia volta ao botão');
   v(await p.isVisible('tbody.n2 [data-acao="filha-nova"]') && (await txt(p, 'tbody.n2 [data-acao="filha-nova"]')) === '+ Subetapa', '"+ Etapa" cria a etapa, que tem "+ Subetapa"');
   await p.click('tbody.n2 [data-acao="filha-nova"]'); await p.waitForSelector('tbody.n3');
   await p.keyboard.type('Radier'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
   v(!(await p.$('tbody.n3 [data-acao="filha-nova"]')), 'A subetapa é o último nível (sem botão de nível abaixo)');
   // itens: um em cada nível
   const ids = await p.$$eval('tbody.etapa', (l) => l.map((t) => Number(t.dataset.etapa)));
-  for (const [k, cod, q] of [[0, '87878', 10], [1, '88309', 20], [2, '103354', 30]]) await api('post', `/api/orcamentos/${o.id}/itens`, { etapa_id: ids[k], tipo: 'servico', base: 'SINAPI', codigo: cod, quantidade: q });
+  for (const [k, cod, q] of [[1, '87878', 10], [1, '88309', 20], [2, '103354', 30]]) await api('post', `/api/orcamentos/${o.id}/itens`, { etapa_id: ids[k], tipo: 'servico', base: 'SINAPI', codigo: cod, quantidade: q });
   await p.reload(); await p.waitForSelector('tbody.n3 tr.item');
   const nums = await p.$$eval('.planilha-orc tr.etapa-cab td.n, .planilha-orc tr.item td.n', (l) => l.map((t) => t.textContent.replace(/[^\d.]/g, '')));
-  v(JSON.stringify(nums) === JSON.stringify(['1', '1.1', '1.2', '1.2.1', '1.2.2', '1.2.2.1']), 'Numeração em três níveis: ' + nums.join(' '));
+  v(JSON.stringify(nums) === JSON.stringify(['1', '1.1', '1.1.1', '1.1.2', '1.1.3', '1.1.3.1']), 'Numeração em três níveis: ' + nums.join(' '));
   // visão analítica em reais na célula e na etapa (não na subetapa)
   const anal = await p.$$eval('tr.etapa-anal', (l) => l.map((t) => t.closest('tbody').dataset.nivel));
   const tAnal = await txt(p, 'tbody.n1 tr.etapa-anal');
