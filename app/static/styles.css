@@ -17,7 +17,7 @@
   /* "planta" virou a tinta de destaque (links, números em destaque, selecionado) */
   --planta: #17191C;
   --planta-forte: #000000;
-  --planta-claro: #FFF4CC; --celula-fundo: #FFF6D6; --etapa-fundo: #F6F7F8;
+  --planta-claro: #FFF4CC; --celula-fundo: #FDE9A6; --etapa-fundo: #EEF1F4; --celula-borda: #E2BE4E; --etapa-borda: #C9D0D7; --guia-celula: #F0C53A; --guia-etapa: #8E99A5; --guia-sub: #C9CED4;
   --planta-borda: #F0CF62;
   --sobre-planta: #FFFFFF;
   --acao: #F5B800;
@@ -62,7 +62,7 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --fundo: #101113; --superficie: #191B1E; --superficie-2: #202327; --tinta: #EDEEEF; --tinta-2: #B6BCC2; --tinta-3: #9299A1;
-    --linha: #2A2D31; --linha-forte: #3A3E43; --planta: #F7C948; --planta-forte: #FFD86B; --planta-claro: #352C0E; --planta-borda: #6A5516; --celula-fundo: #23262A; --etapa-fundo: #1D2023;
+    --linha: #2A2D31; --linha-forte: #3A3E43; --planta: #F7C948; --planta-forte: #FFD86B; --planta-claro: #352C0E; --planta-borda: #6A5516; --celula-fundo: #3A3115; --etapa-fundo: #262A30; --celula-borda: #7A6420; --etapa-borda: #3A4048; --guia-celula: #E0B53A; --guia-etapa: #7C8794; --guia-sub: #4A5058;
     --sobre-planta: #17191C; --sinal-fundo: #5A4709; --grafite: #0B0C0D; --grafite-2: #17191C; --grafite-linha: #2A2D31; --perigo: #F28B82;
     --c-equip: #199E70; --c-mo: #3987E5; --c-enc: #1C5CAB; --c-mat: #D95926; --c-terc: #9085E9; --sinapi: #6E9CC4;
     --alta: #E58B62; --alta-fundo: #3A2219; --baixa: #6CC291; --baixa-fundo: #17301F;
@@ -72,7 +72,7 @@
 }
 :root[data-theme="dark"] {
   --fundo: #101113; --superficie: #191B1E; --superficie-2: #202327; --tinta: #EDEEEF; --tinta-2: #B6BCC2; --tinta-3: #9299A1;
-  --linha: #2A2D31; --linha-forte: #3A3E43; --planta: #F7C948; --planta-forte: #FFD86B; --planta-claro: #352C0E; --planta-borda: #6A5516; --celula-fundo: #23262A; --etapa-fundo: #1D2023;
+  --linha: #2A2D31; --linha-forte: #3A3E43; --planta: #F7C948; --planta-forte: #FFD86B; --planta-claro: #352C0E; --planta-borda: #6A5516; --celula-fundo: #3A3115; --etapa-fundo: #262A30; --celula-borda: #7A6420; --etapa-borda: #3A4048; --guia-celula: #E0B53A; --guia-etapa: #7C8794; --guia-sub: #4A5058;
   --sobre-planta: #17191C; --sinal-fundo: #5A4709; --grafite: #0B0C0D; --grafite-2: #17191C; --grafite-linha: #2A2D31; --perigo: #F28B82;
   --c-equip: #199E70; --c-mo: #3987E5; --c-enc: #1C5CAB; --c-mat: #D95926; --c-terc: #9085E9; --sinapi: #6E9CC4;
   --alta: #E58B62; --alta-fundo: #3A2219; --baixa: #6CC291; --baixa-fundo: #17301F;
@@ -1412,7 +1412,7 @@ body.modo-ap .detalhe { padding: 0; }
 /* o herói é sempre grafite, nos dois temas: é o palco da marca */
 .ap-heroi { position: relative; isolation: isolate; overflow: hidden; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: clamp(28px, 4vw, 64px); align-items: center;
   padding: clamp(40px, 7vh, 88px) clamp(20px, 6vw, 96px) clamp(48px, 8vh, 96px); background: #101214; color: #F2F3F4;
-  --tinta: #F2F3F4; --tinta-2: #B6BCC2; --tinta-3: #9299A1; --superficie: #17191C; --superficie-2: #1E2125; --linha: #2A2D32; --linha-forte: #3A3E44; --planta-claro: #352C0E; --planta-borda: #6A5516; --celula-fundo: #23262A; --etapa-fundo: #1D2023;
+  --tinta: #F2F3F4; --tinta-2: #B6BCC2; --tinta-3: #9299A1; --superficie: #17191C; --superficie-2: #1E2125; --linha: #2A2D32; --linha-forte: #3A3E44; --planta-claro: #352C0E; --planta-borda: #6A5516; --celula-fundo: #3A3115; --etapa-fundo: #262A30; --celula-borda: #7A6420; --etapa-borda: #3A4048; --guia-celula: #E0B53A; --guia-etapa: #7C8794; --guia-sub: #4A5058;
   --c-equip: #199E70; --c-mo: #3987E5; --c-enc: #1C5CAB; --c-mat: #D95926; --c-terc: #9085E9; --sinapi: #6E9CC4; --grafite: #0B0C0D; }
 .ap-heroi::before { content: ""; position: absolute; z-index: -1; right: -12%; top: -30%; width: 70%; height: 130%; background: radial-gradient(closest-side, rgb(245 184 0 / 0.22), transparent 70%); filter: blur(10px); animation: respirar 9s ease-in-out infinite alternate; }
 .ap-heroi::after { content: ""; position: absolute; z-index: -1; inset: 0; background-image: linear-gradient(rgb(255 255 255 / 0.035) 1px, transparent 1px), linear-gradient(90deg, rgb(255 255 255 / 0.035) 1px, transparent 1px); background-size: 44px 44px;
@@ -2133,3 +2133,53 @@ body:has(.plan-add) .aviso { bottom: calc(96px + env(safe-area-inset-bottom, 0px
   body:has(.plan-add) .aviso { bottom: calc(250px + env(safe-area-inset-bottom, 0px)); }
 }
 .pa-modo button { white-space: nowrap; }
+
+/* ---------- demarcação forte dos três níveis ---------- */
+/* célula construtiva: faixa amarela, texto grande, número em selo cheio, respiro antes de cada célula */
+.planilha-orc tbody.n1 .etapa-cab td { background: var(--celula-fundo); border-top: 1px solid var(--celula-borda); border-bottom: 1px solid var(--celula-borda); padding-top: 14px; padding-bottom: 14px; }
+.planilha-orc tbody.n1 ~ tbody.n1 .etapa-cab td { border-top: 14px solid var(--superficie); box-shadow: inset 0 1px 0 var(--celula-borda); }
+.planilha-orc tbody.n1 .etapa-titulo { font-size: 17px; font-weight: 800; letter-spacing: .01em; text-transform: uppercase; }
+.planilha-orc tbody.n1 .num-nivel { display: inline-grid; place-items: center; min-width: 30px; height: 26px; padding: 0 7px; border-radius: 7px; background: var(--acao); color: #17191C; font-weight: 800; font-size: 14px; }
+.planilha-orc tbody.n1 .nivel-rot { background: var(--acao); color: #17191C; border-color: var(--acao); }
+.planilha-orc tbody.n1 .c-tot-etapa b { font-size: 16.5px; }
+/* etapa: faixa cinza média, número com contorno */
+.planilha-orc tbody.n2 .etapa-cab td { background: var(--etapa-fundo); border-bottom: 1px solid var(--etapa-borda); padding-top: 10px; padding-bottom: 10px; }
+.planilha-orc tbody.n2 .etapa-titulo { font-size: 15px; font-weight: 700; }
+.planilha-orc tbody.n2 .num-nivel { display: inline-grid; place-items: center; min-width: 30px; height: 22px; padding: 0 6px; border-radius: 6px; border: 1.5px solid var(--guia-etapa); color: var(--tinta); font-weight: 700; font-size: 13px; }
+.planilha-orc tbody.n2 .nivel-rot { color: var(--tinta-2); border-color: var(--guia-etapa); }
+/* subetapa: sem faixa, linha fina tracejada, texto menor */
+.planilha-orc tbody.n3 .etapa-cab td { background: transparent; border-bottom: 1px dashed var(--etapa-borda); padding-top: 7px; padding-bottom: 7px; }
+.planilha-orc tbody.n3 .etapa-titulo { font-size: 13.5px; font-weight: 600; color: var(--tinta-2); }
+.planilha-orc tbody.n3 .num-nivel { font-size: 12.5px; font-weight: 600; color: var(--tinta-2); }
+.planilha-orc tbody.n3 .nivel-rot { border-style: dashed; background: transparent; }
+.planilha-orc tbody.n3 .c-tot-etapa b { font-weight: 650; font-size: 14px; color: var(--tinta-2); }
+/* linha-guia à esquerda: cada nível com a sua cor, descendo pelos itens dele */
+.planilha-orc tbody.n1 .etapa-cab td:first-child { box-shadow: inset 6px 0 0 var(--guia-celula); }
+.planilha-orc tbody.n1 ~ tbody.n1 .etapa-cab td:first-child { box-shadow: inset 6px 0 0 var(--guia-celula), inset 0 1px 0 var(--celula-borda); }
+.planilha-orc tbody.n2 .etapa-cab td:first-child { box-shadow: inset 6px 0 0 var(--guia-celula), inset 10px 0 0 var(--superficie), inset 13px 0 0 var(--guia-etapa); }
+.planilha-orc tbody.n3 .etapa-cab td:first-child { box-shadow: inset 6px 0 0 var(--guia-celula), inset 10px 0 0 var(--superficie), inset 13px 0 0 var(--guia-etapa), inset 17px 0 0 var(--superficie), inset 19px 0 0 var(--guia-sub); }
+.planilha-orc tbody.n1 tr.item td:first-child { box-shadow: inset 6px 0 0 var(--guia-celula); }
+.planilha-orc tbody.n2 tr.item td:first-child { box-shadow: inset 6px 0 0 var(--guia-celula), inset 10px 0 0 var(--superficie), inset 13px 0 0 var(--guia-etapa); }
+.planilha-orc tbody.n3 tr.item td:first-child { box-shadow: inset 6px 0 0 var(--guia-celula), inset 10px 0 0 var(--superficie), inset 13px 0 0 var(--guia-etapa), inset 17px 0 0 var(--superficie), inset 19px 0 0 var(--guia-sub); }
+/* recuo do número de cada nível (a linha-guia ocupa a borda) */
+.planilha-orc tbody.n1 .etapa-cab td.n { padding-left: 16px; }
+.planilha-orc tbody.n2 .etapa-cab td.n, .planilha-orc tbody.n2 tr.item td.n { padding-left: 22px; }
+.planilha-orc tbody.n3 .etapa-cab td.n, .planilha-orc tbody.n3 tr.item td.n { padding-left: 28px; }
+/* linha escolhida como destino continua visível sobre as faixas */
+.planilha-orc tbody.etapa.destino .etapa-cab td { box-shadow: inset 0 -3px 0 var(--acao) !important; }
+@media (max-width: 760px) {
+  .planilha-orc tbody.n1 { border: 2px solid var(--celula-borda); margin-top: 18px; }
+  .planilha-orc tbody.n1 tr.etapa-cab { background: var(--celula-fundo); box-shadow: inset 6px 0 0 var(--guia-celula); padding-top: 12px; padding-bottom: 12px; }
+  .planilha-orc tbody.n2 { margin-left: 8px; border-left: 3px solid var(--guia-etapa); }
+  .planilha-orc tbody.n2 tr.etapa-cab { background: var(--etapa-fundo); box-shadow: none; }
+  .planilha-orc tbody.n3 { margin-left: 18px; border-style: dashed; border-left: 2px dashed var(--guia-sub); }
+  .planilha-orc tbody.n3 tr.etapa-cab { background: transparent; box-shadow: none; }
+  .planilha-orc tbody.n1 .etapa-cab td, .planilha-orc tbody.n2 .etapa-cab td, .planilha-orc tbody.n3 .etapa-cab td { border: 0; padding-top: 0; padding-bottom: 0; }
+  .planilha-orc tbody.etapa tr.item td:first-child, .planilha-orc tbody.etapa .etapa-cab td:first-child { box-shadow: none; }
+  .planilha-orc tbody.n2 .etapa-cab td.n, .planilha-orc tbody.n3 .etapa-cab td.n, .planilha-orc tbody.n2 tr.item td.n, .planilha-orc tbody.n3 tr.item td.n, .planilha-orc tbody.n1 .etapa-cab td.n { padding-left: 0; }
+  .planilha-orc tbody.n1 .etapa-titulo { font-size: 16px; }
+}
+@media print {
+  .planilha-orc tbody.n1 .etapa-cab td { background: #FDE9A6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .planilha-orc tbody.n2 .etapa-cab td { background: #EEF1F4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+}
