@@ -30,27 +30,29 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   const nums = await p.$$eval('.planilha-orc tr.etapa-cab td.n, .planilha-orc tr.item td.n', (l) => l.map((t) => t.textContent.replace(/[^\d.]/g, '')));
   v(JSON.stringify(nums) === JSON.stringify(['1', '1.1', '1.1.1', '1.1.2', '1.1.3', '1.1.3.1']), 'Numeração em três níveis: ' + nums.join(' '));
   // visão analítica em reais na célula e na etapa (não na subetapa)
-  const anal = await p.$$eval('tr.etapa-anal', (l) => l.map((t) => t.closest('tbody').dataset.nivel));
-  const tAnal = await txt(p, 'tbody.n1 tr.etapa-anal');
-  v(anal.join(',') === '1,2' && /Mão de obra R\$ [\d.,]+ \d/.test(tAnal) && /Material R\$/.test(tAnal), 'Mão de obra e material em reais na célula e na etapa: ' + tAnal.slice(0, 120));
+  const anal = await p.$$eval('.etapa-cab .anal-cols', (l) => l.map((t) => t.closest('tbody').dataset.nivel));
+  const tAnal = await p.getAttribute('tbody.n1 .anal-cols', 'aria-label');
+  const xs = await p.$$eval('.etapa-cab .anal-cols .ac:nth-child(2)', (l) => [...new Set(l.map((x) => Math.round(x.getBoundingClientRect().left)))]);
+  v(xs.length === 1, 'As colunas da divisão ficam alinhadas entre a célula e a etapa');
+  v(anal.join(',') === '1,2' && /Mão de obra R\$\s?[\d.,]+/.test(tAnal) && /Material R\$/.test(tAnal), 'Divisão em reais no cabeçalho da célula e da etapa (a subetapa fica sem): ' + tAnal.slice(0, 120));
   await p.screenshot({ path: OUT + '/niveis_planilha.png' });
   await p.click('[data-analitico]'); await p.waitForTimeout(300);
-  v(!(await p.$('tr.etapa-anal')), 'O botão "Mão de obra e material" esconde a visão analítica');
-  await p.click('[data-analitico]'); await p.waitForSelector('tr.etapa-anal');
+  v(!(await p.$('.anal-cols')), 'O botão "Mão de obra e material" esconde a divisão');
+  await p.click('[data-analitico]'); await p.waitForSelector('.anal-cols');
   // recolher por nível
   await p.click('[data-plan-nivel="1"]'); await p.waitForTimeout(300);
-  v(await p.isHidden('tbody.n2') && await p.isVisible('tbody.n1 tr.etapa-anal'), '"Só células" mostra só as células, com os valores em reais');
+  v(await p.isHidden('tbody.n2') && await p.isVisible('tbody.n1 .anal-cols'), '"Só células" mostra só as células, com os valores em reais');
   await p.screenshot({ path: OUT + '/niveis_so_celulas.png' });
   await p.click('[data-plan-nivel="2"]'); await p.waitForTimeout(300);
   v(await p.isVisible('tbody.n2 .etapa-cab') && await p.isHidden('tbody.n3'), '"Até etapas" mostra células e etapas');
   await p.click('[data-plan-nivel="tudo"]'); await p.waitForTimeout(300);
   // subir e descer de nível
   await p.click('tbody.n3 [data-acao="nivel-subir"]'); await p.waitForTimeout(700);
-  v((await p.$$('tbody.n3')).length === 0 && (await p.$$('tbody.n2')).length === 2, 'Subir de nível: a subetapa vira etapa');
-  await p.click('tbody.n2:last-of-type [data-acao="nivel-descer"]'); await p.waitForTimeout(700);
-  v((await p.$$('tbody.n3')).length === 1, 'Descer de nível: volta a ser subetapa da etapa de cima');
+  v((await p.$$('tbody.etapa.n3')).length === 0 && (await p.$$('tbody.etapa.n2')).length === 2, 'Subir de nível: a subetapa vira etapa');
+  await (await (await p.$$('tbody.etapa.n2')).pop().$('[data-acao="nivel-descer"]')).click(); await p.waitForTimeout(700);
+  v((await p.$$('tbody.etapa.n3')).length === 1, 'Descer de nível: volta a ser subetapa da etapa de cima');
   await p.click('tbody.n2 [data-acao="nivel-subir"]'); await p.waitForTimeout(700);
-  v((await p.$$('tbody.n1')).length === 2 && (await p.$$('tbody.n2')).length === 1, 'Subir a etapa: vira célula construtiva, levando a subetapa (agora etapa)');
+  v((await p.$$('tbody.etapa.n1')).length === 2 && (await p.$$('tbody.etapa.n2')).length === 1, 'Subir a etapa: vira célula construtiva, levando a subetapa (agora etapa)');
   await p.screenshot({ path: OUT + '/niveis_subiu.png' });
   // ficha: voltar ao orçamento
   const cod = await p.getAttribute('tr.item a.cb-p', 'href');

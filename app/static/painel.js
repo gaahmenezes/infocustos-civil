@@ -151,7 +151,11 @@ window.ligarArrastar = function (corpo, o, atualizar) {
     // etapa: move-se entre as irmãs (etapas entre si, levando as subetapas junto; subetapas dentro da mesma etapa)
     const tbs = [...corpo.querySelectorAll('tbody.etapa')];
     const grupos = tipo === 'etapa'
-      ? tbs.filter((tb) => tb.dataset.pai === meuEl.dataset.pai).map((tb) => { const g = [tb]; for (let k = 0; k < g.length; k += 1) g.push(...tbs.filter((x) => x.dataset.pai === g[k].dataset.etapa)); return g.sort((a, b) => tbs.indexOf(a) - tbs.indexOf(b)); })
+      ? tbs.filter((tb) => tb.dataset.pai === meuEl.dataset.pai).map((tb) => {
+        const g = [tb]; for (let k = 0; k < g.length; k += 1) g.push(...tbs.filter((x) => x.dataset.pai === g[k].dataset.etapa));
+        const ids = new Set(g.map((x) => x.dataset.etapa));  // o "+ Etapa"/"+ Subetapa" do fim do bloco vai junto
+        g.push(...corpo.querySelectorAll('tbody.etapa-fim')); const grupo = g.filter((x) => !x.classList.contains('etapa-fim') || ids.has(x.dataset.fimDe));
+        return grupo.sort((a, b) => (a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1)); })
       : [...corpo.querySelectorAll('tbody.etapa > tr')].map((tr) => [tr]);
     const pecas = grupos.map((els, ordem) => {
       const r0 = els[0].getBoundingClientRect(), r1 = els[els.length - 1].getBoundingClientRect(), alt = r1.bottom - r0.top, el = els[0], tb = el.closest('tbody');
@@ -177,7 +181,7 @@ window.ligarArrastar = function (corpo, o, atualizar) {
     const { tipo, id, alvo, pega } = arr;
     if (!alvo) { limpar(); return; }
     // tira as medidas com as linhas ainda deslocadas: ao redesenhar, cada uma assenta de onde está
-    const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
+    const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa || 'f' + el.closest('tbody').dataset.fimDe}`);
     limpar();
     try {
       if (tipo === 'etapa') {

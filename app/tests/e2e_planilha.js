@@ -21,7 +21,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await p.click(`[data-recolher="${e2}"]`); await p.waitForTimeout(350);
   v(await p.getAttribute(`[data-recolher="${e2}"]`, 'aria-expanded') === 'false' && !(await p.isVisible(`tbody[data-etapa="${s1}"]`)), 'Recolher a etapa esconde os itens e as subetapas dela');
   const resumo = await txt(p, `tbody[data-etapa="${e2}"] .etapa-resumo`);
-  v(/3 itens · 1 etapa/.test(resumo) && await p.isVisible(`tbody[data-etapa="${e2}"] .etapa-resumo .mini-barra`), 'Cabeçalho recolhido mostra itens, etapas e a divisão do custo: ' + resumo);
+  v(/3 itens · 1 etapa/.test(resumo) && await p.isVisible(`tbody[data-etapa="${e2}"] .anal-cols`), 'Cabeçalho recolhido mantém a divisão do custo em reais: ' + resumo);
   v((await txt(p, `tbody[data-etapa="${e2}"] .etapa-cab td.num b`)).length > 3, 'O total da etapa continua no cabeçalho');
   await p.reload(); await p.waitForSelector('.planilha-orc');
   v(await p.getAttribute(`[data-recolher="${e2}"]`, 'aria-expanded') === 'false', 'A etapa continua recolhida depois de recarregar');

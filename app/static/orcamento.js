@@ -25,6 +25,16 @@ function valoresDe(itens) {
   return p;
 }
 const ANALITICO = [['mo', 'Mão de obra', '--c-mo'], ['mat', 'Material', '--c-mat'], ['equip', 'Equipamento', '--c-equip'], ['terc', 'Terceiros', '--c-terc']];
+// sem centavos nas colunas da divisão (o valor exato aparece ao passar o mouse)
+const REAIS = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+// divisão em colunas fixas, dentro do cabeçalho da célula e da etapa: as colunas ficam alinhadas de uma linha para a outra
+function colunasDivisao(itens, rotulo) {
+  const v = valoresDe(itens), soma = v.mo + v.mat + v.equip + v.terc;
+  const cel = ([k, n, cor]) => (v[k] >= 0.005
+    ? `<span class="ac" style="--cor:var(${cor})" title="${n}: ${brl.format(v[k])} (${pct.format(v[k] / soma)} do custo direto)"><i></i><b>${REAIS.format(v[k])}</b><em>${v[k] / soma < 0.001 ? '<0,1%' : pct.format(v[k] / soma)}</em></span>`
+    : `<span class="ac vazio" title="${n}: nada"><i></i><b>—</b></span>`);
+  return soma ? `<span class="anal-cols" role="group" aria-label="Divisão do custo direto ${esc(rotulo)}: ${ANALITICO.filter(([k]) => v[k] >= 0.005).map(([k, n]) => `${n} ${brl.format(v[k])}`).join(', ')}">${ANALITICO.map(cel).join('')}</span>` : '<span class="anal-cols"></span>';
+}
 function linhaAnalitica(itens, rotulo) {
   const v = valoresDe(itens), soma = v.mo + v.mat + v.equip + v.terc;
   if (!soma) return '';
@@ -322,6 +332,14 @@ function desenharPlanilha(o) {
   const filhas = (e) => o.etapas.filter((x) => x.pai_id === e.id);
   const itensDe = (e) => [...e.itens, ...descendentesDe(o, e.id).flatMap((x) => x.itens)];
   const ancRecolhida = (e) => { if (ORC.filtro) return false; for (let p = porId.get(e.pai_id); p; p = porId.get(p.pai_id)) if (ORC.recolhidas.has(p.id)) return true; return false; };
+  const botaoFilha = (e, rotulo) => { const prox = e.nivel + 1, tipo = nomeNivel(e.nivel);
+    return `<button type="button" class="botao botao-p" data-acao="filha-nova" data-id="${e.id}" data-nivel="${prox}" title="Criar uma ${nomeNivel(prox)} dentro d${artigo(e.nivel)} ${tipo} ${e.numero}" aria-label="Nova ${nomeNivel(prox)} n${artigo(e.nivel)} ${tipo} ${e.numero}">+ ${NomeNivel(prox)}</button>${rotulo ? `<span class="fim-rot">em ${esc(e.numero)}. ${esc(e.titulo)}</span>` : ''}`; };
+  const visivel = new Set(visiveis.map((e) => e.id)), fins = new Map();
+  visiveis.filter((e) => e.nivel < 3 && filhas(e).length).forEach((e) => {
+    const ds = descendentesDe(o, e.id).filter((x) => visivel.has(x.id)); const ult = ds.length ? ds[ds.length - 1].id : e.id;
+    const oculto = ORC.recolhidas.has(e.id) || ancRecolhida(e);
+    fins.set(ult, (fins.get(ult) || '') + `<tbody class="etapa-fim n${e.nivel}${oculto ? ' mae-recolhida' : ''}" data-fim-de="${e.id}"><tr class="add-linha fim"><td></td><td colspan="8"><div class="add-fila">${botaoFilha(e, true)}</div></td></tr></tbody>`);
+  });
   const etapas = visiveis.map((e) => {
     const rec = ORC.recolhidas.has(e.id), maeRec = ancRecolhida(e);
     const lista = itensDe(e), fs = filhas(e), nsub = fs.length;
@@ -332,17 +350,16 @@ function desenharPlanilha(o) {
     <tbody class="etapa n${e.nivel}${e.nivel > 1 ? ' sub' : ''}${rec ? ' recolhida' : ''}${maeRec ? ' mae-recolhida' : ''}" data-etapa="${e.id}" data-pai="${e.pai_id || ''}" data-nivel="${e.nivel}">
       <tr class="etapa-cab">
         <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover ${artigo(e.nivel)} ${tipo} ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button><button type="button" class="recolher" data-recolher="${e.id}" aria-expanded="${!rec}" aria-label="${rec ? 'Mostrar' : 'Recolher'} ${artigo(e.nivel)} ${tipo} ${e.numero}" title="${rec ? 'Mostrar os itens' : 'Recolher'}">${CHEVRON}</button>${e.numero}</td>
-        <td colspan="5"><div class="etapa-linha"><span class="nivel-rot" aria-hidden="true" title="${NIVEL_DICA[e.nivel] || ''}">${Tipo}</span><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título d${artigo(e.nivel)} ${tipo} ${e.numero}" data-etapa="${e.id}">
-          <span class="etapa-resumo" aria-hidden="${!rec}">${lista.length} ${lista.length === 1 ? 'item' : 'itens'}${nsub ? ` · ${nsub} ${nomeNivel(prox, nsub !== 1)}` : ''}${lista.length ? barraDivisao(divisaoDe(lista)) : ''}</span></div></td>
-        <td class="num"><span class="peso-etapa">${pct.format(e.peso)}</span></td>
-        <td class="num"><b>${brl.format(e.total)}</b></td>
+        <td colspan="6"><div class="etapa-linha"><span class="nivel-rot" aria-hidden="true" title="${NIVEL_DICA[e.nivel] || ''}">${Tipo}</span><input class="etapa-titulo" value="${esc(e.titulo)}" title="${esc(e.titulo)}" aria-label="Título d${artigo(e.nivel)} ${tipo} ${e.numero}" data-etapa="${e.id}">
+          <span class="etapa-resumo${ORC.analitico && e.nivel <= 2 ? ' com-colunas' : ''}" aria-hidden="${!rec}">${lista.length} ${lista.length === 1 ? 'item' : 'itens'}${nsub ? ` · ${nsub} ${nomeNivel(prox, nsub !== 1)}` : ''}${lista.length && e.nivel <= 2 && !ORC.analitico ? barraDivisao(divisaoDe(lista)) : ''}</span>
+          ${ORC.analitico && e.nivel <= 2 ? colunasDivisao(lista, `d${artigo(e.nivel)} ${tipo} ${e.numero}`) : ''}</div></td>
+        <td class="num c-tot-etapa"><b>${brl.format(e.total)}</b><span class="peso-etapa">${pct.format(e.peso)} do total</span></td>
         <td class="ctrl"><span class="ctrl-nivel">
           ${e.nivel > 1 ? `<button type="button" class="mini" data-acao="nivel-subir" data-id="${e.id}" aria-label="Subir de nível: ${artigo(e.nivel)} ${tipo} ${e.numero} vira ${nomeNivel(e.nivel - 1)}" title="Subir de nível: vira ${nomeNivel(e.nivel - 1)}">↖</button>` : ''}
           ${podeDescer ? `<button type="button" class="mini" data-acao="nivel-descer" data-id="${e.id}" aria-label="Descer de nível: ${artigo(e.nivel)} ${tipo} ${e.numero} entra em ${irmas[k - 1].numero} e vira ${nomeNivel(e.nivel + 1)}" title="Descer de nível: entra em ${esc(irmas[k - 1].numero)} e vira ${nomeNivel(e.nivel + 1)}">↘</button>` : ''}
-          <button type="button" class="mini" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir ${artigo(e.nivel)} ${tipo} ${e.numero}">✕</button></span>
+          </span><button type="button" class="mini excluir-etapa" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir ${artigo(e.nivel)} ${tipo} ${e.numero}" title="Excluir ${artigo(e.nivel)} ${tipo} ${e.numero}">✕</button>
         </td>
       </tr>
-      ${ORC.analitico && e.nivel <= 2 ? linhaAnalitica(lista, `d${artigo(e.nivel)} ${tipo} ${e.numero}`) : ''}
       ${e.itens.map((i) => { const cl = classe.get(`${i.tipo}|${i.base}|${i.codigo}`) || 'C', peso = i.total / somaEtapas; return `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
         <td class="n"><button type="button" class="pega" data-pega="item" data-id="${i.id}" aria-label="Mover o item ${i.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem ou a etapa">⠿</button>${i.numero}</td>
         <td class="cod">${codLink(i.tipo, i.base, i.codigo, { ...mesDoItem(o, i), orc: o.id })}</td>
@@ -355,15 +372,15 @@ function desenharPlanilha(o) {
         <td class="ctrl">
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
         </td></tr>`; }).join('')}
-      <tr class="add-linha"><td></td><td colspan="8"><div class="add-fila">
+      ${e.nivel < 3 && e.itens.length === 0 && nsub ? '' : `<tr class="add-linha"><td></td><td colspan="8"><div class="add-fila">
         ${e.nivel === 1 && !e.itens.length ? '' : `<button type="button" class="botao botao-p add-abrir" data-acao="item-abrir" data-id="${e.id}" aria-expanded="false" aria-controls="add-${e.id}" title="Adicionar um serviço ou insumo de ${esc(nomeRef(o.referencia))} a ${artigo(e.nivel)} ${tipo} ${e.numero}">+ Item</button>
         <div class="add-busca" id="add-${e.id}" hidden>
           <input class="add-q" placeholder="Serviço ou insumo de ${esc(nomeRef(o.referencia))} para ${artigo(e.nivel)} ${tipo} ${e.numero}: descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item ${artigo(e.nivel) === 'a' ? 'à' : 'ao'} ${tipo} ${e.numero}" autocomplete="off">
           <ul class="add-res" role="listbox" aria-label="Itens encontrados" tabindex="0" hidden></ul>
         </div>`}
-        ${e.nivel < 3 ? `<button type="button" class="botao botao-p" data-acao="filha-nova" data-id="${e.id}" data-nivel="${prox}" title="Criar uma ${nomeNivel(prox)} dentro d${artigo(e.nivel)} ${tipo} ${e.numero}" aria-label="Nova ${nomeNivel(prox)} n${artigo(e.nivel)} ${tipo} ${e.numero}">+ ${NomeNivel(prox)}</button>` : ''}
-      </div></td></tr>
-    </tbody>`; }).join('');
+        ${e.nivel < 3 && !nsub ? botaoFilha(e) : ''}
+      </div></td></tr>`}
+    </tbody>${fins.get(e.id) || ''}`; }).join('');
   const temNivel = (n) => o.etapas.some((e) => e.nivel === n && (filhas(e).length || e.itens.length));
   const filtrada = ORC.filtro && visiveis[0];
   $('#orc-corpo').innerHTML = `
@@ -372,7 +389,8 @@ function desenharPlanilha(o) {
         <button type="button" data-plan-nivel="1" aria-pressed="false">Só células</button>
         ${temNivel(2) ? '<button type="button" data-plan-nivel="2" aria-pressed="false">Até etapas</button>' : ''}
         <button type="button" data-plan-nivel="tudo" aria-pressed="false">Tudo aberto</button></div>
-      <button type="button" class="botao botao-p plan-anal" data-analitico aria-pressed="${ORC.analitico}" title="Mostrar ou esconder a divisão do custo em reais em cada célula construtiva e etapa">Mão de obra e material</button>
+      <button type="button" class="botao botao-p plan-anal" data-analitico aria-pressed="${ORC.analitico}" title="Mostrar ou esconder a divisão do custo em reais em cada célula construtiva e etapa">${ORC.analitico ? '✓ ' : ''}Mão de obra e material</button>
+      ${ORC.analitico ? `<span class="anal-leg" aria-hidden="true">${ANALITICO.map(([, n, cor]) => `<span style="--cor:var(${cor})"><i></i>${n}</span>`).join('')}<em>custo direto, sem BDI</em></span>` : ''}
       <p class="plan-dica"><kbd>↑</kbd><kbd>↓</kbd> ou <kbd>Enter</kbd> andam entre as quantidades · <kbd>Esc</kbd> desfaz · ↖ ↘ mudam o nível</p></div>` : ''}
     ${filtrada ? `<p class="filtro-ativo">Mostrando só ${artigo(filtrada.nivel)} ${nomeNivel(filtrada.nivel)} <b>${filtrada.numero}. ${esc(filtrada.titulo)}</b><button type="button" class="link-acao" data-ver-todas>Ver o orçamento inteiro</button></p>` : ''}
     <table class="planilha planilha-orc${o.bdi_no_total ? ' bdi-no-total' : ''}">
@@ -428,7 +446,7 @@ function ligarPlanilha(o) {
   const atualizar = (n, jaMedido) => {
     // quem anda pelas quantidades com o teclado diz para onde o cursor vai (o campo de agora é recriado ao redesenhar)
     const foco = ORC.focoProx ? { item: ORC.focoProx } : document.activeElement && { ...document.activeElement.dataset };
-    const deslizar = jaMedido || medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
+    const deslizar = jaMedido || medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa || 'f' + el.closest('tbody').dataset.fimDe}`);
     return abrirOrcamento(n.id, n).then(() => { deslizar(); restaurarFoco(foco); });
   };
   // resposta do servidor a uma mudança já mostrada: se bate com o previsto, a tela só é refeita depois que os números
@@ -589,6 +607,7 @@ function aplicarRecolhidas(animar) {
     const r = tb.querySelector('.etapa-resumo'); if (r) r.setAttribute('aria-hidden', String(!rec));
     if (abriu && animar && !semMovimento()) { tb.classList.remove('abrindo'); void tb.offsetWidth; tb.classList.add('abrindo'); }
   });
+  corpo.querySelectorAll('tbody.etapa-fim').forEach((tb) => { const id = Number(tb.dataset.fimDe); tb.classList.toggle('mae-recolhida', !ORC.filtro && (ORC.recolhidas.has(id) || ancRec(id))); });
   const et = ORC.atual ? ORC.atual.etapas : [];
   corpo.querySelectorAll('[data-plan-nivel]').forEach((b) => {
     const n = Number(b.dataset.planNivel), deste = et.filter((x) => x.nivel === n);
@@ -660,7 +679,7 @@ function ligarBuscaInline(inp) {
   async function escolher(x) {
     try {
       const n = await req(`/api/orcamentos/${ORC.atual.id}/itens`, 'POST', { etapa_id: Number(inp.dataset.etapa), tipo: x.tipo, base: x.base, codigo: x.codigo, quantidade: 1 });
-      const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa}`);
+      const deslizar = medir('.planilha-orc tr.item, .planilha-orc tr.etapa-cab, .planilha-orc tr.add-linha', (el) => el.dataset.item ? `i${el.dataset.item}` : `${el.className}${el.closest('tbody').dataset.etapa || 'f' + el.closest('tbody').dataset.fimDe}`);
       await abrirOrcamento(n.id, n); deslizar();
       const q = document.querySelector(`.qtd[data-item="${n.item_criado}"]`); if (q) { q.focus(); q.select(); }
       avisar(`${VISTO}${esc(x.codigo)}/${esc(rotuloBase(x.base, x.codigo))} adicionado. Digite a quantidade.`);
