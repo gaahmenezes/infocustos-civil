@@ -11,12 +11,11 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   await api('post', `/api/orcamentos/${o.id}/itens`, { etapa_id: o.etapas[0].id, tipo: 'servico', base: 'SINAPI', codigo: '87878', quantidade: 100 });
   await p.goto(U + `/#/orcamento/${o.id}`); await p.waitForSelector('.planilha-orc tr.item');
   // --- subetapas
-  await p.click('[data-acao="filha-nova"]'); await p.waitForSelector('tbody.etapa.sub');
-  v(await p.evaluate(() => document.activeElement.classList.contains('etapa-titulo')), 'Botão "+ Etapa" cria a etapa dentro da célula e já deixa o nome pronto para digitar');
-  await p.keyboard.type('Alvenaria de vedação'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
+  await p.click('[data-pa-modo="etapa"]'); await p.fill('#nova-etapa', 'Alvenaria de vedação'); await p.keyboard.press('Enter'); await p.waitForSelector('tbody.etapa.sub');
   v((await txt(p, 'tbody.etapa.sub .etapa-cab .n')).includes('1.2'), 'A etapa é numerada depois dos itens diretos da célula: 1.2');
-  v(await p.$('tbody.etapa.sub [data-acao="filha-nova"]') !== null, 'A etapa oferece "+ Subetapa" (três níveis)');
-  await p.click('tbody.etapa.sub [data-acao="item-abrir"]'); await p.fill('tbody.etapa.sub .add-q', 'pedreiro com encargos'); await p.waitForSelector('tbody.etapa.sub .add-res li[data-k]'); await p.keyboard.press('Enter');
+  v((await p.$eval('#pa-pai', (s) => s.selectedOptions[0].textContent)).startsWith('Nova subetapa em 1.2'), 'A barra já oferece criar a subetapa dentro da etapa (três níveis)');
+  await p.click('[data-pa-modo="item"]'); await p.selectOption('#pa-destino', await p.getAttribute('tbody.etapa.sub', 'data-etapa'));
+  await p.fill('#pa-busca', 'pedreiro com encargos'); await p.waitForSelector('#form-etapa .add-res li[data-k]'); await p.keyboard.press('Enter');
   await p.waitForSelector('tbody.etapa.sub tr.item'); await p.keyboard.type('40'); await p.keyboard.press('Enter'); await p.waitForTimeout(900);
   v((await txt(p, 'tbody.etapa.sub tr.item .n')).includes('1.2.1'), 'Item dentro da etapa: 1.2.1');
   const totEtapa = num(await txt(p, 'tbody.etapa:not(.sub) .etapa-cab td.num b')), totSub = num(await txt(p, 'tbody.etapa.sub .etapa-cab td.num b'));

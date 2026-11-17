@@ -44,13 +44,13 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   await p.fill('[name=nome]', 'Etapa2 teste'); await p.fill('[name=bdi]', '20'); await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
   ok(!(await p.$('.painel-orc')), 'Orçamento vazio não mostra o painel');
   const add = async (k, termo, qtd) => {
-    if (!(await p.$('[data-acao="item-abrir"]'))) { await p.click('tbody.n1 [data-acao="filha-nova"]'); await p.waitForSelector('[data-acao="item-abrir"]'); await p.keyboard.press('Escape'); } const abre = (await p.$$('[data-acao="item-abrir"]'))[k]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[k]; await inp.fill(termo);
-    await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
+    await p.click('[data-pa-modo="item"]'); { const ops = await p.$$eval('#pa-destino option:not([disabled])', (l) => l.map((o) => o.value)); await p.selectOption('#pa-destino', ops[Math.min(k, ops.length - 1)]); } const inp = await p.$('#pa-busca'); await inp.fill(termo);
+    await p.waitForSelector('#form-etapa .add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
     await p.keyboard.type(qtd); await p.keyboard.press('Enter'); await p.waitForTimeout(350);
   };
   await add(0, '00003', '100'); await add(0, '03310', '50'); await add(0, '00165', '10');
-  await p.fill('#nova-etapa', 'Segunda etapa'); await p.click('#form-etapa button'); await p.waitForTimeout(350);
+  await p.click('[data-pa-modo="etapa"]'); await p.fill('#nova-etapa', 'Segunda etapa'); await p.click('#form-etapa [type=submit]'); await p.waitForTimeout(350);
   await add(1, '02288', '20');
   await p.waitForSelector('.painel-orc');
   ok((await p.$$('.pe-linha')).length === 2 && (await p.$$('.g-alvo')).length === 4, 'Painel: 2 etapas em barras e 4 pontos na curva ABC');

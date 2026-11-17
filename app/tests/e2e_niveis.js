@@ -9,20 +9,28 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   const o = await api('post', '/api/orcamentos', { nome: 'Roteiro níveis', bdi: 25 });
   await p.goto(U + `/#/orcamento/${o.id}`); await p.waitForSelector('tbody.etapa.n1');
   v((await txt(p, 'tbody.n1 .nivel-rot')) === 'Célula construtiva', 'Orçamento novo começa com uma célula construtiva');
-  // a célula construtiva é o conjunto macro: recebe etapas, não serviços soltos
-  v(!(await p.$('tbody.n1 [data-acao="item-abrir"]')) && (await txt(p, 'tbody.n1 [data-acao="filha-nova"]')) === '+ Etapa', 'A célula construtiva só oferece "+ Etapa" (os serviços entram nas etapas)');
-  await p.click('tbody.n1 [data-acao="filha-nova"]'); await p.waitForSelector('tbody.n2');
-  await p.keyboard.type('Fundação'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
-  // "+ Item" vira a caixa de busca e volta a ser botão
-  v(await p.isVisible('tbody.n2 [data-acao="item-abrir"]') && await p.isHidden('tbody.n2 .add-q'), 'Na etapa, a busca de item fica recolhida no botão "+ Item"');
-  await p.click('tbody.n2 [data-acao="item-abrir"]');
-  v(await p.evaluate(() => document.activeElement.classList.contains('add-q')), '"+ Item" abre a busca com o cursor nela');
-  await p.keyboard.press('Escape'); await p.waitForTimeout(250);
-  v(await p.isVisible('tbody.n2 [data-acao="item-abrir"]'), 'Esc com a busca vazia volta ao botão');
-  v(await p.isVisible('tbody.n2 [data-acao="filha-nova"]') && (await txt(p, 'tbody.n2 [data-acao="filha-nova"]')) === '+ Subetapa', '"+ Etapa" cria a etapa, que tem "+ Subetapa"');
-  await p.click('tbody.n2 [data-acao="filha-nova"]'); await p.waitForSelector('tbody.n3');
-  await p.keyboard.type('Radier'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
-  v(!(await p.$('tbody.n3 [data-acao="filha-nova"]')), 'A subetapa é o último nível (sem botão de nível abaixo)');
+  // nada de botões no meio da planilha: tudo entra pela barra de baixo, escolhendo onde
+  v(!(await p.$('.planilha-orc [data-acao="item-abrir"], .planilha-orc [data-acao="filha-nova"], .planilha-orc tr.add-linha')), 'Sem "+ Item", "+ Etapa" ou "+ Subetapa" no meio da planilha');
+  v(await p.isVisible('#form-etapa.plan-add'), 'A barra de adicionar fica embaixo da planilha');
+  await p.click('[data-pa-modo="etapa"]');
+  v((await p.$eval('#pa-pai', (s) => s.selectedOptions[0].textContent)).startsWith('Nova etapa em 1.'), 'Criar: já vem escolhida "Nova etapa" na célula');
+  await p.fill('#nova-etapa', 'Fundação'); await p.keyboard.press('Enter'); await p.waitForSelector('tbody.etapa.n2');
+  v((await p.$eval('#pa-pai', (s) => s.selectedOptions[0].textContent)).startsWith('Nova subetapa em 1.1'), 'Depois da etapa, a barra já oferece a subetapa dentro dela');
+  await p.fill('#nova-etapa', 'Radier'); await p.keyboard.press('Enter'); await p.waitForSelector('tbody.etapa.n3');
+  v(await p.isVisible('#pa-busca') && (await p.$eval('#pa-destino', (s) => s.selectedOptions[0].textContent)).includes('Radier'), 'Depois da subetapa, a barra passa para os serviços, com a subetapa como destino');
+  v(!(await p.$$eval('#pa-pai option', (l) => l.some((o) => /Radier/.test(o.textContent)))), 'A subetapa é o último nível (não aparece como lugar para criar outra)');
+  v(await p.$eval('#pa-destino', (s) => [...s.options].find((o) => /Obra/.test(o.textContent)).disabled), 'A célula aparece como título do grupo, sem receber serviço solto');
+  // clicar no número de uma linha a escolhe como destino
+  await p.click('tbody.etapa.n2 .etapa-cab td.n', { position: { x: 70, y: 18 } }); await p.waitForTimeout(200);
+  v((await p.$eval('#pa-destino', (s) => s.selectedOptions[0].textContent)).includes('Fundação') && await p.$('tbody.etapa.n2.destino') !== null, 'Clicar no número da etapa a escolhe como destino na barra e marca a linha');
+  // lançar pelo teclado: busca, Enter, quantidade, Enter volta à busca
+  await p.fill('#pa-busca', '87878'); await p.waitForSelector('#form-etapa .add-res li[data-k]'); await p.keyboard.press('Enter');
+  await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
+  await p.keyboard.type('10'); await p.keyboard.press('Enter'); await p.waitForTimeout(700);
+  v(await p.evaluate(() => document.activeElement && document.activeElement.id === 'pa-busca'), 'Depois da quantidade, o Enter volta à busca para lançar o próximo');
+  v((await p.$$('tbody.etapa.n2 tr.item')).length === 1, 'O serviço entrou na etapa escolhida');
+  await p.evaluate(() => { document.querySelector('tbody.etapa.n2 tr.item').remove(); });  // o resto do roteiro lança pela API
+  await api('delete', `/api/itens/${(await api('get', `/api/orcamentos/${o.id}`)).etapas[1].itens[0].id}`);
   // itens: um em cada nível
   const ids = await p.$$eval('tbody.etapa', (l) => l.map((t) => Number(t.dataset.etapa)));
   for (const [k, cod, q] of [[1, '87878', 10], [1, '88309', 20], [2, '103354', 30]]) await api('post', `/api/orcamentos/${o.id}/itens`, { etapa_id: ids[k], tipo: 'servico', base: 'SINAPI', codigo: cod, quantidade: q });

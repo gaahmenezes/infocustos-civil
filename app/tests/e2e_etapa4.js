@@ -72,8 +72,8 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   await p.goto(R('#/orcamentos')); await p.click('#novo-orc'); await p.waitForSelector('#dlg-novo-orc[open]');
   await p.fill('[name=nome]', 'Etapa4 teste'); await p.fill('[name=bdi]', '20'); await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
   const add = async (termo, qtd) => {
-    if (!(await p.$('[data-acao="item-abrir"]'))) { await p.click('tbody.n1 [data-acao="filha-nova"]'); await p.waitForSelector('[data-acao="item-abrir"]'); await p.keyboard.press('Escape'); } const abre = (await p.$$('[data-acao="item-abrir"]'))[0]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[0]; await inp.fill(termo);
-    await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
+    await p.click('[data-pa-modo="item"]'); { const ops = await p.$$eval('#pa-destino option:not([disabled])', (l) => l.map((o) => o.value)); await p.selectOption('#pa-destino', ops[Math.min(0, ops.length - 1)]); } const inp = await p.$('#pa-busca'); await inp.fill(termo);
+    await p.waitForSelector('#form-etapa .add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
     await p.keyboard.type(qtd); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
   };
