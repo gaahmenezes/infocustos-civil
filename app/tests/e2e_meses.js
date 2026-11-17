@@ -50,7 +50,7 @@ const norm = (t) => t.replace(/\s+/g, ' ');
   await p.fill('[name=nome]', 'Reforma de escola'); await p.selectOption('[name=referencia]', '2026-05'); await p.fill('[name=bdi]', '24,23');
   await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
   const add = async (termo, qtd) => {
-    const inp = (await p.$$('.add-q'))[0]; await inp.fill(termo);
+    const abre = (await p.$$('[data-acao="item-abrir"]'))[0]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[0]; await inp.fill(termo);
     await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
     await p.keyboard.type(qtd); await p.keyboard.press('Enter'); await p.waitForTimeout(350);

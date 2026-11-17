@@ -90,7 +90,7 @@ class EdicaoOrcamento(BaseModel):
 
 class NovaEtapa(BaseModel):
     titulo: str = Field(min_length=1, max_length=200)
-    pai_id: Optional[int] = None  # com pai, é uma subetapa
+    pai_id: Optional[int] = None  # com pai, fica dentro dele: célula construtiva › etapa › subetapa
 
 
 class NovoItem(BaseModel):
@@ -318,33 +318,31 @@ def _calcular(c, oid):
         i['total'] = r2(i['quantidade'] * i['preco_unit'])
         por_etapa[i['etapa_id']].append(i)
     o['complementares'] = r2(compl_total)
-    # lista plana, na ordem da planilha: cada etapa seguida das suas subetapas (nivel 2). Cada uma traz só os itens
-    # lançados direto nela; o total da etapa inclui as subetapas.
+    # lista plana, na ordem da planilha: cada nível seguido do que está dentro dele (célula construtiva = nivel 1,
+    # etapa = 2, subetapa = 3). Cada um traz só os itens lançados direto nele; o total inclui o que está dentro.
     filhas = defaultdict(list)
     for e in todas:
         filhas[e.get('pai_id')].append(e)
     etapas = []
     total_custo = total = 0.0
-    for n, e in enumerate(filhas[None], 1):
-        e['numero'], e['nivel'] = str(n), 1
+
+    def montar(e, numero, nivel):
+        e['numero'], e['nivel'] = numero, nivel
         e['itens'] = por_etapa.get(e['id'], [])
         for m, i in enumerate(e['itens'], 1):
-            i['numero'] = f'{n}.{m}'
-        e['custo_total'] = sum(i['custo_total'] for i in e['itens'])
-        e['total'] = sum(i['total'] for i in e['itens'])
+            i['numero'] = f'{numero}.{m}'
         etapas.append(e)
-        for k, sub in enumerate(filhas[e['id']], len(e['itens']) + 1):
-            sub['numero'], sub['nivel'] = f'{n}.{k}', 2
-            sub['itens'] = por_etapa.get(sub['id'], [])
-            for m, i in enumerate(sub['itens'], 1):
-                i['numero'] = f'{n}.{k}.{m}'
-            sub['custo_total'] = r2(sum(i['custo_total'] for i in sub['itens']))
-            sub['total'] = r2(sum(i['total'] for i in sub['itens']))
-            e['custo_total'] += sub['custo_total']; e['total'] += sub['total']
-            etapas.append(sub)
-        e['custo_total'], e['total'] = r2(e['custo_total']), r2(e['total'])
-        e['subetapas'] = len(filhas[e['id']])
-        total_custo += e['custo_total']; total += e['total']
+        custo, tot = sum(i['custo_total'] for i in e['itens']), sum(i['total'] for i in e['itens'])
+        for k, f in enumerate(filhas[e['id']], len(e['itens']) + 1):  # as de dentro numeram depois dos itens diretos
+            c2, t2 = montar(f, f'{numero}.{k}', nivel + 1)
+            custo += c2; tot += t2
+        e['custo_total'], e['total'] = r2(custo), r2(tot)
+        e['subetapas'] = len(filhas[e['id']])  # quantas há logo abaixo
+        return e['custo_total'], e['total']
+
+    for n, e in enumerate(filhas[None], 1):
+        c1, t1 = montar(e, str(n), 1)
+        total_custo += c1; total += t1
     o['etapas'] = etapas
     o['custo_total'] = r2(total_custo)
     soma_etapas = total
@@ -453,7 +451,8 @@ def criar(d: NovoOrcamento):
     with orc() as c:
         cur = c.execute('INSERT INTO orcamento (nome, cliente, local, referencia, bdi, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?)',
                         (d.nome.strip(), d.cliente.strip(), d.local.strip(), ref, d.bdi, agora(), agora()))
-        c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo) VALUES (?, 1, ?)', (cur.lastrowid, 'Serviços preliminares'))
+        # começa com uma célula construtiva; as etapas entram nela pelo botão "+ Etapa"
+        c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo) VALUES (?, 1, ?)', (cur.lastrowid, 'Obra'))
         return calcular(c, cur.lastrowid)
 
 
@@ -491,7 +490,15 @@ def excluir(oid: int):
 
 
 def _maes_primeiro(etapas):
-    return sorted(etapas, key=lambda e: e.get('pai_id') is not None)
+    """Ordena para que cada etapa venha depois da sua mãe (a mãe precisa existir antes, ao recriar)."""
+    ids = {e.get('id') for e in etapas}
+    pai = {e.get('id'): e.get('pai_id') for e in etapas}
+    def prof(e):
+        n, p = 0, e.get('pai_id')
+        while p in ids and n < 10:
+            n += 1; p = pai.get(p)
+        return n
+    return sorted(etapas, key=prof)
 
 
 @router.post('/orcamentos/{oid}/duplicar', status_code=201)
@@ -519,10 +526,9 @@ def nova_etapa(oid: int, d: NovaEtapa):
     with orc() as c:
         calcular(c, oid)
         if d.pai_id is not None:
-            pai = c.execute('SELECT pai_id FROM etapa WHERE id = ? AND orcamento_id = ?', (d.pai_id, oid)).fetchone()
-            if not pai:
+            if not c.execute('SELECT 1 FROM etapa WHERE id = ? AND orcamento_id = ?', (d.pai_id, oid)).fetchone():
                 raise HTTPException(404, 'Etapa não encontrada neste orçamento.')
-            if pai['pai_id'] is not None:
+            if _nivel(c, d.pai_id) >= NIVEIS:
                 raise HTTPException(422, 'Uma subetapa não pode ter outra subetapa dentro dela.')
         ordem = c.execute('SELECT COALESCE(MAX(ordem), 0) + 1 FROM etapa WHERE orcamento_id = ?', (oid,)).fetchone()[0]
         cur = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, d.titulo.strip(), d.pai_id))
@@ -538,6 +544,36 @@ def editar_etapa(eid: int, d: NovaEtapa):
             raise HTTPException(404, 'Etapa não encontrada.')
         c.execute('UPDATE etapa SET titulo = ? WHERE id = ?', (d.titulo.strip(), eid))
         return calcular(c, e['orcamento_id'])
+
+
+NIVEIS = 3  # célula construtiva › etapa › subetapa
+NOME_NIVEL = {1: 'célula construtiva', 2: 'etapa', 3: 'subetapa'}
+
+
+def _nivel(c, eid):
+    """1 para a célula construtiva, 2 para a etapa, 3 para a subetapa."""
+    n = 0
+    while eid is not None and n < 10:
+        r = c.execute('SELECT pai_id FROM etapa WHERE id = ?', (eid,)).fetchone()
+        if not r:
+            break
+        n += 1; eid = r['pai_id']
+    return n
+
+
+def _descendentes(c, eid):
+    """As etapas dentro desta, em qualquer profundidade, mães antes das filhas."""
+    out, fila = [], [eid]
+    while fila:
+        filhos = [dict(r) for r in c.execute('SELECT * FROM etapa WHERE pai_id = ? ORDER BY ordem, id', (fila.pop(0),))]
+        out += filhos; fila += [f['id'] for f in filhos]
+    return out
+
+
+def _altura(c, eid):
+    """Quantos níveis há dentro desta etapa (0: nenhum)."""
+    filhos = [r['id'] for r in c.execute('SELECT id FROM etapa WHERE pai_id = ?', (eid,))]
+    return 1 + max(_altura(c, f) for f in filhos) if filhos else 0
 
 
 def _irmas(c, e):
@@ -570,13 +606,47 @@ def mover_etapa(eid: int, direcao: Literal['cima', 'baixo']):
         return calcular(c, e['orcamento_id'])
 
 
+@router.post('/etapas/{eid}/nivel')
+def mudar_nivel(eid: int, sentido: Literal['subir', 'descer']):
+    """Subir: a subetapa vira etapa e a etapa vira célula construtiva (fica logo depois da antiga mãe, levando o que tem
+    dentro). Descer: entra na irmã de cima, no fim dela."""
+    with orc() as c:
+        e = c.execute('SELECT * FROM etapa WHERE id = ?', (eid,)).fetchone()
+        if not e:
+            raise HTTPException(404, 'Etapa não encontrada.')
+        e = dict(e)
+        if sentido == 'subir':
+            if e['pai_id'] is None:
+                raise HTTPException(422, 'A célula construtiva já está no nível mais alto.')
+            mae = dict(c.execute('SELECT * FROM etapa WHERE id = ?', (e['pai_id'],)).fetchone())
+            c.execute('UPDATE etapa SET pai_id = ? WHERE id = ?', (mae['pai_id'], eid))
+            e['pai_id'] = mae['pai_id']
+            lista = [x for x in _irmas(c, e) if x != eid]
+            lista.insert(lista.index(mae['id']) + 1, eid)
+        else:
+            lista = _irmas(c, e); k = lista.index(eid)
+            if k == 0:
+                raise HTTPException(422, 'Não há nada acima no mesmo nível para ela entrar.')
+            nova_mae = lista[k - 1]
+            if _nivel(c, nova_mae) + 1 + _altura(c, eid) > NIVEIS:
+                raise HTTPException(422, 'Não cabe: o orçamento vai até três níveis (célula construtiva, etapa e subetapa).')
+            c.execute('UPDATE etapa SET pai_id = ? WHERE id = ?', (nova_mae, eid))
+            e['pai_id'] = nova_mae
+            lista = [x for x in _irmas(c, e) if x != eid] + [eid]
+        # as ordens das irmãs novas são refeitas do zero (as da antiga mãe não se misturam)
+        for n, x in enumerate(lista, 1):
+            c.execute('UPDATE etapa SET ordem = ? WHERE id = ?', (n, x))
+        c.execute('UPDATE orcamento SET atualizado_em = ? WHERE id = ?', (agora(), e['orcamento_id']))
+        return calcular(c, e['orcamento_id'])
+
+
 @router.delete('/etapas/{eid}')
 def excluir_etapa(eid: int):
     with orc() as c:
         e = c.execute('SELECT * FROM etapa WHERE id = ?', (eid,)).fetchone()
         if not e:
             raise HTTPException(404, 'Etapa não encontrada.')
-        subs = [dict(r) for r in c.execute('SELECT * FROM etapa WHERE pai_id = ? ORDER BY ordem, id', (eid,))]
+        subs = _descendentes(c, eid)
         ids = [eid] + [x['id'] for x in subs]
         itens = [dict(r) for r in c.execute('SELECT * FROM item WHERE orcamento_id = ? ORDER BY ordem, id', (e['orcamento_id'],)) if r['etapa_id'] in ids]
         desfazer = {'tipo': 'etapa', 'etapas': [dict(e)] + subs, 'itens': itens}
@@ -868,21 +938,18 @@ def exportar(oid: int):
                  'Preço unit. sem BDI (R$)' if no_total else 'Preço unit. c/ BDI (R$)', 'Total sem BDI (R$)' if no_total else 'Total (R$)'],
          [7, 9, 8, 70, 6, 11, 14, 15, 16])
     linha = 6
-    linhas_etapa = []
-    mae = None  # [célula do total, fórmula dos itens diretos, linhas das subetapas]
-    def fechar_mae():
-        if mae:
-            mae[0].value = '=' + '+'.join([mae[1]] + [f'I{x}' for x in mae[2]])
+    linhas_etapa = []  # linhas das células construtivas (o total geral soma estas)
+    cel_total, proprios_de, filhas_de, linha_de = {}, {}, {}, {}
     for e in o['etapas']:
-        sub = e['nivel'] == 2
-        if not sub and linhas_etapa:
-            linha += 1  # linha em branco entre etapas
+        nivel = e['nivel']
+        if nivel == 1 and linhas_etapa:
+            linha += 1  # linha em branco entre células construtivas
         ini = linha
         ws.cell(row=linha, column=1, value=e['numero']).font = Font(bold=True)
-        ws.cell(row=linha, column=4, value=('   ' if sub else '') + e['titulo']).font = Font(bold=True, italic=sub)
+        ws.cell(row=linha, column=4, value=('   ' * (nivel - 1)) + e['titulo']).font = Font(bold=True, italic=nivel == 3)
         tot_cel = ws.cell(row=linha, column=9); tot_cel.font = Font(bold=True); tot_cel.number_format = '#,##0.00'
         for j in range(1, 10):
-            ws.cell(row=linha, column=j).fill = PatternFill('solid', fgColor='F1F5F9' if sub else 'E3EDF5')
+            ws.cell(row=linha, column=j).fill = PatternFill('solid', fgColor={1: 'E3EDF5', 2: 'EDF2F7', 3: 'F6F8FA'}[min(nivel, 3)])
         linha += 1
         for i in e['itens']:
             ws.cell(row=linha, column=1, value=i['numero'])
@@ -895,16 +962,14 @@ def exportar(oid: int):
             ws.cell(row=linha, column=8, value=f'=G{linha}' if no_total else f'=ROUND(G{linha}*(1+$H$2),2)').number_format = '#,##0.00'
             ws.cell(row=linha, column=9, value=f'=ROUND(F{linha}*H{linha},2)').number_format = '#,##0.00'
             linha += 1
-        proprios = f'SUM(I{ini + 1}:I{linha - 1})' if linha - 1 > ini else '0'
-        if sub:
-            tot_cel.value = '=' + proprios
-            if mae:
-                mae[2].append(ini)
-        else:
-            fechar_mae()
-            mae = [tot_cel, proprios, []]
+        cel_total[e['id']], linha_de[e['id']] = tot_cel, ini
+        proprios_de[e['id']] = f'SUM(I{ini + 1}:I{linha - 1})' if linha - 1 > ini else '0'
+        filhas_de.setdefault(e.get('pai_id'), []).append(e['id'])
+        if nivel == 1:
             linhas_etapa.append(ini)
-    fechar_mae()
+    # o total de cada nível: os itens dele mais os totais do que está dentro
+    for eid, cel in cel_total.items():
+        cel.value = '=' + '+'.join([proprios_de[eid]] + [f'I{linha_de[f]}' for f in filhas_de.get(eid, [])])
     linha += 1
     soma_etapas = '+'.join(f'I{x}' for x in linhas_etapa) or '0'
     ws.cell(row=linha, column=8, value='Custo direto').font = Font(bold=True)

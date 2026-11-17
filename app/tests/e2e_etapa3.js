@@ -48,7 +48,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   ok(await p.isVisible('#orc-campos'), 'Resumo acompanha a edição e os campos continuam abertos');
   await p.click('#orc-editar');
   const add = async (termo, qtd) => {
-    const inp = (await p.$$('.add-q'))[0]; await inp.fill(termo);
+    const abre = (await p.$$('[data-acao="item-abrir"]'))[0]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[0]; await inp.fill(termo);
     await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
     await p.keyboard.type(qtd); await p.keyboard.press('Enter'); await p.waitForTimeout(350);

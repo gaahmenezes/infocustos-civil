@@ -12,6 +12,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !m.text().includes('404') && errs.push(m.text()));
   await p.goto(U + '#/'); await p.waitForSelector('#dt-campo');
+  await p.evaluate(() => localStorage.setItem('orc-analitico', 'nao'));  // linhas contadas pela posição: sem a linha de mão de obra e material
   ok(!(await p.$('#abertura')), 'Tela de abertura some quando a base carrega');
   ok(await p.$eval('.marca-simbolo .marca-degraus', (e) => !!e), 'Logotipo novo na barra');
 
@@ -43,7 +44,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   await p.fill('[name=nome]', 'Etapa2 teste'); await p.fill('[name=bdi]', '20'); await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
   ok(!(await p.$('.painel-orc')), 'Orçamento vazio não mostra o painel');
   const add = async (k, termo, qtd) => {
-    const inp = (await p.$$('.add-q'))[k]; await inp.fill(termo);
+    const abre = (await p.$$('[data-acao="item-abrir"]'))[k]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[k]; await inp.fill(termo);
     await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
     await p.keyboard.type(qtd); await p.keyboard.press('Enter'); await p.waitForTimeout(350);

@@ -526,7 +526,7 @@ function codigoBase(codigo, base, marcar) {
 // nas tabelas: o mesmo par código + base, mais discreto, e o conjunto inteiro abre o item
 // `mes`: abre a ficha no mês em que o item está (ex.: o mês do orçamento), e não no mês escolhido na consulta
 function codLink(tipo, base, codigo, mes) {
-  const extra = !mes ? '' : base === 'PROPRIA' ? `?refs=${encodeURIComponent(mes.refs || '')}` : `?ref=${encodeURIComponent(mes.ref || mes)}`;
+  const extra = !mes ? '' : (base === 'PROPRIA' ? `?refs=${encodeURIComponent(mes.refs || '')}` : `?ref=${encodeURIComponent(mes.ref || mes)}`) + (mes.orc ? `&orc=${mes.orc}` : '');
   return `<a class="cb cb-p" href="${rotaItem(tipo, esc(base), esc(codigo))}${extra}"><span class="cb-num">${esc(codigo)}</span><span class="cb-base cb-${esc(base)}">${esc(rotuloBase(base, codigo))}</span></a>`;
 }
 
@@ -679,8 +679,20 @@ async function rota() {
 }
 
 function botaoVoltar() {
+  // ficha aberta a partir de um orçamento (?orc=): volta direto para a linha do item na planilha
+  const orc = Number(new URLSearchParams(location.hash.split('?')[1] || '').get('orc'));
+  const m = location.hash.match(/^#\/(composicao|insumo)\/(\w+)\/(\w+)/);
+  if (orc && m) {
+    const nome = typeof ORC !== 'undefined' && ORC.atual && ORC.atual.id === orc ? ORC.atual.nome : '';
+    return `<a class="voltar-lista voltar-orc" href="#/orcamento/${orc}" data-voltar-orc="${m[1] === 'composicao' ? 'servico' : 'insumo'}|${esc(m[2])}|${esc(m[3])}"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Voltar ao orçamento${nome ? ` <b>${esc(nome)}</b>` : ''}</a>`;
+  }
   return '<button type="button" class="botao voltar" onclick="history.back()">Voltar aos resultados</button>';
 }
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('[data-voltar-orc]'); if (!a || typeof ORC === 'undefined') return;
+  ORC.destaque = a.dataset.voltarOrc;  // a linha do item fica em destaque e aparece na tela
+  setTimeout(() => { const tr = document.querySelector('.planilha-orc tr.item.destaque'); if (tr) tr.scrollIntoView({ block: 'center', behavior: semMovimento() ? 'auto' : 'smooth' }); }, 450);
+});
 
 // ---------- composição ----------
 function resumoPelosItens(c) {

@@ -10,6 +10,29 @@ function lerRecolhidas(id) {
 }
 function gravarRecolhidas() { try { localStorage.setItem(`orc-recolhidas-${ORC.recolhidasDe}`, JSON.stringify([...ORC.recolhidas])); } catch (_) { /* sem storage */ } }
 const CHEVRON = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3" /></svg>';
+// três níveis na planilha: célula construtiva › etapa › subetapa
+const NIVEL = { 1: ['célula construtiva', 'células construtivas', 'Célula construtiva'], 2: ['etapa', 'etapas', 'Etapa'], 3: ['subetapa', 'subetapas', 'Subetapa'] };
+const nomeNivel = (n, plural) => (NIVEL[n] || NIVEL[2])[plural ? 1 : 0];
+const NomeNivel = (n) => (NIVEL[n] || NIVEL[2])[2];
+const artigo = (n) => (n === 1 ? 'a' : 'a');  // célula, etapa e subetapa são todas femininas
+const descendentesDe = (o, id) => { const out = []; const f = (pid) => o.etapas.filter((x) => x.pai_id === pid).forEach((x) => { out.push(x); f(x.id); }); f(id); return out; };
+const alturaDe = (o, id) => { const fs = o.etapas.filter((x) => x.pai_id === id); return fs.length ? 1 + Math.max(...fs.map((x) => alturaDe(o, x.id))) : 0; };
+// mão de obra, material, equipamento e terceiros em reais (a custo, sem BDI)
+function valoresDe(itens) {
+  const p = { mo: 0, mat: 0, equip: 0, terc: 0 };
+  for (const i of itens) if (i.div && i.custo_total) for (const k in p) p[k] += i.custo_total * (i.div[k] || 0);
+  return p;
+}
+const ANALITICO = [['mo', 'Mão de obra', '--c-mo'], ['mat', 'Material', '--c-mat'], ['equip', 'Equipamento', '--c-equip'], ['terc', 'Terceiros', '--c-terc']];
+function linhaAnalitica(itens, rotulo) {
+  const v = valoresDe(itens), soma = v.mo + v.mat + v.equip + v.terc;
+  if (!soma) return '';
+  return `<tr class="etapa-anal"><td></td><td colspan="8"><div class="anal" role="group" aria-label="Divisão do custo direto ${esc(rotulo)}">
+    <span class="anal-rot">Custo direto <b>${brl.format(soma)}</b></span>
+    ${ANALITICO.filter(([k]) => v[k] >= 0.005).map(([k, n, cor]) => `<span class="anal-p" style="--cor:var(${cor})"><i></i>${n} <b>${brl.format(v[k])}</b> <em>${v[k] / soma < 0.001 ? '<0,1%' : pct.format(v[k] / soma)}</em></span>`).join('')}
+  </div></td></tr>`;
+}
+try { ORC.analitico = localStorage.getItem('orc-analitico') !== 'nao'; } catch (_) { ORC.analitico = true; }
 // divisão do custo de um conjunto de itens (cada item traz a sua, do servidor)
 function divisaoDe(itens) {
   const p = { mo: 0, mat: 0, equip: 0, terc: 0 };
@@ -288,32 +311,40 @@ function ligarCabecalho(o) {
 
 function desenharPlanilha(o) {
   lerRecolhidas(o.id);
-  const visiveis = o.etapas.filter((e) => !ORC.filtro || e.id === ORC.filtro || e.pai_id === ORC.filtro);
+  const noFiltro = ORC.filtro ? new Set([ORC.filtro, ...descendentesDe(o, ORC.filtro).map((x) => x.id)]) : null;
+  const visiveis = o.etapas.filter((e) => !noFiltro || noFiltro.has(e.id));
+  const porId = new Map(o.etapas.map((e) => [e.id, e]));
   // régua de peso: cada item mostra quanto pesa no total (largura relativa ao maior item) e a classe ABC dele
   const todos = o.etapas.flatMap((e) => e.itens), maiorItem = Math.max(...todos.map((i) => i.total), 0.01);
-  const somaEtapas = o.etapas.filter((e) => e.nivel !== 2).reduce((s, e) => s + e.total, 0) || 1;
+  const somaEtapas = o.etapas.filter((e) => e.nivel === 1).reduce((s, e) => s + e.total, 0) || 1;
   const classe = new Map(curvaABC(o).map((x) => [x.chave, x.classe]));
   const filhas = (e) => o.etapas.filter((x) => x.pai_id === e.id);
-  const itensDe = (e) => [...e.itens, ...filhas(e).flatMap((x) => x.itens)];
+  const itensDe = (e) => [...e.itens, ...descendentesDe(o, e.id).flatMap((x) => x.itens)];
+  const ancRecolhida = (e) => { if (ORC.filtro) return false; for (let p = porId.get(e.pai_id); p; p = porId.get(p.pai_id)) if (ORC.recolhidas.has(p.id)) return true; return false; };
   const etapas = visiveis.map((e) => {
-    const rec = ORC.recolhidas.has(e.id), maeRec = e.pai_id && ORC.recolhidas.has(e.pai_id) && !ORC.filtro;
-    const lista = e.nivel === 2 ? e.itens : itensDe(e), nsub = e.nivel === 2 ? 0 : filhas(e).length;
-    const tipo = e.nivel === 2 ? 'subetapa' : 'etapa';
+    const rec = ORC.recolhidas.has(e.id), maeRec = ancRecolhida(e);
+    const lista = itensDe(e), fs = filhas(e), nsub = fs.length;
+    const tipo = nomeNivel(e.nivel), Tipo = NomeNivel(e.nivel), prox = e.nivel + 1;
+    const irmas = o.etapas.filter((x) => (x.pai_id || null) === (e.pai_id || null)), k = irmas.indexOf(e);
+    const podeDescer = k > 0 && irmas[k - 1].nivel + 1 + alturaDe(o, e.id) <= 3;
     return `
-    <tbody class="etapa${e.nivel === 2 ? ' sub' : ''}${rec ? ' recolhida' : ''}${maeRec ? ' mae-recolhida' : ''}" data-etapa="${e.id}" data-pai="${e.pai_id || ''}">
+    <tbody class="etapa n${e.nivel}${e.nivel > 1 ? ' sub' : ''}${rec ? ' recolhida' : ''}${maeRec ? ' mae-recolhida' : ''}" data-etapa="${e.id}" data-pai="${e.pai_id || ''}" data-nivel="${e.nivel}">
       <tr class="etapa-cab">
-        <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover a ${tipo} ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button><button type="button" class="recolher" data-recolher="${e.id}" aria-expanded="${!rec}" aria-label="${rec ? 'Mostrar' : 'Recolher'} a ${tipo} ${e.numero}" title="${rec ? 'Mostrar os itens' : 'Recolher'}">${CHEVRON}</button>${e.numero}</td>
-        <td colspan="5"><div class="etapa-linha"><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título da ${tipo} ${e.numero}" data-etapa="${e.id}">
-          <span class="etapa-resumo" aria-hidden="${!rec}">${lista.length} ${lista.length === 1 ? 'item' : 'itens'}${nsub ? ` · ${nsub} ${nsub === 1 ? 'subetapa' : 'subetapas'}` : ''}${lista.length ? barraDivisao(divisaoDe(lista)) : ''}</span></div></td>
+        <td class="n"><button type="button" class="pega" data-pega="etapa" data-id="${e.id}" aria-label="Mover ${artigo(e.nivel)} ${tipo} ${e.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem">⠿</button><button type="button" class="recolher" data-recolher="${e.id}" aria-expanded="${!rec}" aria-label="${rec ? 'Mostrar' : 'Recolher'} ${artigo(e.nivel)} ${tipo} ${e.numero}" title="${rec ? 'Mostrar os itens' : 'Recolher'}">${CHEVRON}</button>${e.numero}</td>
+        <td colspan="5"><div class="etapa-linha"><span class="nivel-rot" aria-hidden="true">${Tipo}</span><input class="etapa-titulo" value="${esc(e.titulo)}" aria-label="Título d${artigo(e.nivel)} ${tipo} ${e.numero}" data-etapa="${e.id}">
+          <span class="etapa-resumo" aria-hidden="${!rec}">${lista.length} ${lista.length === 1 ? 'item' : 'itens'}${nsub ? ` · ${nsub} ${nomeNivel(prox, nsub !== 1)}` : ''}${lista.length ? barraDivisao(divisaoDe(lista)) : ''}</span></div></td>
         <td class="num"><span class="peso-etapa">${pct.format(e.peso)}</span></td>
         <td class="num"><b>${brl.format(e.total)}</b></td>
-        <td class="ctrl">
-          <button type="button" class="mini" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}">✕</button>
+        <td class="ctrl"><span class="ctrl-nivel">
+          ${e.nivel > 1 ? `<button type="button" class="mini" data-acao="nivel-subir" data-id="${e.id}" aria-label="Subir de nível: ${artigo(e.nivel)} ${tipo} ${e.numero} vira ${nomeNivel(e.nivel - 1)}" title="Subir de nível: vira ${nomeNivel(e.nivel - 1)}">↖</button>` : ''}
+          ${podeDescer ? `<button type="button" class="mini" data-acao="nivel-descer" data-id="${e.id}" aria-label="Descer de nível: ${artigo(e.nivel)} ${tipo} ${e.numero} entra em ${irmas[k - 1].numero} e vira ${nomeNivel(e.nivel + 1)}" title="Descer de nível: entra em ${esc(irmas[k - 1].numero)} e vira ${nomeNivel(e.nivel + 1)}">↘</button>` : ''}
+          <button type="button" class="mini" data-acao="etapa-excluir" data-id="${e.id}" aria-label="Excluir ${artigo(e.nivel)} ${tipo} ${e.numero}">✕</button></span>
         </td>
       </tr>
+      ${ORC.analitico && e.nivel <= 2 ? linhaAnalitica(lista, `d${artigo(e.nivel)} ${tipo} ${e.numero}`) : ''}
       ${e.itens.map((i) => { const cl = classe.get(`${i.tipo}|${i.base}|${i.codigo}`) || 'C', peso = i.total / somaEtapas; return `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
         <td class="n"><button type="button" class="pega" data-pega="item" data-id="${i.id}" aria-label="Mover o item ${i.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem ou a etapa">⠿</button>${i.numero}</td>
-        <td class="cod">${codLink(i.tipo, i.base, i.codigo, mesDoItem(o, i))}</td>
+        <td class="cod">${codLink(i.tipo, i.base, i.codigo, { ...mesDoItem(o, i), orc: o.id })}</td>
         <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}${i.total > 0 ? `<span class="regua regua-${cl}" role="img" style="--p:${Math.max(0.6, (i.total / maiorItem) * 100).toFixed(2)}%" title="${pct.format(peso)} do total · classe ${cl} da curva ABC" aria-label="${pct.format(peso)} do total, classe ${cl}"></span>` : ''}</td>
         <td class="c-un">${unid(i.unidade)}</td>
         <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
@@ -324,32 +355,36 @@ function desenharPlanilha(o) {
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
         </td></tr>`; }).join('')}
       <tr class="add-linha"><td></td><td colspan="8"><div class="add-fila">
-        <div class="add-busca">
-          <input class="add-q" placeholder="Adicionar serviço ou insumo de ${esc(nomeRef(o.referencia))} à ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}: digite descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item à ${e.nivel === 2 ? 'subetapa' : 'etapa'} ${e.numero}" autocomplete="off">
+        <button type="button" class="botao botao-p add-abrir" data-acao="item-abrir" data-id="${e.id}" aria-expanded="false" aria-controls="add-${e.id}" title="Adicionar um serviço ou insumo de ${esc(nomeRef(o.referencia))} a ${artigo(e.nivel)} ${tipo} ${e.numero}">+ Item</button>
+        <div class="add-busca" id="add-${e.id}" hidden>
+          <input class="add-q" placeholder="Serviço ou insumo de ${esc(nomeRef(o.referencia))} para ${artigo(e.nivel)} ${tipo} ${e.numero}: descrição ou código" data-etapa="${e.id}" aria-label="Adicionar item ${artigo(e.nivel) === 'a' ? 'à' : 'ao'} ${tipo} ${e.numero}" autocomplete="off">
           <ul class="add-res" role="listbox" aria-label="Itens encontrados" tabindex="0" hidden></ul>
         </div>
-        ${e.nivel === 2 ? '' : `<button type="button" class="botao botao-p" data-acao="subetapa-nova" data-id="${e.id}" title="Criar uma subetapa dentro da etapa ${e.numero}" aria-label="Nova subetapa na etapa ${e.numero}">+ Subetapa</button>`}
+        ${e.nivel < 3 ? `<button type="button" class="botao botao-p" data-acao="filha-nova" data-id="${e.id}" data-nivel="${prox}" title="Criar uma ${nomeNivel(prox)} dentro d${artigo(e.nivel)} ${tipo} ${e.numero}" aria-label="Nova ${nomeNivel(prox)} n${artigo(e.nivel)} ${tipo} ${e.numero}">+ ${NomeNivel(prox)}</button>` : ''}
       </div></td></tr>
     </tbody>`; }).join('');
-  const maes = o.etapas.filter((e) => e.nivel !== 2), nRec = maes.filter((e) => ORC.recolhidas.has(e.id)).length;
+  const temNivel = (n) => o.etapas.some((e) => e.nivel === n && (filhas(e).length || e.itens.length));
   const filtrada = ORC.filtro && visiveis[0];
   $('#orc-corpo').innerHTML = `
     ${o.etapas.length > 1 ? `<div class="plan-barra">
       <div class="segmentos plan-niveis" role="group" aria-label="Mostrar na planilha">
-        <button type="button" data-plan-nivel="etapas" aria-pressed="${nRec === maes.length}">Só etapas</button>
-        <button type="button" data-plan-nivel="tudo" aria-pressed="${ORC.recolhidas.size === 0}">Tudo aberto</button></div>
-      <p class="plan-dica"><kbd>↑</kbd><kbd>↓</kbd> ou <kbd>Enter</kbd> andam entre as quantidades · <kbd>Esc</kbd> desfaz · a faixa sob cada item mostra o peso dele no total</p></div>` : ''}
-    ${filtrada ? `<p class="filtro-ativo">Mostrando só a etapa <b>${filtrada.numero}. ${esc(filtrada.titulo)}</b><button type="button" class="link-acao" data-ver-todas>Ver todas as etapas</button></p>` : ''}
+        <button type="button" data-plan-nivel="1" aria-pressed="false">Só células</button>
+        ${temNivel(2) ? '<button type="button" data-plan-nivel="2" aria-pressed="false">Até etapas</button>' : ''}
+        <button type="button" data-plan-nivel="tudo" aria-pressed="false">Tudo aberto</button></div>
+      <button type="button" class="botao botao-p plan-anal" data-analitico aria-pressed="${ORC.analitico}" title="Mostrar ou esconder a divisão do custo em reais em cada célula construtiva e etapa">Mão de obra e material</button>
+      <p class="plan-dica"><kbd>↑</kbd><kbd>↓</kbd> ou <kbd>Enter</kbd> andam entre as quantidades · <kbd>Esc</kbd> desfaz · ↖ ↘ mudam o nível</p></div>` : ''}
+    ${filtrada ? `<p class="filtro-ativo">Mostrando só ${artigo(filtrada.nivel)} ${nomeNivel(filtrada.nivel)} <b>${filtrada.numero}. ${esc(filtrada.titulo)}</b><button type="button" class="link-acao" data-ver-todas>Ver o orçamento inteiro</button></p>` : ''}
     <table class="planilha planilha-orc${o.bdi_no_total ? ' bdi-no-total' : ''}">
       <thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num"${o.bdi_no_total ? ' colspan="2"' : ''}>Custo unit.</th>${o.bdi_no_total ? '' : '<th class="num c-preco">Preço c/ BDI</th>'}<th class="num">${o.bdi_no_total ? 'Total sem BDI' : 'Total'}</th><th></th></tr></thead>
       ${etapas}
     </table>
     <form class="nova-etapa" id="form-etapa">
-      <input id="nova-etapa" placeholder="Nome da nova etapa — ex.: Fundações" maxlength="200" aria-label="Nome da nova etapa">
-      <button class="botao" type="submit">Adicionar etapa</button>
+      <input id="nova-etapa" placeholder="Nome da nova célula construtiva — ex.: Torre A, Área comum" maxlength="200" aria-label="Nome da nova célula construtiva">
+      <button class="botao" type="submit">+ Célula construtiva</button>
     </form>
-    <p class="fonte">${o.bdi_no_total ? 'BDI aplicado uma única vez sobre o custo direto total: itens e etapas aparecem a custo, sem BDI.' : 'Preço com BDI e total por item arredondados em 2 casas.'} Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}</p>`;
+    <p class="fonte">${o.bdi_no_total ? 'BDI aplicado uma única vez sobre o custo direto total: itens e etapas aparecem a custo, sem BDI.' : 'Preço com BDI e total por item arredondados em 2 casas.'} Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}${ORC.analitico ? ' A divisão em mão de obra, material, equipamento e terceiros é do custo direto, sem BDI.' : ''}</p>`;
   ligarPlanilha(o);
+  aplicarRecolhidas(false);
 }
 
 // refaz os totais do orçamento no navegador, com a mesma conta e os mesmos arredondamentos do servidor
@@ -357,21 +392,27 @@ const arred2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
 function recalcular(o, mudar, manter) {
   const n = structuredClone(o), fator = n.bdi_no_total ? 1 : 1 + n.bdi / 100;
   let custo = 0, total = 0, qtd = 0;
-  // a lista vem plana: cada etapa seguida das suas subetapas; o total da etapa inclui as subetapas
-  let mae = null, ne = 0, ns = 0;
+  // a lista vem plana: cada nível seguido do que está dentro dele; o total de cada um inclui o de dentro
   if (manter) n.etapas.forEach((e) => { e.itens = e.itens.filter(manter); });
+  const porId = new Map(n.etapas.map((e) => [e.id, e])), prox = new Map();
+  let ne = 0;
   n.etapas.forEach((e) => {
-    if (e.nivel === 2 && mae) { ns += 1; e.numero = `${ne}.${ns}`; } else { ne += 1; ns = e.itens.length; e.numero = String(ne); mae = e; }
+    const mae = porId.get(e.pai_id);
+    if (mae) { const k = (prox.get(mae.id) ?? mae.itens.length) + 1; prox.set(mae.id, k); e.numero = `${mae.numero}.${k}`; } else { ne += 1; e.numero = String(ne); }
     e.itens.forEach((i, ni) => {
       if (mudar) mudar(i);
       i.numero = `${e.numero}.${ni + 1}`;
       i.preco_unit = fator === 1 ? i.custo_unit : arred2(i.custo_unit * fator); i.custo_total = arred2(i.quantidade * i.custo_unit); i.total = arred2(i.quantidade * i.preco_unit);
     });
-    e.custo_total = arred2(e.itens.reduce((s, i) => s + i.custo_total, 0)); e.total = arred2(e.itens.reduce((s, i) => s + i.total, 0));
-    if (e !== mae) { mae.custo_total = arred2(mae.custo_total + e.custo_total); mae.total = arred2(mae.total + e.total); }
+    e._c = e.itens.reduce((s, i) => s + i.custo_total, 0); e._t = e.itens.reduce((s, i) => s + i.total, 0);
     qtd += e.itens.length;
   });
-  n.etapas.filter((e) => e.nivel !== 2).forEach((e) => { custo += e.custo_total; total += e.total; });
+  // de baixo para cima: cada nível fecha o seu total e o soma ao de cima (como no servidor)
+  [...n.etapas].reverse().forEach((e) => {
+    e.custo_total = arred2(e._c); e.total = arred2(e._t); delete e._c; delete e._t;
+    const mae = porId.get(e.pai_id); if (mae) { mae._c += e.custo_total; mae._t += e.total; }
+  });
+  n.etapas.filter((e) => e.nivel === 1).forEach((e) => { custo += e.custo_total; total += e.total; });
   n.complementares = arred2(n.etapas.reduce((t, e) => t + e.itens.reduce((u, i) => u + i.quantidade * (i.custo_compl || 0), 0), 0));
   n.custo_total = arred2(custo); n.qtd_itens = qtd;
   const somaEtapas = total;
@@ -404,7 +445,9 @@ function ligarPlanilha(o) {
     const refazer = () => {
       if (ORC.atual !== n || ORC.aba !== 'planilha' || !$('#orc-corpo')) { if (ORC.atual === visto) ORC.atual = n; return; }
       if (ocupada()) { setTimeout(refazer, 600); return; }
-      atualizar(n);
+      // a planilha mostrada já é a certa (mesma conta do servidor, e a divisão de cada item não muda com a quantidade):
+      // só o painel recebe a divisão do custo recalculada, sem redesenhar as centenas de linhas de novo
+      window.desenharPainel(n);
     };
     setTimeout(refazer, 480);
     return Promise.resolve();
@@ -455,9 +498,18 @@ function ligarPlanilha(o) {
     if (b) { alternarEtapa(Number(b.dataset.recolher)); return; }
     const nv = e.target.closest('[data-plan-nivel]');
     if (nv) {
-      const maes = ORC.atual.etapas.filter((x) => x.nivel !== 2).map((x) => x.id);
-      ORC.recolhidas = nv.dataset.planNivel === 'etapas' ? new Set(maes) : new Set();
+      const n = Number(nv.dataset.planNivel);  // 1: só as células; 2: células e etapas; "tudo": nada recolhido
+      ORC.recolhidas = n ? new Set(ORC.atual.etapas.filter((x) => x.nivel === n).map((x) => x.id)) : new Set();
       gravarRecolhidas(); aplicarRecolhidas(true);
+    }
+    if (e.target.closest('[data-analitico]')) {
+      ORC.analitico = !ORC.analitico; try { localStorage.setItem('orc-analitico', ORC.analitico ? 'sim' : 'nao'); } catch (_) { /* ok */ }
+      abrirOrcamento(o.id, ORC.atual);
+    }
+    const ab = e.target.closest('[data-acao="item-abrir"]');
+    if (ab) {
+      const caixa = document.getElementById(`add-${ab.dataset.id}`);
+      ab.hidden = true; ab.setAttribute('aria-expanded', 'true'); caixa.hidden = false; caixa.querySelector('.add-q').focus();
     }
   });
   corpo.addEventListener('click', async (e) => {
@@ -474,16 +526,29 @@ function ligarPlanilha(o) {
       }
       if (a === 'etapa-excluir') {
         const et = o.etapas.find((x) => String(x.id) === id);
-        const dentro = o.etapas.filter((x) => x.id === et.id || x.pai_id === et.id);
-        const ni = dentro.reduce((s, x) => s + x.itens.length, 0), nsub = dentro.length - 1;
+        const dentro = [et, ...descendentesDe(o, et.id)];
+        const ni = dentro.reduce((s, x) => s + x.itens.length, 0);
         const r = await req(`/api/etapas/${id}`, 'DELETE'); await atualizar(r);
-        const com = [nsub ? `${nsub} ${nsub === 1 ? 'subetapa' : 'subetapas'}` : '', ni ? `${ni} ${ni === 1 ? 'item' : 'itens'}` : ''].filter(Boolean).join(' e ');
-        avisarDesfazer(`${et.nivel === 2 ? 'Subetapa' : 'Etapa'} "${esc(et.titulo)}" excluída${com ? `, com ${com}` : ''}.`, r.desfazer);
+        const partes = [2, 3].map((nv) => { const q = dentro.filter((x) => x !== et && x.nivel === nv).length; return q ? `${q} ${nomeNivel(nv, q !== 1)}` : ''; });
+        const com = juntar([...partes, ni ? `${ni} ${ni === 1 ? 'item' : 'itens'}` : ''].filter(Boolean));
+        avisarDesfazer(`${NomeNivel(et.nivel)} "${esc(et.titulo)}" excluída${com ? `, com ${com}` : ''}.`, r.desfazer);
       }
-      if (a === 'subetapa-nova') {
-        const r = await req(`/api/orcamentos/${o.id}/etapas`, 'POST', { titulo: 'Nova subetapa', pai_id: Number(id) });
+      if (a === 'filha-nova') {
+        const r = await req(`/api/orcamentos/${o.id}/etapas`, 'POST', { titulo: `Nova ${nomeNivel(Number(b.dataset.nivel))}`, pai_id: Number(id) });
+        ORC.recolhidas.delete(Number(id)); gravarRecolhidas();
         await atualizar(r);
         const t = document.querySelector(`.etapa-titulo[data-etapa="${r.etapa_criada}"]`); if (t) { t.focus(); t.select(); }
+      }
+      if (a === 'nivel-subir' || a === 'nivel-descer') {
+        const et = o.etapas.find((x) => String(x.id) === id);
+        const r = await req(`/api/etapas/${id}/nivel?sentido=${a === 'nivel-subir' ? 'subir' : 'descer'}`, 'POST');
+        await atualizar(r);
+        const nova = r.etapas.find((x) => x.id === et.id);
+        if (nova) {
+          if (nova.pai_id) { ORC.recolhidas.delete(nova.pai_id); gravarRecolhidas(); aplicarRecolhidas(false); }
+          avisar(`"${esc(et.titulo)}" agora é ${nomeNivel(nova.nivel)} (${nova.numero}).`);
+          const t = document.querySelector(`.etapa-titulo[data-etapa="${et.id}"]`); if (t) t.scrollIntoView({ block: 'nearest', behavior: semMovimento() ? 'auto' : 'smooth' });
+        }
       }
     } catch (err) { avisar(esc(err.message)); }
   });
@@ -494,14 +559,28 @@ function ligarPlanilha(o) {
     atualizar(await req(`/api/orcamentos/${o.id}/etapas`, 'POST', { titulo: v }));
   });
   corpo.querySelectorAll('.add-q').forEach(ligarBuscaInline);
+  // a busca de item fica recolhida num botão; vazia, ela volta a ser o botão quando o cursor sai dela (ou com Esc)
+  const fecharBusca = (caixa, focar) => {
+    if (!caixa || caixa.hidden || caixa.querySelector('.add-q').value.trim()) return;
+    const bt = corpo.querySelector(`[data-acao="item-abrir"][aria-controls="${caixa.id}"]`);
+    caixa.hidden = true; caixa.querySelector('.add-res').hidden = true;
+    if (bt) { bt.hidden = false; bt.setAttribute('aria-expanded', 'false'); if (focar) bt.focus(); }
+  };
+  corpo.addEventListener('focusout', (e) => {
+    const caixa = e.target.closest && e.target.closest('.add-busca');
+    if (caixa && !(e.relatedTarget && caixa.contains(e.relatedTarget))) setTimeout(() => fecharBusca(caixa), 150);
+  });
+  corpo.addEventListener('keydown', (e) => { if (e.key === 'Escape' && e.target.classList.contains('add-q') && !e.target.value) fecharBusca(e.target.closest('.add-busca'), true); });
 }
 
 // ---------- recolher etapas ----------
 function aplicarRecolhidas(animar) {
   const corpo = $('#orc-corpo'); if (!corpo) return;
+  const paiDe = new Map([...corpo.querySelectorAll('tbody.etapa')].map((tb) => [Number(tb.dataset.etapa), Number(tb.dataset.pai) || null]));
+  const ancRec = (id) => { for (let p = paiDe.get(id); p; p = paiDe.get(p)) if (ORC.recolhidas.has(p)) return true; return false; };
   corpo.querySelectorAll('tbody.etapa').forEach((tb) => {
-    const id = Number(tb.dataset.etapa), pai = Number(tb.dataset.pai) || null;
-    const rec = ORC.recolhidas.has(id), maeRec = !!pai && ORC.recolhidas.has(pai) && !ORC.filtro;
+    const id = Number(tb.dataset.etapa);
+    const rec = ORC.recolhidas.has(id), maeRec = ancRec(id) && !ORC.filtro;
     const abriu = (tb.classList.contains('recolhida') && !rec) || (tb.classList.contains('mae-recolhida') && !maeRec);
     tb.classList.toggle('recolhida', rec); tb.classList.toggle('mae-recolhida', maeRec);
     const b = tb.querySelector('[data-recolher]');
@@ -509,9 +588,11 @@ function aplicarRecolhidas(animar) {
     const r = tb.querySelector('.etapa-resumo'); if (r) r.setAttribute('aria-hidden', String(!rec));
     if (abriu && animar && !semMovimento()) { tb.classList.remove('abrindo'); void tb.offsetWidth; tb.classList.add('abrindo'); }
   });
-  const maes = ORC.atual ? ORC.atual.etapas.filter((x) => x.nivel !== 2) : [];
-  corpo.querySelectorAll('[data-plan-nivel]').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.planNivel === 'etapas'
-    ? maes.length > 0 && maes.every((x) => ORC.recolhidas.has(x.id)) : ORC.recolhidas.size === 0)));
+  const et = ORC.atual ? ORC.atual.etapas : [];
+  corpo.querySelectorAll('[data-plan-nivel]').forEach((b) => {
+    const n = Number(b.dataset.planNivel), deste = et.filter((x) => x.nivel === n);
+    b.setAttribute('aria-pressed', String(n ? deste.length > 0 && deste.every((x) => ORC.recolhidas.has(x.id)) && et.every((x) => x.nivel === n || !ORC.recolhidas.has(x.id)) : ORC.recolhidas.size === 0));
+  });
   esconderAnel();
 }
 function alternarEtapa(id) {
@@ -602,7 +683,7 @@ async function desenharABC(o, tipo) {
   const barra = ['A', 'B', 'C'].filter((cl) => r.resumo[cl].valor > 0).map((cl) => `<span style="flex-grow:${r.resumo[cl].valor};background:${cores[cl]}"></span>`).join('');
   const linhas = r.linhas.map((l) => `<tr class="cl-${l.classe}">
       <td class="n">${l.posicao}</td>
-      <td class="cod">${codLink(tipo === 'servicos' && l.tipo === 'servico' ? 'servico' : 'insumo', l.base, l.codigo, mesDoItem(o, l))}</td>
+      <td class="cod">${codLink(tipo === 'servicos' && l.tipo === 'servico' ? 'servico' : 'insumo', l.base, l.codigo, { ...mesDoItem(o, l), orc: o.id })}</td>
       <td class="desc">${esc(l.descricao)}</td><td>${esc(l.unidade)}</td>
       <td class="num">${qtdFmt.format(l.quantidade)}</td>
       <td class="num">${money(tipo === 'servicos' ? l.preco_unit : l.custo_unit)}</td>
@@ -645,7 +726,7 @@ async function trocarOrc() {
   const et = $('#dlg-etapa');
   if (novo) { et.innerHTML = '<option value="">Serviços preliminares</option>'; return; }
   const o = await req(`/api/orcamentos/${v}`);
-  et.innerHTML = o.etapas.map((e) => `<option value="${e.id}">${e.nivel === 2 ? '\u00a0\u00a0\u00a0' : ''}${e.numero}. ${esc(e.titulo)}</option>`).join('');
+  et.innerHTML = o.etapas.map((e) => `<option value="${e.id}">${'\u00a0\u00a0\u00a0'.repeat(Math.max(0, e.nivel - 1))}${e.numero}. ${esc(e.titulo)}</option>`).join('');
   if (o.etapas.length) et.value = String(o.etapas[o.etapas.length - 1].id);
 }
 $('#dlg-orc').addEventListener('change', trocarOrc);

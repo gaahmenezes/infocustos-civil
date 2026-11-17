@@ -205,3 +205,41 @@ def test_desfazer_exclusao_de_item_etapa_e_orcamento():
     assert volta['nome'] == 'Para desfazer' and volta['total'] == antes['total'] and volta['bdi'] == 20
     c.delete(f"/api/orcamentos/{volta['id']}")
     assert c.post('/api/restaurar', json={'tipo': 'item', 'itens': [{'id': 1, 'orcamento_id': 987654, 'etapa_id': 987654}]}).status_code == 404
+
+
+def test_tres_niveis_celula_etapa_subetapa(orc):
+    oid = orc['id']; cel = orc['etapas'][0]['id']
+    et = c.post(f'/api/orcamentos/{oid}/etapas', json={'titulo': 'Fundação', 'pai_id': cel}).json()['etapa_criada']
+    sub = c.post(f'/api/orcamentos/{oid}/etapas', json={'titulo': 'Radier', 'pai_id': et}).json()['etapa_criada']
+    # a subetapa é o último nível
+    assert c.post(f'/api/orcamentos/{oid}/etapas', json={'titulo': 'Demais', 'pai_id': sub}).status_code == 422
+    c.post(f'/api/orcamentos/{oid}/itens', json={'etapa_id': cel, 'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 10})
+    c.post(f'/api/orcamentos/{oid}/itens', json={'etapa_id': et, 'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 20})
+    o = c.post(f'/api/orcamentos/{oid}/itens', json={'etapa_id': sub, 'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 30}).json()
+    pos = {e['titulo']: e for e in o['etapas']}
+    assert [(e['numero'], e['nivel']) for e in o['etapas']] == [('1', 1), ('1.2', 2), ('1.2.2', 3)]
+    assert [i['numero'] for e in o['etapas'] for i in e['itens']] == ['1.1', '1.2.1', '1.2.2.1']
+    unit = pos['Radier']['itens'][0]['total'] / 30
+    assert abs(pos['Fundação']['total'] - 50 * unit) < 0.05 and abs(pos['Obra']['total'] - o['total']) < 0.01  # o total de cima soma o de dentro
+    # subir: a subetapa vira etapa, logo depois da antiga mãe; descer: volta para dentro da irmã de cima
+    o = c.post(f'/api/etapas/{sub}/nivel?sentido=subir').json()
+    assert [(e['titulo'], e['numero'], e['nivel']) for e in o['etapas']] == [('Obra', '1', 1), ('Fundação', '1.2', 2), ('Radier', '1.3', 2)]
+    o = c.post(f'/api/etapas/{sub}/nivel?sentido=descer').json()
+    assert [(e['titulo'], e['nivel']) for e in o['etapas']] == [('Obra', 1), ('Fundação', 2), ('Radier', 3)]
+    assert c.post(f'/api/etapas/{cel}/nivel?sentido=subir').status_code == 422  # a célula já é o nível mais alto
+    # descer uma célula que tem etapa com subetapa não cabe (passaria de três níveis)
+    cel2 = c.post(f'/api/orcamentos/{oid}/etapas', json={'titulo': 'Torre B'}).json()['etapa_criada']
+    assert c.post(f'/api/etapas/{cel}/nivel?sentido=descer').status_code == 422
+    o = c.post(f'/api/etapas/{cel2}/nivel?sentido=descer').json()
+    assert next(e for e in o['etapas'] if e['id'] == cel2)['nivel'] == 2
+    # excluir a célula leva tudo o que está dentro; desfazer devolve os três níveis
+    r = c.delete(f'/api/etapas/{cel}').json()
+    assert r['etapas'] == [] and r['qtd_itens'] == 0
+    o = c.post('/api/restaurar', json=r['desfazer']).json()
+    assert [(e['titulo'], e['nivel']) for e in o['etapas']] == [('Obra', 1), ('Fundação', 2), ('Radier', 3), ('Torre B', 2)] and o['qtd_itens'] == 3
+    # duplicar mantém os níveis; o Excel soma cada nível
+    d = c.post(f'/api/orcamentos/{oid}/duplicar').json()
+    assert [(e['titulo'], e['nivel']) for e in d['etapas']] == [('Obra', 1), ('Fundação', 2), ('Radier', 3), ('Torre B', 2)] and d['total'] == o['total']
+    c.delete(f"/api/orcamentos/{d['id']}")
+    wb = load_workbook(io.BytesIO(c.get(f'/api/orcamentos/{oid}/exportar.xlsx').content))
+    assert any(str(x.value or '').startswith('=') and 'I' in str(x.value) for x in wb.active['I'])

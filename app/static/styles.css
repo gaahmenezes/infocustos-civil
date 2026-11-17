@@ -1847,7 +1847,7 @@ html.vai-outra body:not([data-aba]) .area { visibility: hidden; }
 .etapa-resumo .mini-barra { flex-basis: 96px; }
 .etapa-resumo .dom { font-size: 12px; }
 tbody.etapa.recolhida .etapa-resumo { display: inline-flex; animation: entrar var(--t-medio) var(--suave) both; }
-tbody.etapa.recolhida > tr:not(.etapa-cab), tbody.etapa.mae-recolhida { display: none; }
+tbody.etapa.recolhida > tr:not(.etapa-cab):not(.etapa-anal), tbody.etapa.mae-recolhida { display: none; }
 tbody.etapa.abrindo > tr:not(.etapa-cab) { animation: abrir-linha 300ms var(--suave) both; }
 @keyframes abrir-linha { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 /* régua de peso: faixa fina sob a descrição, do tamanho do item comparado ao maior do orçamento */
@@ -1971,3 +1971,41 @@ tbody.etapa.abrindo > tr:not(.etapa-cab) { animation: abrir-linha 300ms var(--su
 @keyframes an-gira { from { opacity: 0; transform: rotate(-12deg) scale(0.92); } to { opacity: 1; transform: none; } }
 @media (max-width: 760px) { .aneis { grid-template-columns: 1fr; } .an-palco { max-width: 360px; margin: 0 auto; width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .gh-area, .gh-seg, .gh-pt, .aneis-caixa .an-sec, .aneis-caixa .an-item { animation: none !important; stroke-dashoffset: 0; } }
+
+/* ---------- três níveis: célula construtiva › etapa › subetapa ---------- */
+.nivel-rot { flex: 0 0 auto; font-size: 10.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; color: var(--tinta-3);
+  padding: 2px 7px; border: 1px solid var(--linha); border-radius: 999px; background: var(--superficie); }
+.planilha-orc tbody.n1 .etapa-cab td { background: var(--planta-claro); }
+.planilha-orc tbody.n1 .etapa-titulo { font-size: 15.5px; font-weight: 750; }
+.planilha-orc tbody.n1 .nivel-rot { color: var(--planta); border-color: var(--planta-borda); }
+.planilha-orc tbody.n3 .etapa-cab td { background: transparent; }
+.planilha-orc tbody.n3 .etapa-cab td:nth-child(2) { padding-left: 44px; }
+.planilha-orc tbody.n3 .etapa-titulo { font-size: 13.5px; font-weight: 600; }
+.planilha-orc tbody.n3 tr.item td.cod, .planilha-orc tbody.n3 tr.add-linha td:nth-child(2), .planilha-orc tbody.n3 tr.etapa-anal td:nth-child(2) { padding-left: 44px; }
+.planilha-orc tbody.n2 tr.etapa-anal td:nth-child(2) { padding-left: 22px; }
+.ctrl-nivel { display: inline-flex; gap: 4px; justify-content: flex-end; }
+/* visão analítica: custo direto em reais de cada célula e etapa */
+.etapa-anal td { padding-top: 4px; padding-bottom: 8px; background: transparent; border-bottom: 1px solid var(--linha); }
+.planilha tbody tr.etapa-anal:hover td { background: transparent; }
+.anal { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; font-size: 12.5px; color: var(--tinta-2); }
+.anal b { color: var(--tinta); font-variant-numeric: tabular-nums; font-weight: 700; }
+.anal em { font-style: normal; color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+.anal-p { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.anal-p i { width: 8px; height: 8px; border-radius: 2px; background: var(--cor); }
+.anal-rot { color: var(--tinta-3); }
+.plan-anal[aria-pressed="true"] { background: var(--tinta); color: var(--superficie); border-color: var(--tinta); }
+/* "+ Item": a busca fica recolhida num botão até ser usada */
+.add-fila .add-busca[hidden] { display: none; }
+.add-fila .add-busca { flex: 1 1 auto; }
+.add-fila { flex-wrap: wrap; }
+.voltar-orc { margin-bottom: 12px; }
+.voltar-orc b { font-weight: 700; margin-left: 4px; }
+tr.rel-etapa.rel-n3 td, .rel-n3 td:nth-child(2) { padding-left: 30px; font-weight: 600; }
+@media (max-width: 760px) { .nivel-rot { display: none; } .planilha-orc tbody.n3 .etapa-cab td:nth-child(2) { padding-left: 0; } .anal { gap: 4px 12px; } }
+@media print { .etapa-anal, .ctrl-nivel, .add-linha, .plan-anal { display: none !important; } }
+@media (max-width: 760px) {
+  .planilha-orc tr.etapa-anal { padding: 6px 12px 10px; }
+  .planilha-orc tr.etapa-anal td:first-child { display: none; }
+  .planilha-orc tbody.n2, .planilha-orc tbody.n3 { margin-top: 6px; }
+  .planilha-orc tbody.n3 { margin-left: 14px; }
+}

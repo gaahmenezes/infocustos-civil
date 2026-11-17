@@ -12,7 +12,7 @@ const U = 'http://localhost:8000';
   await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
   ok(/#\/orcamento\/\d+/.test(p.url()), 'Criou orçamento e abriu a planilha');
   const add = async (etapaIdx, termo, qtd) => {
-    const inp = (await p.$$('.add-q'))[etapaIdx]; await inp.fill(termo);
+    const abre = (await p.$$('[data-acao="item-abrir"]'))[etapaIdx]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[etapaIdx]; await inp.fill(termo);
     await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
     await p.keyboard.type(qtd); await p.keyboard.press('Enter'); await p.waitForTimeout(350);

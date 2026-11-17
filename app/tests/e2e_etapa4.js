@@ -16,6 +16,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => m.type() === 'error' && !m.text().includes('404') && errs.push(m.text()));
   await p.goto(U + '#/'); await p.waitForSelector('#dt-campo');
+  await p.evaluate(() => localStorage.setItem('orc-analitico', 'nao'));  // linhas contadas pela posição: sem a linha de mão de obra e material
 
   // ---------- tela inicial limpa ----------
   ok(!(await p.isVisible('.area')) && !(await p.isVisible('#inicio')), 'Tela inicial: nada aparece abaixo dos cartões');
@@ -71,7 +72,7 @@ const norm = (t) => (t || '').replace(/\s+/g, ' ').trim();
   await p.goto(R('#/orcamentos')); await p.click('#novo-orc'); await p.waitForSelector('#dlg-novo-orc[open]');
   await p.fill('[name=nome]', 'Etapa4 teste'); await p.fill('[name=bdi]', '20'); await p.click('#form-novo [type=submit]'); await p.waitForSelector('.planilha');
   const add = async (termo, qtd) => {
-    const inp = (await p.$$('.add-q'))[0]; await inp.fill(termo);
+    const abre = (await p.$$('[data-acao="item-abrir"]'))[0]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[0]; await inp.fill(termo);
     await p.waitForSelector('.add-res:not([hidden]) li[data-k]'); await p.keyboard.press('Enter');
     await p.waitForFunction(() => document.activeElement && document.activeElement.classList.contains('qtd'));
     await p.keyboard.type(qtd); await p.keyboard.press('Enter'); await p.waitForTimeout(500);

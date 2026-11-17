@@ -46,21 +46,22 @@ window.desenharPainel = function (o) {
   const d = $('#orc-painel'); if (!d) return;
   if (!o.qtd_itens || !o.total) { d.innerHTML = ''; return; }
   const aberto = PREF.ler('infocustos-painel', 'aberto') === 'aberto';
-  const maes = o.etapas.filter((e) => e.nivel !== 2);  // o total de cada etapa já inclui as subetapas
+  const maes = o.etapas.filter((e) => e.nivel === 1);  // o total de cada célula construtiva já inclui as etapas e subetapas
   const max = Math.max(...maes.map((e) => e.total), 0.01);
-  const etapas = maes.map((e) => `<li><button type="button" class="pe-linha" data-etapa="${e.id}" aria-pressed="${ORC.filtro === e.id}" title="Mostrar só esta etapa na planilha">
+  const etapas = maes.map((e) => `<li><button type="button" class="pe-linha" data-etapa="${e.id}" aria-pressed="${ORC.filtro === e.id}" title="Mostrar só esta célula construtiva na planilha">
       <span class="pe-nome"><b>${e.numero}</b> ${esc(e.titulo)}</span><span class="pe-valor">${brl.format(e.total)}</span>
       <span class="pe-trilho"><i style="width:${Math.max(e.total > 0 ? 1.5 : 0, (e.total / max) * 100)}%"></i></span><span class="pe-pct">${pct.format(e.peso)}</span></button></li>`).join('');
   const abc = curvaABC(o);
   const cont = (c) => abc.filter((x) => x.classe === c).length;
   const dv = o.divisao;
   const barras = dv ? PAINEL_PARTES.filter(([k]) => dv[k] > 0).map(([k, n, cor]) => `<span style="flex-grow:${dv[k]};background:var(${cor})" title="${n}: ${pct.format(dv[k])}"></span>`).join('') : '';
-  const legenda = dv ? PAINEL_PARTES.map(([k, n, cor]) => `<div style="--cor:var(${cor})">${n}<b>${brl.format(o.custo_total * dv[k])}</b><span class="pct">${pct.format(dv[k])}</span></div>`).join('') : '';
+  const vr = valoresDe(o.etapas.flatMap((e) => e.itens));  // a mesma conta da planilha, item a item
+  const legenda = dv ? PAINEL_PARTES.map(([k, n, cor]) => `<div style="--cor:var(${cor})">${n}<b>${brl.format(vr[k])}</b><span class="pct">${pct.format(dv[k])}</span></div>`).join('') : '';
   const estreia = ORC.painelVisto !== o.id; ORC.painelVisto = o.id;
   d.innerHTML = `<section class="painel-orc${estreia ? ' estreia' : ''}" aria-label="Resumo visual do orçamento">
     <button type="button" class="painel-alternar" aria-expanded="${aberto}" data-painel-alternar>Resumo visual${SETA}</button>
     <div class="painel-grade"${aberto ? '' : ' hidden'}>
-      <article class="pcartao"><h3>Custo por etapa <span class="sub">${o.bdi_no_total ? 'a custo, sem BDI' : 'com BDI'} · clique para filtrar a planilha</span></h3><ul class="pe-lista">${etapas}</ul></article>
+      <article class="pcartao"><h3>Custo por célula construtiva <span class="sub">${o.bdi_no_total ? 'a custo, sem BDI' : 'com BDI'} · clique para filtrar a planilha</span></h3><ul class="pe-lista">${etapas}</ul></article>
       <article class="pcartao"><h3>Curva ABC <span class="sub">valor acumulado dos itens</span></h3>
         <div class="grafico-caixa" id="abc-caixa">${graficoABC(abc)}<div class="dica" id="abc-dica" hidden></div></div>
         <p class="pcartao-nota"><b>A</b> ${cont('A')} ${cont('A') === 1 ? 'item' : 'itens'} · <b>B</b> ${cont('B')} · <b>C</b> ${cont('C')} · clique num ponto para achar o item</p></article>
@@ -150,7 +151,7 @@ window.ligarArrastar = function (corpo, o, atualizar) {
     // etapa: move-se entre as irmãs (etapas entre si, levando as subetapas junto; subetapas dentro da mesma etapa)
     const tbs = [...corpo.querySelectorAll('tbody.etapa')];
     const grupos = tipo === 'etapa'
-      ? tbs.filter((tb) => tb.dataset.pai === meuEl.dataset.pai).map((tb) => [tb, ...(tb.dataset.pai ? [] : tbs.filter((x) => x.dataset.pai === tb.dataset.etapa))])
+      ? tbs.filter((tb) => tb.dataset.pai === meuEl.dataset.pai).map((tb) => { const g = [tb]; for (let k = 0; k < g.length; k += 1) g.push(...tbs.filter((x) => x.dataset.pai === g[k].dataset.etapa)); return g.sort((a, b) => tbs.indexOf(a) - tbs.indexOf(b)); })
       : [...corpo.querySelectorAll('tbody.etapa > tr')].map((tr) => [tr]);
     const pecas = grupos.map((els, ordem) => {
       const r0 = els[0].getBoundingClientRect(), r1 = els[els.length - 1].getBoundingClientRect(), alt = r1.bottom - r0.top, el = els[0], tb = el.closest('tbody');

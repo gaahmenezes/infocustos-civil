@@ -26,7 +26,7 @@ const U = 'http://localhost:8100/index.html';
   await p.click('.lista-orc a'); await p.waitForSelector('.planilha');
   const tot = await p.textContent('.orc-totais .total b');
   ok(tot === 'R$ 183.255,06', 'Total do exemplo igual ao do servidor: ' + tot);
-  const inp = (await p.$$('.add-q'))[2]; await inp.fill('textura acrilica'); await p.waitForSelector('.add-res:not([hidden]) li[data-k]');
+  const abre = (await p.$$('[data-acao="item-abrir"]'))[2]; if (abre && await abre.isVisible()) await abre.click(); const inp = (await p.$$('.add-q'))[2]; await inp.fill('textura acrilica'); await p.waitForSelector('.add-res:not([hidden]) li[data-k]');
   await p.keyboard.press('Enter'); await p.waitForFunction(() => document.activeElement.classList.contains('qtd'));
   await p.keyboard.type('300'); await p.keyboard.press('Enter'); await p.waitForTimeout(300);
   ok((await p.$$('tr.item')).length === 7, 'Item adicionado pela busca da etapa');

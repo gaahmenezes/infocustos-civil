@@ -59,8 +59,8 @@ function folhaCapa(emp, o) {
 
 function folhaResumo(emp, o) {
   const dv = o.divisao;
-  const itensDe = (e) => o.etapas.filter((x) => x.id === e.id || x.pai_id === e.id).reduce((s, x) => s + x.itens.length, 0);
-  const linhas = o.etapas.map((e) => `<tr${e.nivel === 2 ? ' class="rel-sub"' : ''}><td class="n">${e.numero}</td><td>${esc(e.titulo)}</td><td class="num">${itensDe(e)}</td>
+  const itensDe = (e) => [e, ...descendentesDe(o, e.id)].reduce((s, x) => s + x.itens.length, 0);
+  const linhas = o.etapas.map((e) => `<tr${e.nivel > 1 ? ` class="rel-sub rel-n${e.nivel}"` : ''}><td class="n">${e.numero}</td><td>${esc(e.titulo)}</td><td class="num">${itensDe(e)}</td>
       <td class="num">${money(e.custo_total)}</td><td class="num"><b>${money(e.total)}</b></td>
       <td class="rel-peso"><span class="peso"><i style="width:${e.peso * 100}%"></i></span>${pct.format(e.peso)}</td></tr>`).join('');
   const partes = dv ? PAINEL_PARTES.map(([k, n, cor]) => `<div style="--cor:var(${cor})">${n}<b>${brl.format(o.custo_total * dv[k])}</b><span class="pct">${pct.format(dv[k])}</span></div>`).join('') : '';
@@ -76,7 +76,7 @@ function folhaResumo(emp, o) {
 
 function folhaPlanilha(emp, o) {
   const cs = o.bdi_no_total ? 6 : 7;  // com o BDI só no total, a coluna "Preço c/ BDI" não existe
-  const corpo = o.etapas.map((e) => `<tr class="rel-etapa${e.nivel === 2 ? ' rel-sub' : ''}"><td class="n">${e.numero}</td><td colspan="${cs - 1}">${esc(e.titulo)}</td><td class="num">${money(e.total)}</td></tr>
+  const corpo = o.etapas.map((e) => `<tr class="rel-etapa${e.nivel > 1 ? ` rel-sub rel-n${e.nivel}` : ''}"><td class="n">${e.numero}</td><td colspan="${cs - 1}">${esc(e.titulo)}</td><td class="num">${money(e.total)}</td></tr>
     ${e.itens.map((i) => `<tr><td class="n">${i.numero}</td><td class="rel-cod">${esc(i.codigo)}<span>${esc(rotuloBase(i.base, i.codigo))}</span></td><td>${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
       <td class="num">${qtdFmt.format(i.quantidade)}</td><td class="num">${money(i.custo_unit)}</td>${o.bdi_no_total ? '' : `<td class="num">${money(i.preco_unit)}</td>`}<td class="num">${money(i.total)}</td></tr>`).join('')}`).join('');
   return `<section class="folha">${cabecalhoFolha(emp, o)}

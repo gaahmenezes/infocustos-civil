@@ -11,14 +11,14 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   await api('post', `/api/orcamentos/${o.id}/itens`, { etapa_id: o.etapas[0].id, tipo: 'servico', base: 'SINAPI', codigo: '87878', quantidade: 100 });
   await p.goto(U + `/#/orcamento/${o.id}`); await p.waitForSelector('.planilha-orc tr.item');
   // --- subetapas
-  await p.click('[data-acao="subetapa-nova"]'); await p.waitForSelector('tbody.etapa.sub');
-  v(await p.evaluate(() => document.activeElement.classList.contains('etapa-titulo')), 'Botão "+ Subetapa" cria a subetapa e já deixa o nome pronto para digitar');
+  await p.click('[data-acao="filha-nova"]'); await p.waitForSelector('tbody.etapa.sub');
+  v(await p.evaluate(() => document.activeElement.classList.contains('etapa-titulo')), 'Botão "+ Etapa" cria a etapa dentro da célula e já deixa o nome pronto para digitar');
   await p.keyboard.type('Alvenaria de vedação'); await p.keyboard.press('Enter'); await p.waitForTimeout(500);
-  v((await txt(p, 'tbody.etapa.sub .etapa-cab .n')).includes('1.2'), 'A subetapa é numerada depois dos itens diretos da etapa: 1.2');
-  v(await p.$('tbody.etapa.sub [data-acao="subetapa-nova"]') === null, 'Subetapa não oferece criar outra dentro dela (dois níveis)');
-  await p.fill('tbody.etapa.sub .add-q', 'pedreiro com encargos'); await p.waitForSelector('tbody.etapa.sub .add-res li[data-k]'); await p.keyboard.press('Enter');
+  v((await txt(p, 'tbody.etapa.sub .etapa-cab .n')).includes('1.2'), 'A etapa é numerada depois dos itens diretos da célula: 1.2');
+  v(await p.$('tbody.etapa.sub [data-acao="filha-nova"]') !== null, 'A etapa oferece "+ Subetapa" (três níveis)');
+  await p.click('tbody.etapa.sub [data-acao="item-abrir"]'); await p.fill('tbody.etapa.sub .add-q', 'pedreiro com encargos'); await p.waitForSelector('tbody.etapa.sub .add-res li[data-k]'); await p.keyboard.press('Enter');
   await p.waitForSelector('tbody.etapa.sub tr.item'); await p.keyboard.type('40'); await p.keyboard.press('Enter'); await p.waitForTimeout(900);
-  v((await txt(p, 'tbody.etapa.sub tr.item .n')).includes('1.2.1'), 'Item dentro da subetapa: 1.2.1');
+  v((await txt(p, 'tbody.etapa.sub tr.item .n')).includes('1.2.1'), 'Item dentro da etapa: 1.2.1');
   const totEtapa = num(await txt(p, 'tbody.etapa:not(.sub) .etapa-cab td.num b')), totSub = num(await txt(p, 'tbody.etapa.sub .etapa-cab td.num b'));
   const totItem = num(await txt(p, 'tbody.etapa:not(.sub) tr.item .c-total'));
   v(Math.abs(totEtapa - totSub - totItem) < 0.02, `Total da etapa (${totEtapa}) = item direto (${totItem}) + subetapa (${totSub})`);
@@ -40,7 +40,7 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   v(Math.abs(num(await txt(p, 'tbody.etapa:not(.sub) tr.item .c-custo')) - 6.19) < 0.011 || true, 'Chave desligada devolve o custo cheio');
   // --- excluir etapa com subetapa e desfazer
   await p.click('tbody.etapa:not(.sub) [data-acao="etapa-excluir"]'); await p.waitForSelector('[data-desfazer]');
-  v(/1 subetapa e 2 itens/.test(await txt(p, '#aviso')), 'Excluir a etapa avisa que leva a subetapa e os itens: ' + (await txt(p, '#aviso')).slice(0, 70));
+  v(/1 etapa e 2 itens/.test(await txt(p, '#aviso')), 'Excluir a célula avisa que leva a etapa e os itens: ' + (await txt(p, '#aviso')).slice(0, 70));
   await p.click('[data-desfazer]'); await p.waitForSelector('tbody.etapa.sub tr.item');
   v((await p.$$('tr.item')).length === 2, 'Desfazer devolve a etapa, a subetapa e os itens');
   // --- nome da base própria

@@ -1024,34 +1024,39 @@ async def anexar_orcamento_sienge(request: Request, simular: bool = False, nome:
             for it in itens:
                 if it['ref'] is None:
                     it['ref'] = ('insumo', proprias.BASE, proprias.cod_ins(usados['ORC:' + chave_nome(it['descricao'])[:80]]))
-    # estrutura: títulos acima do item viram etapa (todos menos o último, juntos) e subetapa (o último)
+    # estrutura: os títulos acima do item viram célula construtiva, etapa e subetapa (os três últimos níveis do arquivo;
+    # se ele tiver mais de três, os de cima se juntam na célula: "TORRES › BLOCO A")
     nomes_tit = {t['codigo']: t['descricao'] for t in titulos}
     prof = max((t['nivel'] for t in titulos), default=0)  # quantos níveis de título o arquivo tem
+    cortes = [max(prof - 2, 1), prof - 1, prof] if prof >= 3 else list(range(1, prof + 1))  # tamanho do código de cada nível
     with orc_mod.orc() as c:
         oid = c.execute('INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em) VALUES (?,?,?,?,?,?,?,?)',
                         ((nome.strip() or r['obra'] or 'Orçamento SIENGE')[:200], cliente.strip()[:200], local.strip()[:200], ref, bdi_final,
                          f"Anexado do relatório Orçamento do SIENGE, obra {r['obra']}, data-base do arquivo {r['data_base'] or '-'}.", agora, agora)).lastrowid
-        ordem, e_ids, s_ids, pos, linhas = 0, {}, {}, {}, []
+        ordem, ids, pos, linhas = 0, {}, {}, []
+        por_nivel = [set(), set(), set()]
         with proprias.sessao(c):
             for it in itens:
-                # níveis de título do arquivo: os primeiros formam a etapa ("TORRES › FUNDAÇÃO") e o último, a subetapa.
-                # Item lançado direto num nível mais alto (código com .000) fica na etapa, sem subetapa.
                 partes = it['codigo'].split('.')
                 tit = [nomes_tit.get('.'.join(partes[:k])) for k in range(1, len(partes))]
-                de_etapa = [t for t in tit[:max(prof - 1, 1)] if t]
-                etapa = ' › '.join(de_etapa) or 'Serviços'
-                sub = tit[prof - 1] if prof >= 2 and len(tit) >= prof else None
-                ke = '.'.join(partes[:max(prof - 1, 1)])  # pelo código, não pelo nome: duas etapas podem ter o mesmo título
-                if ke not in e_ids:
-                    ordem += 1
-                    e_ids[ke] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, etapa[:200], None)).lastrowid
-                alvo = e_ids[ke]
-                if sub:
-                    ks = '.'.join(partes[:prof])
-                    if ks not in s_ids:
+                alvo, pai = None, None
+                for n, corte in enumerate(cortes):
+                    if corte > len(tit):
+                        break  # item lançado num nível mais alto fica no último que ele tem
+                    nome_n = ' › '.join(t for t in tit[:corte] if t) if n == 0 else tit[corte - 1]
+                    if not nome_n:
+                        continue
+                    k = '.'.join(partes[:corte])  # pelo código, não pelo nome: duas etapas podem ter o mesmo título
+                    if k not in ids:
                         ordem += 1
-                        s_ids[ks] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, sub[:200], alvo)).lastrowid
-                    alvo = s_ids[ks]
+                        ids[k] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, nome_n[:200], pai)).lastrowid
+                    pai = alvo = ids[k]; por_nivel[n].add(k)
+                if alvo is None:
+                    if 'Serviços' not in ids:
+                        ordem += 1
+                        ids['Serviços'] = c.execute('INSERT INTO etapa (orcamento_id, ordem, titulo, pai_id) VALUES (?,?,?,?)', (oid, ordem, 'Serviços', None)).lastrowid
+                        por_nivel[0].add('Serviços')
+                    alvo = ids['Serviços']
                 pos[alvo] = pos.get(alvo, 0) + 1
                 tipo, base, cod = it['ref']
                 p = orc_mod.preco_na_base(tipo, base, cod, ref)
@@ -1062,4 +1067,4 @@ async def anexar_orcamento_sienge(request: Request, simular: bool = False, nome:
         c.executemany('''INSERT INTO item (orcamento_id, etapa_id, ordem, tipo, base, codigo, descricao, unidade, quantidade, custo_unit, referencia)
             VALUES (?,?,?,?,?,?,?,?,?,?,?)''', linhas)
         o = orc_mod.calcular(c, oid)
-    return resumo | {'orcamento_id': oid, 'etapas': len(e_ids), 'subetapas': len(s_ids), 'custo_aplicativo': o['custo_total'], 'total_aplicativo': o['total']}
+    return resumo | {'orcamento_id': oid, 'celulas': len(por_nivel[0]), 'etapas': len(por_nivel[1]), 'subetapas': len(por_nivel[2]), 'custo_aplicativo': o['custo_total'], 'total_aplicativo': o['total']}

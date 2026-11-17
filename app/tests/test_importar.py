@@ -284,11 +284,12 @@ def test_anexar_orcamento_do_sienge_liga_os_itens_pelo_nome():
     assert abs(s['soma_arquivo'] - s['total_arquivo']) < 0.01 and len(c.get('/api/orcamentos').json()) == antes  # simular não grava
     r = c.post('/api/importar/orcamento-sienge?nome=Obra%20anexada', content=pdf).json()
     o = c.get(f"/api/orcamentos/{r['orcamento_id']}").json()
-    assert [(e['numero'], e['titulo']) for e in o['etapas']] == [('1', 'TORRES › FUNDAÇÃO'), ('1.2', 'Radier')] and o['bdi'] == 0
+    # célula construtiva › etapa › subetapa, como no SIENGE
+    assert [(e['numero'], e['titulo'], e['nivel']) for e in o['etapas']] == [('1', 'TORRES', 1), ('1.1', 'FUNDAÇÃO', 2), ('1.1.2', 'Radier', 3)] and o['bdi'] == 0
     itens = {i['numero']: i for e in o['etapas'] for i in e['itens']}
-    assert itens['1.2.1']['codigo'] == comps['Regularização Manual'] and itens['1.2.1']['descricao'] == 'Regularização Manual'  # nome como está na base
-    assert itens['1.2.2']['codigo'] == comps['Tela aço CA-60, Q-61, malha 15x15cm']
-    assert itens['1.1']['tipo'] == 'insumo' and itens['1.1']['custo_unit'] == 193.48 and itens['1.1']['base_nome'] == 'Obra anexo'
-    assert abs(o['total'] - 1354.31) < 0.01 and itens['1.2.1']['total'] == 967.36  # preço com 4 casas, total igual ao do arquivo
+    assert itens['1.1.2.1']['codigo'] == comps['Regularização Manual'] and itens['1.1.2.1']['descricao'] == 'Regularização Manual'  # nome como está na base
+    assert itens['1.1.2.2']['codigo'] == comps['Tela aço CA-60, Q-61, malha 15x15cm']
+    assert itens['1.1.1']['tipo'] == 'insumo' and itens['1.1.1']['custo_unit'] == 193.48 and itens['1.1.1']['base_nome'] == 'Obra anexo'
+    assert abs(o['total'] - 1354.31) < 0.01 and itens['1.1.2.1']['total'] == 967.36  # preço com 4 casas, total igual ao do arquivo
     c.delete(f"/api/orcamentos/{r['orcamento_id']}")
     c.delete(f'/api/proprias/bases/{bid}')

@@ -21,12 +21,12 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await p.click(`[data-recolher="${e2}"]`); await p.waitForTimeout(350);
   v(await p.getAttribute(`[data-recolher="${e2}"]`, 'aria-expanded') === 'false' && !(await p.isVisible(`tbody[data-etapa="${s1}"]`)), 'Recolher a etapa esconde os itens e as subetapas dela');
   const resumo = await txt(p, `tbody[data-etapa="${e2}"] .etapa-resumo`);
-  v(/3 itens · 1 subetapa/.test(resumo) && await p.isVisible(`tbody[data-etapa="${e2}"] .etapa-resumo .mini-barra`), 'Cabeçalho recolhido mostra itens, subetapas e a divisão do custo: ' + resumo);
+  v(/3 itens · 1 etapa/.test(resumo) && await p.isVisible(`tbody[data-etapa="${e2}"] .etapa-resumo .mini-barra`), 'Cabeçalho recolhido mostra itens, etapas e a divisão do custo: ' + resumo);
   v((await txt(p, `tbody[data-etapa="${e2}"] .etapa-cab td.num b`)).length > 3, 'O total da etapa continua no cabeçalho');
   await p.reload(); await p.waitForSelector('.planilha-orc');
   v(await p.getAttribute(`[data-recolher="${e2}"]`, 'aria-expanded') === 'false', 'A etapa continua recolhida depois de recarregar');
-  await p.click('[data-plan-nivel="etapas"]'); await p.waitForTimeout(300);
-  v((await p.$$('tr.item')).every ? (await p.$$eval('tr.item', (x) => x.every((t) => t.offsetParent === null))) : false, '"Só etapas" recolhe todas: nenhum item à vista');
+  await p.click('[data-plan-nivel="1"]'); await p.waitForTimeout(300);
+  v((await p.$$('tr.item')).every ? (await p.$$eval('tr.item', (x) => x.every((t) => t.offsetParent === null))) : false, '"Só células" recolhe todas: nenhum item à vista');
   await p.screenshot({ path: OUT + '/plan_so_etapas.png', fullPage: true });
   await p.click('[data-plan-nivel="tudo"]'); await p.waitForTimeout(400);
   v(await p.$$eval('tr.item', (x) => x.every((t) => t.offsetParent !== null)), '"Tudo aberto" mostra todos os itens de novo');

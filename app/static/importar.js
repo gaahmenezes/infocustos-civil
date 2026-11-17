@@ -397,6 +397,6 @@ document.addEventListener('click', async (e) => {
     await recarregarBases(); MEMORIA.clear();
     limparAnexo();  // nada do arquivo fica preso na tela
     location.hash = rotaOrc(r.orcamento_id);
-    avisar(`${VISTO}Orçamento anexado: ${r.itens.toLocaleString('pt-BR')} itens em ${r.etapas} etapas e ${r.subetapas} subetapas · total ${brl.format(r.total_aplicativo)} (no arquivo, ${brl.format(r.total_arquivo)}).`, 12000);
+    avisar(`${VISTO}Orçamento anexado: ${r.itens.toLocaleString('pt-BR')} itens em ${r.celulas ? `${r.celulas} células construtivas, ` : ""}${r.etapas} etapas e ${r.subetapas} subetapas · total ${brl.format(r.total_aplicativo)} (no arquivo, ${brl.format(r.total_arquivo)}).`, 12000);
   } catch (err) { ANX.enviando = false; avisar(esc(err.message), 9000); window.desenharAnexar(); }
 });
