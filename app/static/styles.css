@@ -2183,3 +2183,12 @@ body:has(.plan-add) .aviso { bottom: calc(96px + env(safe-area-inset-bottom, 0px
   .planilha-orc tbody.n1 .etapa-cab td { background: #FDE9A6 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .planilha-orc tbody.n2 .etapa-cab td { background: #EEF1F4 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 }
+/* divisão de cada serviço: unitário e total de mão de obra e material, sob a descrição */
+.item-div { display: flex; flex-wrap: wrap; gap: 2px 14px; margin-top: 4px; font-size: 12px; color: var(--tinta-3); line-height: 1.35; }
+.idv { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.idv i { width: 7px; height: 7px; border-radius: 2px; background: var(--cor); align-self: center; }
+.idv b { font-weight: 600; color: var(--tinta-2); font-variant-numeric: tabular-nums; }
+.idv-un { color: var(--tinta-3); }
+.idv em { font-style: normal; font-variant-numeric: tabular-nums; }
+@media print { .item-div { display: none; } }
+.idv-un { font-weight: 400; }

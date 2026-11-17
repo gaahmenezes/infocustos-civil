@@ -25,6 +25,16 @@ function valoresDe(itens) {
   return p;
 }
 const ANALITICO = [['mo', 'Mão de obra', '--c-mo'], ['mat', 'Material', '--c-mat'], ['equip', 'Equipamento', '--c-equip'], ['terc', 'Terceiros', '--c-terc']];
+// cada serviço: quanto do custo unitário e do total é mão de obra, material, equipamento e terceiros (a custo, sem BDI)
+const CURTO = { mo: 'Mão de obra', mat: 'Material', equip: 'Equipamento', terc: 'Terceiros' };
+function divisaoItem(i) {
+  if (!i.div || !i.custo_unit) return '';
+  const un = unid(i.unidade);
+  const partes = ANALITICO.filter(([k]) => (i.div[k] || 0) >= (k === 'mo' || k === 'mat' ? 0.0005 : 0.01));
+  if (!partes.length) return '';
+  return `<span class="item-div" role="group" aria-label="Divisão do custo: ${partes.map(([k]) => `${CURTO[k]} ${brl.format(i.custo_unit * i.div[k])} por ${esc(i.unidade)}, ${brl.format(i.custo_total * i.div[k])} no total`).join('; ')}">${partes.map(([k, , cor]) =>
+    `<span class="idv" style="--cor:var(${cor})" title="${CURTO[k]}: ${pct.format(i.div[k])} do custo"><i></i>${CURTO[k]} <b>${brl.format(i.custo_unit * i.div[k])}<span class="idv-un">/${un}</span></b> <em>· ${REAIS.format(i.custo_total * i.div[k])}</em></span>`).join('')}</span>`;
+}
 // sem centavos nas colunas da divisão (o valor exato aparece ao passar o mouse)
 const REAIS = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 // divisão em colunas fixas, dentro do cabeçalho da célula e da etapa: as colunas ficam alinhadas de uma linha para a outra
@@ -401,7 +411,7 @@ function desenharPlanilha(o) {
       ${e.itens.map((i) => { const cl = classe.get(`${i.tipo}|${i.base}|${i.codigo}`) || 'C', peso = i.total / somaEtapas; return `<tr class="item${ORC.destaque === `${i.tipo}|${i.base}|${i.codigo}` ? ' destaque' : ''}" data-item="${i.id}">
         <td class="n"><button type="button" class="pega" data-pega="item" data-id="${i.id}" aria-label="Mover o item ${i.numero}: arraste ou use as setas para cima e para baixo" title="Arraste para mudar a ordem ou a etapa">⠿</button>${i.numero}</td>
         <td class="cod">${codLink(i.tipo, i.base, i.codigo, { ...mesDoItem(o, i), orc: o.id })}</td>
-        <td class="desc">${esc(i.descricao)}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}${i.total > 0 ? `<span class="regua regua-${cl}" role="img" style="--p:${Math.max(0.6, (i.total / maiorItem) * 100).toFixed(2)}%" title="${pct.format(peso)} do total · classe ${cl} da curva ABC" aria-label="${pct.format(peso)} do total, classe ${cl}"></span>` : ''}</td>
+        <td class="desc">${esc(i.descricao)}${ORC.analitico ? divisaoItem(i) : ''}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}${i.total > 0 ? `<span class="regua regua-${cl}" role="img" style="--p:${Math.max(0.6, (i.total / maiorItem) * 100).toFixed(2)}%" title="${pct.format(peso)} do total · classe ${cl} da curva ABC" aria-label="${pct.format(peso)} do total, classe ${cl}"></span>` : ''}</td>
         <td class="c-un">${unid(i.unidade)}</td>
         <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
         <td class="num c-custo" data-rotulo="Custo unit."${o.bdi_no_total ? ' colspan="2"' : ''}>${money(i.custo_unit)}</td>
