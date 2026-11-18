@@ -156,7 +156,9 @@ async function abrirEditor(codigo, dados) {
       <td class="desc">${esc(i.descricao)}${i.base !== 'PROPRIA' && i.referencia ? `<span class="ref-mes">${esc(i.base)} ${esc(curto(i.referencia))}</span>` : ''}</td>
       <td class="c-un">${unid(i.unidade)}</td>
       <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.qtd)}" data-prop-item="${i.id}" aria-label="Coeficiente do item ${k + 1}"></td>
-      <td class="num">${money(i.custo_unit)}</td>
+      <td class="num">${i.base === 'PROPRIA' && !i.eh_servico
+        ? `<input class="qtd prop-preco-ins" inputmode="decimal" value="${i.custo_unit == null ? '' : num2.format(i.custo_unit)}" placeholder="0,00" data-prop-preco="${esc(i.codigo)}" aria-label="Preço do insumo ${esc(i.codigo)} (grava na base)" title="Muda o preço do insumo na base: vale para todas as composições que o usam">`
+        : money(i.custo_unit)}</td>
       <td class="num total">${i.custo_total == null ? '<span class="sem-preco">sem preço</span>' : money(i.custo_total)}</td>
       <td class="num">${total && i.custo_total ? pct.format(i.custo_total / total) : ''}</td>
       <td class="ctrl"><button type="button" class="mini" data-prop-mover="cima" data-id="${i.id}" aria-label="Subir o item ${k + 1}"${k ? '' : ' disabled'}>↑</button>
@@ -203,6 +205,7 @@ async function abrirEditor(codigo, dados) {
   if (antes != null && antes !== total) contar($('.preco-grande .num-grande'), antes, total);
   ligarEditor(c);
   if (foco.propItem) { const q = $(`.qtd[data-prop-item="${foco.propItem}"]`); if (q) q.focus(); }
+  if (foco.propPreco) { const q = $(`[data-prop-preco="${foco.propPreco}"]`); if (q) q.focus(); }
 }
 
 // ---------- preço: composto (soma dos itens) ou informado (proposta), por grupo de insumo ----------
@@ -308,12 +311,25 @@ function ligarEditor(c) {
   });
   const corpo = $('#prop-corpo');
   corpo.addEventListener('change', async (e) => {
-    const t = e.target; if (!t.dataset.propItem) return;
+    const t = e.target;
+    if (t.dataset.propPreco) {  // preço do insumo próprio: grava na base (vale em todas as composições que usam o insumo)
+      const v = t.value.trim() ? lerNum(t.value) : null;
+      if (v != null && !(v >= 0)) { avisar('Digite um preço válido, como 12,50.'); return; }
+      try {
+        await req(`/api/proprias/insumos/${encodeURIComponent(t.dataset.propPreco)}`, 'PATCH', { preco: v, data_preco: new Date().toISOString().slice(0, 10) });
+        const ins = await req(`/api/insumo/PROPRIA/${encodeURIComponent(t.dataset.propPreco)}`);  // base e onde é usado
+        abrirEditor(c.codigo, await req(`/api/proprias/composicoes/${c.codigo}?${qsRefs()}`));
+        const outras = (ins.usado_em || 1) - 1;
+        avisar(`${VISTO}Preço de ${esc(ins.codigo)} atualizado na ${esc(ins.base_nome || 'base')}${outras > 0 ? ` (vale também em ${outras} ${outras === 1 ? 'outra composição' : 'outras composições'})` : ''}.`);
+      } catch (err) { avisar(esc(err.message)); }
+      return;
+    }
+    if (!t.dataset.propItem) return;
     const v = lerNum(t.value);
     if (!(v >= 0)) { avisar('Digite um coeficiente válido, como 0,25.'); return; }
     try { abrirEditor(c.codigo, await req(`/api/proprias/itens/${t.dataset.propItem}?${qsRefs()}`, 'PATCH', { qtd: v })); } catch (err) { avisar(esc(err.message)); }
   });
-  corpo.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.dataset.propItem) { e.preventDefault(); e.target.blur(); } });
+  corpo.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.target.dataset.propItem || e.target.dataset.propPreco)) { e.preventDefault(); e.target.blur(); } });
   corpo.addEventListener('click', async (e) => {
     const mv = e.target.closest('[data-prop-mover]'), tira = e.target.closest('[data-prop-tirar]');
     try {

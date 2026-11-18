@@ -2266,3 +2266,7 @@ a.res.prop-res:hover { border-color: var(--tinta-3); }
   .prop-enc-extra { grid-template-columns: minmax(0, 1fr) 96px 28px; }
   .prop-enc-extra select { grid-column: 1 / -1; grid-row: 2; }
 }
+
+/* preço do insumo próprio editável dentro da composição (grava na base) */
+.prop-tabela input.prop-preco-ins { width: 96px; text-align: right; border-style: dashed; }
+.prop-tabela input.prop-preco-ins:focus { border-style: solid; }
