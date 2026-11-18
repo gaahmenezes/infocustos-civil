@@ -3,7 +3,8 @@
    A composição própria é viva: o preço de cada item vem da data-base escolhida para a base dele (seletor do topo),
    então trocar o mês atualiza o custo sozinho. Itens podem ser de qualquer base ou próprios (inclusive outras composições próprias). */
 
-const PROP = { aba: 'composicoes', dados: null, atual: null, editarIns: null, base: 1 };
+const PROP = { aba: 'composicoes', dados: null, atual: null, editarIns: null, base: 1, q: {}, ordem: {}, lim: {} };
+try { PROP.ordem = JSON.parse(localStorage.getItem('prop-ordem') || '{}') || {}; } catch (_) { /* ok */ }
 try { PROP.base = Number(localStorage.getItem('infocustos-base-propria')) || 1; } catch (_) { /* sem armazenamento */ }
 const lembrarBase = (id) => { PROP.base = id; try { localStorage.setItem('infocustos-base-propria', String(id)); } catch (_) { /* ok */ } };
 async function recarregarBases() {
@@ -39,22 +40,17 @@ async function desenharListaProprias() {
   const seg = `<div class="segmentos" role="radiogroup" aria-label="Mostrar" data-prop-aba>
     <button type="button" role="radio" data-v="composicoes" aria-checked="${PROP.aba === 'composicoes'}">Composições <span class="n">${composicoes.length}</span></button>
     <button type="button" role="radio" data-v="insumos" aria-checked="${PROP.aba === 'insumos'}">Insumos próprios <span class="n">${insumos.length}</span></button></div>`;
-  const cartoes = composicoes.length ? `<ul class="orc-lista">${composicoes.map((c) => `<li><a class="orc-cartao prop-cartao" href="#/propria/${esc(c.codigo)}">
-      <span class="prop-c-topo">${codigoBase(c.codigo, 'PROPRIA')}${c.origem_codigo ? `<span class="prop-origem">a partir de ${esc(c.origem_codigo)}/${esc(c.origem_base)}</span>` : ''}</span>
-      <span class="orc-c-nome">${esc(c.descricao)}</span>
-      <span class="orc-c-sub">${esc(c.grupo || 'Sem grupo')}</span>
-      <span class="orc-c-total">${c.custo_total == null ? 'Sem preço' : grana(c.custo_total)}</span>
-      <span class="orc-c-rot">por ${unid(c.unidade)} · sem BDI${c.itens_sem_preco ? ` · <b class="prop-alerta">${c.itens_sem_preco} ${c.itens_sem_preco === 1 ? 'item' : 'itens'} sem preço</b>` : ''}</span>
-      <span class="orc-c-meta">${c.qtd_itens} ${c.qtd_itens === 1 ? 'item' : 'itens'} · alterada em ${dataFmt(c.atualizado_em)}</span></a></li>`).join('')}</ul>`
+  // busca e ordem em cada lista (composições no formato da Consulta, insumos na tabela)
+  const barraLista = (qual, total) => `<div class="prop-filtro" data-prop-filtro="${qual}">
+      <input type="search" class="cmp-q" data-prop-q="${qual}" value="${esc(PROP.q[qual] || '')}" placeholder="Buscar ${qual === 'composicoes' ? 'composição' : 'insumo'} por nome, código, código do SIENGE ou grupo" aria-label="Buscar ${qual === 'composicoes' ? 'composições' : 'insumos'} desta base">
+      <label class="ordem">Ordenar por <select data-prop-ordem="${qual}">${Object.entries(ORDENS_PROP).filter(([k]) => k !== 'recentes' || qual === 'composicoes')
+        .map(([k, [n]]) => `<option value="${k}"${k === ordemDe(qual) ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
+      <span class="prop-contagem" data-prop-contagem="${qual}">${total}</span></div>`;
+  const cartoes = composicoes.length ? `${barraLista('composicoes', '')}<ul class="lista prop-lista" data-prop-lista="composicoes"></ul>`
     : vazio('folha', 'Nenhuma composição própria ainda', 'Monte uma do zero ou abra uma composição da ORSE, da SINAPI ou do SICRO e use "Criar composição própria a partir desta".',
       '<button type="button" class="botao primario" data-nova-propria>Nova composição</button>');
-  const tabela = insumos.length ? `<div class="tabela-rola"><table class="planilha prop-insumos"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Tipo e grupo</th>
-      <th class="num">Preço</th><th>Data e fonte</th><th class="ctrl"><span class="sr">Ações</span></th></tr></thead><tbody>
-      ${insumos.map((i) => `<tr><td class="cod">${codLink('insumo', 'PROPRIA', i.codigo)}</td><td class="desc">${esc(i.descricao)}</td><td>${unid(i.unidade)}</td>
-        <td>${esc(TIPO_INSUMO[i.tipo] || i.tipo)}${i.grupo ? `<span class="prop-grupo">${esc(i.grupo)}</span>` : ''}</td><td class="num">${i.preco == null ? '<span class="sem-preco">sem preço</span>' : money(i.preco)}</td>
-        <td class="prop-fonte">${esc([dataBr(i.data_preco), i.fonte].filter(Boolean).join(' · ')) || '—'}</td>
-        <td class="ctrl"><button type="button" class="mini" data-editar-insumo="${esc(i.codigo)}" aria-label="Editar ${esc(i.codigo)}">✎</button>
-          <button type="button" class="mini" data-excluir-insumo="${esc(i.codigo)}" aria-label="Excluir ${esc(i.codigo)}">✕</button></td></tr>`).join('')}</tbody></table></div>`
+  const tabela = insumos.length ? `${barraLista('insumos', '')}<div class="tabela-rola"><table class="planilha prop-insumos"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Tipo e grupo</th>
+      <th class="num">Preço</th><th>Data e fonte</th><th class="ctrl"><span class="sr">Ações</span></th></tr></thead><tbody data-prop-lista="insumos"></tbody></table></div>`
     : vazio('folha', 'Nenhum insumo próprio ainda', 'Cadastre materiais, mão de obra ou equipamentos com o preço da sua cotação.',
       '<button type="button" class="botao primario" data-novo-insumo>Novo insumo</button>');
   d.innerHTML = `<div class="pagina proprias">
@@ -70,7 +66,71 @@ async function desenharListaProprias() {
     <section class="${PROP.aba === 'composicoes' ? '' : 'oculto'}" data-prop-painel="composicoes">${cartoes}</section>
     <section class="ficha ${PROP.aba === 'insumos' ? '' : 'oculto'}" data-prop-painel="insumos">${tabela}</section>
   </div>`;
+  desenharListaProp('composicoes'); desenharListaProp('insumos');
 }
+
+// ---------- busca e ordem das listas da base própria ----------
+const ORDENS_PROP = {
+  recentes: ['Alteradas por último', (a, b) => String(b.atualizado_em || '').localeCompare(String(a.atualizado_em || ''))],
+  nome: ['Nome (A a Z)', (a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR')],
+  codigo: ['Código', (a, b) => numCod(a.codigo) - numCod(b.codigo)],
+  origem: ['Código do SIENGE', (a, b) => (numCod(a.codigo_origem) - numCod(b.codigo_origem)) || String(a.codigo_origem).localeCompare(String(b.codigo_origem))],
+};
+const numCod = (c) => { const m = String(c || '').match(/\d+/); return m ? Number(m[0]) : Number.MAX_SAFE_INTEGER; };
+const ordemDe = (qual) => PROP.ordem[qual] || (qual === 'composicoes' ? 'recentes' : 'nome');
+const PASSO_PROP = 80;
+function filtrarProp(qual) {
+  const termos = semAcento(PROP.q[qual] || '').split(/\s+/).filter(Boolean);
+  const lista = PROP.dados[qual].filter((x) => { if (!termos.length) return true; const alvo = semAcento(`${x.descricao} ${x.codigo} ${x.codigo_origem || ''} ${x.grupo || ''}`); return termos.every((t) => alvo.includes(t)); });
+  return lista.sort(ORDENS_PROP[ordemDe(qual)][1]);
+}
+function desenharListaProp(qual) {
+  const alvo = document.querySelector(`[data-prop-lista="${qual}"]`); if (!alvo || !PROP.dados) return;
+  const lista = filtrarProp(qual), lim = PROP.lim[qual] || PASSO_PROP, vis = lista.slice(0, lim);
+  const cont = document.querySelector(`[data-prop-contagem="${qual}"]`);
+  if (cont) cont.innerHTML = `<b>${lista.length.toLocaleString('pt-BR')}</b> ${lista.length === 1 ? 'resultado' : 'resultados'}${lista.length > vis.length ? ` · mostrando ${vis.length.toLocaleString('pt-BR')}` : ''}`;
+  const mais = lista.length > vis.length ? `<button type="button" class="botao" data-prop-mais="${qual}">Mostrar mais ${Math.min(PASSO_PROP, lista.length - vis.length).toLocaleString('pt-BR')} <span class="n">de ${(lista.length - vis.length).toLocaleString('pt-BR')} restantes</span></button>` : '';
+  const realce = (t) => { const termos = semAcento(PROP.q[qual] || '').split(/\s+/).filter((x) => x.length > 1); if (!termos.length) return esc(t);
+    // marca as palavras buscadas sem perder os acentos do texto
+    const sa = semAcento(t); const marcas = new Array(t.length).fill(false);
+    termos.forEach((x) => { let k = sa.indexOf(x); while (k >= 0) { for (let m = k; m < k + x.length; m += 1) marcas[m] = true; k = sa.indexOf(x, k + 1); } });
+    let out = '', dentro = false; [...t].forEach((ch, k) => { if (marcas[k] !== dentro) { out += marcas[k] ? '<mark>' : '</mark>'; dentro = marcas[k]; } out += esc(ch); }); return out + (dentro ? '</mark>' : ''); };
+  if (qual === 'composicoes') {
+    alvo.innerHTML = vis.length ? vis.map((c) => {
+      const meta = [c.grupo || 'Sem grupo', c.tipo_preco === 'informado' ? 'preço informado' : '', c.codigo_origem ? `SIENGE ${c.codigo_origem}` : '', c.origem_codigo ? `a partir de ${c.origem_codigo}/${c.origem_base}` : '',
+        `${c.qtd_itens} ${c.qtd_itens === 1 ? 'item' : 'itens'}`].filter(Boolean);
+      const div = c.divisao ? barraDivisao(c.divisao) : '';
+      return `<li><a class="res prop-res prop-cartao" href="#/propria/${esc(c.codigo)}">
+        <span class="res-cod">${codigoBase(c.codigo, 'PROPRIA')}<span class="tipo tipo-servico">Composição</span></span>
+        <span class="res-desc">${realce(c.descricao)}</span>
+        <span class="res-meta">${esc(meta.join(' · '))}${c.itens_sem_preco ? ` · <b class="prop-alerta">${c.itens_sem_preco} ${c.itens_sem_preco === 1 ? 'item' : 'itens'} sem preço</b>` : ''}</span>
+        <span class="res-preco">${c.custo_total == null ? '<span class="sem-preco">sem preço</span>' : brl.format(c.custo_total)}<span class="un" title="Unidade">${unid(c.unidade)}</span></span>
+        <span class="res-div">${div}</span></a></li>`; }).join('') + (mais ? `<li class="mais-li">${mais}</li>` : '')
+      : `<li class="nada"><b>Nenhuma composição com "${esc(PROP.q[qual])}".</b> Tente menos palavras ou o código.</li>`;
+  } else {
+    alvo.innerHTML = vis.length ? vis.map((i) => `<tr><td class="cod">${codLink('insumo', 'PROPRIA', i.codigo)}${i.codigo_origem ? `<span class="prop-orig">SIENGE ${esc(i.codigo_origem)}</span>` : ''}</td><td class="desc">${realce(i.descricao)}</td><td>${unid(i.unidade)}</td>
+        <td>${esc(TIPO_INSUMO[i.tipo] || i.tipo)}${i.grupo ? `<span class="prop-grupo">${esc(i.grupo)}</span>` : ''}</td><td class="num">${i.preco == null ? '<span class="sem-preco">sem preço</span>' : money(i.preco)}</td>
+        <td class="prop-fonte">${esc([dataBr(i.data_preco), i.fonte].filter(Boolean).join(' · ')) || '—'}</td>
+        <td class="ctrl"><button type="button" class="mini" data-editar-insumo="${esc(i.codigo)}" aria-label="Editar ${esc(i.codigo)}">✎</button>
+          <button type="button" class="mini" data-excluir-insumo="${esc(i.codigo)}" aria-label="Excluir ${esc(i.codigo)}">✕</button></td></tr>`).join('') + (mais ? `<tr class="mais-tr"><td colspan="7">${mais}</td></tr>` : '')
+      : `<tr><td colspan="7" class="nada"><b>Nenhum insumo com "${esc(PROP.q[qual])}".</b> Tente menos palavras ou o código.</td></tr>`;
+  }
+}
+let tProp = 0;
+document.addEventListener('input', (e) => {
+  const q = e.target.closest && e.target.closest('[data-prop-q]'); if (!q) return;
+  clearTimeout(tProp); tProp = setTimeout(() => { PROP.q[q.dataset.propQ] = q.value; PROP.lim[q.dataset.propQ] = PASSO_PROP; desenharListaProp(q.dataset.propQ); }, 120);
+});
+document.addEventListener('change', (e) => {
+  const o = e.target.closest && e.target.closest('[data-prop-ordem]'); if (!o) return;
+  PROP.ordem[o.dataset.propOrdem] = o.value; PROP.lim[o.dataset.propOrdem] = PASSO_PROP;
+  try { localStorage.setItem('prop-ordem', JSON.stringify(PROP.ordem)); } catch (_) { /* ok */ }
+  desenharListaProp(o.dataset.propOrdem);
+});
+document.addEventListener('click', (e) => {
+  const b = e.target.closest && e.target.closest('[data-prop-mais]'); if (!b) return;
+  PROP.lim[b.dataset.propMais] = (PROP.lim[b.dataset.propMais] || PASSO_PROP) + PASSO_PROP; desenharListaProp(b.dataset.propMais);
+});
 
 // ---------- editor ----------
 async function abrirEditor(codigo, dados) {
@@ -83,7 +143,7 @@ async function abrirEditor(codigo, dados) {
   }
   const antes = PROP.atual && PROP.atual.codigo === c.codigo ? PROP.atual.custo_total : null;
   PROP.atual = c;
-  const total = c.custo_total;
+  const total = c.tipo_preco === 'informado' ? c.preco_composto : c.custo_total;
   const datas = Object.entries(c.datas || {}).map(([b, m]) => `<span class="dt-etq"><span class="cb-base cb-${b}">${b}</span>${esc(m.map(curto).join(', '))}</span>`).join('');
   const origem = c.origem ? (() => {
     const dif = c.origem.custo ? total / c.origem.custo - 1 : null;
@@ -105,27 +165,29 @@ async function abrirEditor(codigo, dados) {
   const foco = document.activeElement && document.activeElement.dataset ? { ...document.activeElement.dataset } : {};
   d.innerHTML = `<article class="ficha prop-editor">
     <a class="botao voltar-lista" href="#/proprias">Composições próprias</a>
-    <div class="ficha-cod">${codigoBase(c.codigo, 'PROPRIA')}<span class="selo">Composição própria</span>${c.origem_codigo ? `<span>a partir de ${esc(c.origem_codigo)}/${esc(c.origem_base)}</span>` : ''}</div>
+    <div class="ficha-cod">${codigoBase(c.codigo, 'PROPRIA')}<span class="selo">Composição própria</span>${c.tipo_preco === 'informado' ? `<span class="selo selo-inf">Preço informado${c.proposta ? ` · ${esc(c.proposta)}` : ''}</span>` : ''}${c.origem_codigo ? `<span>a partir de ${esc(c.origem_codigo)}/${esc(c.origem_base)}</span>` : ''}</div>
     <div class="prop-campos">
       <label class="prop-desc">Descrição<textarea id="prop-descricao" rows="2" maxlength="400">${esc(c.descricao)}</textarea></label>
       <label>Unidade<input id="prop-unidade" value="${esc(c.unidade)}" maxlength="20"></label>
       <label>Grupo<input id="prop-grupo" value="${esc(c.grupo === 'Composições próprias' ? '' : c.grupo)}" maxlength="120" placeholder="Ex.: Revestimentos"></label>
       <label class="prop-obs">Observações<textarea id="prop-obs" rows="2" maxlength="2000" placeholder="Premissas, fonte das cotações, produtividade adotada...">${esc(c.observacoes)}</textarea></label>
     </div>
+    ${blocoPreco(c)}
     <div class="ficha-linha">
-      <div class="preco-grande"><span class="valor">${grana(total)}</span><span class="por">por <b class="un">${unid(c.unidade)}</b> · sem BDI</span></div>
-      <div class="fatos"><div>Itens<b>${c.itens.length}</b></div>${c.usada_em ? `<div>Usada em<b>${c.usada_em} ${c.usada_em === 1 ? 'composição' : 'composições'}</b></div>` : ''}
+      <div class="preco-grande"><span class="valor">${grana(c.custo_total)}</span><span class="por">por <b class="un">${unid(c.unidade)}</b> · sem BDI</span></div>
+      <div class="fatos"><div>Preço<b>${c.tipo_preco === 'informado' ? 'Informado' : 'Composto'}</b></div><div>Itens<b>${c.itens.length}</b></div>${c.usada_em ? `<div>Usada em<b>${c.usada_em} ${c.usada_em === 1 ? 'composição' : 'composições'}</b></div>` : ''}
         <div>Datas-base<span class="prop-datas-l">${datas || '—'}</span></div></div>
       <div class="acoes">
-        <button type="button" class="botao primario" data-adicionar="servico" data-base="PROPRIA" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}"${c.itens.length ? '' : ' disabled'}>Adicionar ao orçamento</button>
+        <button type="button" class="botao primario" data-adicionar="servico" data-base="PROPRIA" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}"${c.itens.length || c.tipo_preco === 'informado' ? '' : ' disabled'}>Adicionar ao orçamento</button>
         ${menu('Mais', [`<a role="menuitem" href="#/composicao/PROPRIA/${esc(c.codigo)}">Ver ficha (tabela e fluxo)</a>`,
           '<button type="button" role="menuitem" data-prop-duplicar>Duplicar</button>', '<button type="button" role="menuitem" class="perigo" data-prop-excluir>Excluir composição</button>'])}
       </div>
     </div>
     ${origem}
     ${c.custo_total ? `<div class="prop-div">${barraDivisao(c.divisao)}</div>` : ''}
+    ${c.tipo_preco === 'informado' ? `<p class="aviso-fonte prop-inf-nota" role="note">Vale o <b>preço informado</b>${c.proposta ? ` (${esc(c.proposta)}${c.data_proposta ? `, ${esc(dataBr(c.data_proposta))}` : ''})` : ''}. Os itens abaixo ficam como referência: a soma deles daria <b>${brl.format(c.preco_composto || 0)}</b>${c.preco_composto ? ` (${c.custo_total >= c.preco_composto ? '+' : '−'}${pct.format(Math.abs(c.custo_total / c.preco_composto - 1))})` : ''}.</p>` : ''}
     ${c.itens_sem_preco ? `<p class="aviso-fonte" role="note"><b>${c.itens_sem_preco} ${c.itens_sem_preco === 1 ? 'item está' : 'itens estão'} sem preço</b> na data-base escolhida e não entram no custo. Troque o mês da base no topo ou substitua o item.</p>` : ''}
-    <div class="tabela-barra"><h3>Itens da composição</h3></div>
+    <div class="tabela-barra"><h3>Itens da composição${c.tipo_preco === 'informado' ? ' <span class="sub">(referência)</span>' : ''}</h3></div>
     <div class="tabela-rola"><table class="planilha planilha-orc prop-tabela">
       <thead><tr><th class="n">#</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Coeficiente</th><th class="num">Custo unit.</th><th class="num">Custo total</th><th class="num">%</th><th class="ctrl"><span class="sr">Ações</span></th></tr></thead>
       <tbody id="prop-corpo">${linhas}
@@ -142,11 +204,48 @@ async function abrirEditor(codigo, dados) {
   if (foco.propItem) { const q = $(`.qtd[data-prop-item="${foco.propItem}"]`); if (q) q.focus(); }
 }
 
+// ---------- preço: composto (soma dos itens) ou informado (proposta), por grupo de insumo ----------
+const arred = (x) => Math.round((x + Number.EPSILON) * 100) / 100;
+const GRUPOS_PRECO = [['mo', 'Mão de obra', '--c-mo'], ['mat', 'Materiais', '--c-mat'], ['equip', 'Equipamentos', '--c-equip'], ['terc', 'Serviços de terceiros', '--c-terc']];
+function blocoPreco(c) {
+  const inf = c.tipo_preco === 'informado', v = c.preco_informado || {};
+  return `<section class="prop-preco" aria-label="Preço da composição">
+    <div class="prop-preco-cab"><h3>Preço</h3>
+      <label>Tipo de preço <select id="prop-tipo-preco"><option value="composto"${inf ? '' : ' selected'}>Composto (soma dos itens)</option><option value="informado"${inf ? ' selected' : ''}>Informado (proposta)</option></select></label></div>
+    ${inf ? `<div class="prop-preco-grade">
+      <table class="planilha prop-grupos"><thead><tr><th>Grupo de insumo</th><th class="num">Preço por ${unid(c.unidade)} (R$)</th><th class="num">%</th></tr></thead><tbody>
+        ${GRUPOS_PRECO.map(([k, n, cor]) => `<tr><td><span class="pg-cor" style="--cor:var(${cor})"></span>${n}</td>
+          <td class="num"><input class="qtd prop-inf" inputmode="decimal" data-prop-inf="${k}" value="${v[k] ? num2.format(v[k]) : ''}" placeholder="0,00" aria-label="${n}: preço por ${esc(c.unidade)}"></td>
+          <td class="num">${c.custo_total ? pct.format((v[k] || 0) / c.custo_total) : ''}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td><b>Total informado</b></td><td class="num"><b>${brl.format(c.custo_total || 0)}</b></td><td></td></tr></tfoot></table>
+      <div class="prop-proposta">
+        <label>Proposta<input id="prop-proposta" value="${esc(c.proposta || '')}" maxlength="200" placeholder="Fornecedor e nº da proposta"></label>
+        <label>Data da proposta<input id="prop-data-proposta" type="date" value="${esc(c.data_proposta || '')}"></label>
+        <p class="sub">Informe o preço da proposta dividido por grupo de insumo. Ele vale na consulta e nos orçamentos, e a divisão em mão de obra e material sai destes valores.</p>
+      </div></div>` : '<p class="sub prop-preco-dica">O preço é a soma dos itens abaixo. Para usar o valor de uma proposta (empreiteiro, fornecedor), escolha <b>Informado</b>.</p>'}
+  </section>`;
+}
+
 function ligarEditor(c) {
   const salvar = async (campo, valor) => {
     try { PROP.atual = await req(`/api/proprias/composicoes/${c.codigo}?${qsRefs()}`, 'PATCH', { [campo]: valor }); avisar('Salvo.'); }
     catch (e) { avisar(esc(e.message)); }
   };
+  const refazer = async (dados) => { try { abrirEditor(c.codigo, await req(`/api/proprias/composicoes/${c.codigo}?${qsRefs()}`, 'PATCH', dados)); avisar('Salvo.'); } catch (e) { avisar(esc(e.message)); } };
+  $('#prop-tipo-preco').addEventListener('change', (e) => {
+    const inf = e.target.value === 'informado', v = c.preco_informado || {};
+    // ao passar para "informado" sem valores ainda, começa com a divisão atual dos itens (o usuário ajusta pela proposta)
+    const vazio = !Object.values(v).some((x) => x > 0);
+    refazer(inf && vazio && c.custo_total ? { tipo_preco: 'informado', preco_inf_mo: arred(c.custo_total * (c.divisao.mo || 0)), preco_inf_mat: arred(c.custo_total * (c.divisao.mat || 0)),
+      preco_inf_equip: arred(c.custo_total * (c.divisao.equip || 0)), preco_inf_terc: arred(c.custo_total * (c.divisao.terc || 0)) } : { tipo_preco: e.target.value });
+  });
+  document.querySelectorAll('[data-prop-inf]').forEach((inp) => inp.addEventListener('change', () => {
+    const val = inp.value.trim() ? lerNum(inp.value) : 0;
+    if (!(val >= 0)) { avisar('Digite um valor válido, como 12,50.'); return; }
+    refazer({ [`preco_inf_${inp.dataset.propInf}`]: val });
+  }));
+  document.querySelectorAll('[data-prop-inf]').forEach((inp) => inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); inp.blur(); } }));
+  [['prop-proposta', 'proposta'], ['prop-data-proposta', 'data_proposta']].forEach(([id, campo]) => { const el = $(`#${id}`); if (el) el.addEventListener('change', () => refazer({ [campo]: el.value.trim() })); });
   [['prop-descricao', 'descricao'], ['prop-unidade', 'unidade'], ['prop-grupo', 'grupo'], ['prop-obs', 'observacoes']].forEach(([id, campo]) => {
     $(`#${id}`).addEventListener('change', (e) => {
       const v = e.target.value.trim();

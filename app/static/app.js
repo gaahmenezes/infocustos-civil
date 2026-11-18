@@ -772,7 +772,7 @@ function desenharComposicao(c) {
   const ref = estado.ref ? estado.ref.descricao.replace('-1', '') : '';
   $('#detalhe').innerHTML = `<article class="ficha">
     ${botaoVoltar()}
-    <div class="ficha-cod">${codigoBase(c.codigo, c.base)}<span class="selo">${dnit ? 'Composição padrão DNIT' : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
+    <div class="ficha-cod">${codigoBase(c.codigo, c.base)}<span class="selo">${dnit ? 'Composição padrão DNIT' : c.tipo_preco === 'informado' ? `Preço informado${c.proposta ? ` · ${esc(c.proposta)}` : ' (proposta)'}` : 'Composição analítica'}</span>${c.grupo ? `<span>${esc(c.grupo)}${c.subgrupo ? ' › ' + esc(c.subgrupo) : ''}</span>` : ''}</div>
     <h2>${esc(c.descricao || 'Composição sem descrição na base')}</h2>
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${grana(total)}</span><span class="por">por <b class="un">${unid(c.unidade)}</b>${dnit && c.prod_equipe ? ` · produção da equipe ${num2.format(c.prod_equipe)} ${esc(c.unidade)}/h` : ''}</span></div>

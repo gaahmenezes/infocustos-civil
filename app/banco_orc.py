@@ -85,7 +85,15 @@ COLUNAS_NOVAS = (('orcamento', 'sem_complementares', 'INTEGER NOT NULL DEFAULT 0
                  ('composicao_propria', 'codigo_origem', "TEXT DEFAULT ''"),
                  ('insumo_proprio', 'base_id', 'INTEGER NOT NULL DEFAULT 1'),
                  ('insumo_proprio', 'codigo_origem', "TEXT DEFAULT ''"),
-                 ('insumo_proprio', 'grupo', "TEXT DEFAULT ''"))  # grupo e família de onde o insumo veio (SIENGE)
+                 ('insumo_proprio', 'grupo', "TEXT DEFAULT ''"),  # grupo e família de onde o insumo veio (SIENGE)
+                 # preço da composição: "composto" (soma dos itens) ou "informado" (proposta), por grupo de insumo
+                 ('composicao_propria', 'tipo_preco', "TEXT DEFAULT 'composto'"),
+                 ('composicao_propria', 'preco_inf_mo', 'DOUBLE PRECISION'),
+                 ('composicao_propria', 'preco_inf_mat', 'DOUBLE PRECISION'),
+                 ('composicao_propria', 'preco_inf_equip', 'DOUBLE PRECISION'),
+                 ('composicao_propria', 'preco_inf_terc', 'DOUBLE PRECISION'),
+                 ('composicao_propria', 'proposta', "TEXT DEFAULT ''"),
+                 ('composicao_propria', 'data_proposta', "TEXT DEFAULT ''"))
 
 if POSTGRES:
     import psycopg

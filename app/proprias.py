@@ -195,7 +195,7 @@ class Calculo:
                 raise HTTPException(404, f'A composição própria {codigo} não existe.')
             self.pilha.add(cid)
             try:
-                return self._montar(cid, cp)
+                return self._montar(cid, dict(cp))
             finally:
                 self.pilha.discard(cid)
 
@@ -233,6 +233,12 @@ class Calculo:
                           'unidade': d['unidade'] if d else it['unidade'], 'qtd': it['qtd'], 'custo_unit': preco, 'custo_total': custo,
                           'referencia': d['referencia'] if d else None, 'tem_composicao': bool(d and d['tem_composicao'])})
         total = round(total, 4)  # 4 casas, como os sistemas de onde as composições são importadas (SIENGE)
+        composto, tipo_preco = total, (cp.get('tipo_preco') or 'composto')
+        if tipo_preco == 'informado':
+            # preço da proposta, por grupo de insumo: vale ele, e não a soma dos itens
+            div = {k: float(cp.get(f'preco_inf_{k}') or 0.0) for k in div}
+            total = round(sum(div.values()), 4)
+            faltam, compl = 0, 0.0
         fr = {k: (v / total if total else 0) for k, v in div.items()}
         r = {'base': BASE, 'codigo': cod_comp(cid), 'id': cid, 'descricao': cp['descricao'], 'unidade': cp['unidade'], 'grupo': cp['grupo'] or 'Composições próprias',
              'subgrupo': '', 'observacoes': cp['observacoes'] or '', 'modelo': 'PROPRIA', 'prod_equipe': None, 'encargo_social': None, 'referencia': None,
@@ -240,7 +246,9 @@ class Calculo:
              'custo_equipamento': round(div['equip'], 4), 'custo_servico_terceiro': round(div['terc'], 4), 'divisao': fr,
              'itens_sem_preco': faltam, 'itens': itens, 'origem_base': cp['origem_base'] or '', 'origem_codigo': cp['origem_codigo'] or '',
              'atualizado_em': cp['atualizado_em'], 'fonte': 'PROPRIA', 'base_id': cp.get('base_id') or 1,
-             'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or ''}
+             'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or '',
+             'tipo_preco': tipo_preco, 'preco_composto': composto, 'proposta': cp.get('proposta') or '', 'data_proposta': cp.get('data_proposta') or '',
+             'preco_informado': {k: float(cp.get(f'preco_inf_{k}') or 0.0) for k in ('mo', 'mat', 'equip', 'terc')}}
         self.memo[cid] = r
         return r
 
@@ -415,6 +423,13 @@ class EdicaoComposicao(BaseModel):
     grupo: Optional[str] = Field(None, max_length=120)
     observacoes: Optional[str] = Field(None, max_length=2000)
     base_id: Optional[int] = None  # mudar a composição de base
+    tipo_preco: Optional[Literal['composto', 'informado']] = None
+    preco_inf_mo: Optional[float] = Field(None, ge=0)
+    preco_inf_mat: Optional[float] = Field(None, ge=0)
+    preco_inf_equip: Optional[float] = Field(None, ge=0)
+    preco_inf_terc: Optional[float] = Field(None, ge=0)
+    proposta: Optional[str] = Field(None, max_length=200)
+    data_proposta: Optional[str] = Field(None, max_length=10)
 
 
 class NovoItem(BaseModel):
@@ -439,13 +454,14 @@ def listar(refs: str = '', base_id: Optional[int] = None):
                 continue
             try:
                 k = calc.composicao(cod_comp(cp['id']))
-                total, n, faltam = k['custo_total'], len(k['itens']), k['itens_sem_preco']
+                total, n, faltam, div = k['custo_total'], len(k['itens']), k['itens_sem_preco'], k.get('divisao')
             except HTTPException:
-                total, n, faltam = None, 0, 0
+                total, n, faltam, div = None, 0, 0, None
             comps.append({'codigo': cod_comp(cp['id']), 'descricao': cp['descricao'], 'unidade': cp['unidade'], 'grupo': cp['grupo'] or '',
                           'custo_total': total, 'qtd_itens': n, 'itens_sem_preco': faltam, 'atualizado_em': cp['atualizado_em'],
                           'origem_base': cp['origem_base'] or '', 'origem_codigo': cp['origem_codigo'] or '',
-                          'base_id': cp.get('base_id') or 1, 'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or ''})
+                          'base_id': cp.get('base_id') or 1, 'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or '',
+                          'divisao': div, 'tipo_preco': cp.get('tipo_preco') or 'composto'})
         ins = [{'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'tipo': i['tipo'], 'preco': i['preco'],
                 'data_preco': i['data_preco'] or '', 'fonte': i['fonte'] or '', 'atualizado_em': i['atualizado_em'],
                 'base_id': i.get('base_id') or 1, 'base_nome': nome_da_base(i.get('base_id')), 'codigo_origem': i.get('codigo_origem') or '',
@@ -613,7 +629,7 @@ def obter_composicao(codigo: str, refs: str = ''):
 @router.patch('/proprias/composicoes/{codigo}')
 def editar_composicao(codigo: str, d: EdicaoComposicao, refs: str = ''):
     cid = id_de(codigo, 'P')
-    campos = {k: v.strip() for k, v in d.model_dump(exclude_unset=True).items() if v is not None}
+    campos = {k: (v.strip() if isinstance(v, str) else v) for k, v in d.model_dump(exclude_unset=True).items() if v is not None}
     with gravando() as c:
         if not c.execute('SELECT 1 FROM composicao_propria WHERE id = ?', (cid,)).fetchone():
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
@@ -761,10 +777,15 @@ def duplicar(codigo: str, refs: str = ''):
         cp = c.execute('SELECT * FROM composicao_propria WHERE id = ?', (cid,)).fetchone()
         if not cp:
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
+        cp = dict(cp)
         cur = c.execute('''INSERT INTO composicao_propria (descricao, unidade, grupo, observacoes, origem_base, origem_codigo, criado_em, atualizado_em, base_id)
             VALUES (?,?,?,?,?,?,?,?,?)''', (f"{cp['descricao']} (cópia)", cp['unidade'], cp['grupo'], cp['observacoes'], cp['origem_base'], cp['origem_codigo'],
                                          orc_mod.agora(), orc_mod.agora(), cp['base_id'] or 1))
         novo = cur.lastrowid
+        # a cópia leva também o preço informado (proposta), se houver
+        c.execute('''UPDATE composicao_propria SET tipo_preco = ?, preco_inf_mo = ?, preco_inf_mat = ?, preco_inf_equip = ?, preco_inf_terc = ?,
+            proposta = ?, data_proposta = ? WHERE id = ?''', (cp.get('tipo_preco') or 'composto', cp.get('preco_inf_mo'), cp.get('preco_inf_mat'),
+                                                             cp.get('preco_inf_equip'), cp.get('preco_inf_terc'), cp.get('proposta') or '', cp.get('data_proposta') or '', novo))
         for it in c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall():
             c.execute('INSERT INTO composicao_propria_item (composicao_id, ordem, tipo, base, codigo, qtd, descricao, unidade) VALUES (?,?,?,?,?,?,?,?)',
                       (novo, it['ordem'], it['tipo'], it['base'], it['codigo'], it['qtd'], it['descricao'], it['unidade']))

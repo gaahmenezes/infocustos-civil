@@ -2192,3 +2192,31 @@ body:has(.plan-add) .aviso { bottom: calc(96px + env(safe-area-inset-bottom, 0px
 .idv em { font-style: normal; font-variant-numeric: tabular-nums; }
 @media print { .item-div { display: none; } }
 .idv-un { font-weight: 400; }
+/* ---------- bases próprias: busca, ordem e lista no formato da Consulta ---------- */
+.prop-filtro { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin: 4px 0 12px; }
+.prop-filtro .cmp-q { flex: 1 1 360px; min-width: 0; }
+.prop-contagem { font-size: 13px; color: var(--tinta-2); margin-left: auto; }
+.prop-lista { padding: 0; overflow: visible; display: grid; grid-template-columns: repeat(auto-fill, minmax(380px, 1fr)); gap: 10px; }
+.prop-lista li + li { margin-top: 0; }
+.prop-lista .mais-li, .prop-lista .nada { grid-column: 1 / -1; }
+a.res.prop-res { text-decoration: none; color: inherit; height: 100%; border: 1px solid var(--linha); background: var(--superficie); }
+a.res.prop-res:hover { border-color: var(--tinta-3); }
+.prop-orig { display: block; font-size: 11px; color: var(--tinta-3); margin-top: 2px; }
+.prop-insumos .mais-tr td { text-align: center; padding: 12px; }
+@media (max-width: 760px) { .prop-lista { grid-template-columns: 1fr; } .prop-contagem { margin-left: 0; } }
+/* ---------- composição própria: preço composto ou informado (proposta) ---------- */
+.prop-preco { border: 1px solid var(--linha); border-radius: var(--raio-g); padding: 12px 16px 14px; margin: 0 0 16px; background: var(--superficie); }
+.prop-preco-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.prop-preco-cab h3 { margin: 0; font-size: 14px; letter-spacing: .03em; text-transform: uppercase; }
+.prop-preco-cab label { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.prop-preco-cab select { min-height: 36px; padding: 0 10px; border: 1px solid var(--linha-forte); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); font: inherit; font-weight: 600; }
+.prop-preco-grade { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px 24px; margin-top: 12px; align-items: start; }
+.prop-grupos { margin-top: 0; } .prop-grupos .prop-inf { width: 130px; }
+.pg-cor { display: inline-block; width: 9px; height: 9px; border-radius: 2px; background: var(--cor); margin-right: 8px; }
+.prop-proposta { display: grid; gap: 10px; }
+.prop-proposta label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.prop-proposta input { min-height: 38px; padding: 0 10px; border: 1px solid var(--linha-forte); border-radius: var(--raio); background: var(--superficie); color: var(--tinta); font: inherit; }
+.prop-preco-dica { margin: 8px 0 0; }
+.prop-inf-nota { border-left-color: var(--acao); }
+@media (max-width: 760px) { .prop-preco-grade { grid-template-columns: 1fr; } .prop-grupos .prop-inf { width: 110px; } }
+.selo-inf { background: var(--planta-claro); color: var(--tinta); border: 1px solid var(--planta-borda); }

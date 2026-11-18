@@ -318,3 +318,26 @@ def test_anexar_nao_pega_preco_de_outra_obra_nem_perde_item_com_descricao_quebra
     o = c.get(f"/api/orcamentos/{r['orcamento_id']}").json()
     assert abs(o['total'] - 9233.33) < 0.02, o['total']  # o total do aplicativo bate com o do arquivo
     c.delete(f"/api/orcamentos/{r['orcamento_id']}")
+
+
+def test_composicao_propria_com_preco_informado_por_proposta():
+    bid = c.post('/api/proprias/bases', json={'nome': 'Base proposta'}).json()['id']
+    ins = c.post('/api/proprias/insumos', json={'descricao': 'Servente proposta', 'unidade': 'h', 'preco': 10.0, 'base_id': bid}).json()['codigo']
+    k = c.post('/api/proprias/composicoes', json={'descricao': 'Forro de gesso (proposta)', 'unidade': 'm2', 'base_id': bid}).json()['codigo']
+    c.post(f'/api/proprias/composicoes/{k}/itens', json={'tipo': 'insumo', 'base': 'PROPRIA', 'codigo': ins, 'qtd': 2})
+    assert c.get(f'/api/proprias/composicoes/{k}').json()['custo_total'] == 20.0  # composto: soma dos itens
+    r = c.patch(f'/api/proprias/composicoes/{k}', json={'tipo_preco': 'informado', 'preco_inf_mo': 12.5, 'preco_inf_mat': 30, 'preco_inf_equip': 0,
+                                                       'preco_inf_terc': 0, 'proposta': 'Gesso Forte, proposta 118', 'data_proposta': '2026-11-10'}).json()
+    assert r['tipo_preco'] == 'informado' and r['custo_total'] == 42.5 and r['preco_composto'] == 20.0 and r['proposta'].startswith('Gesso')
+    assert abs(r['divisao']['mo'] - 12.5 / 42.5) < 1e-9 and abs(r['divisao']['mat'] - 30 / 42.5) < 1e-9
+    # vale na busca, no orçamento e na cópia
+    achou = [x for x in c.get('/api/busca?q=forro%20gesso%20proposta').json()['itens'] if x['codigo'] == k]
+    assert achou and achou[0]['preco'] == 42.5
+    o = c.post('/api/orcamentos', json={'nome': 'Teste proposta', 'bdi': 0}).json()
+    o = c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'PROPRIA', 'codigo': k, 'quantidade': 10}).json()
+    assert o['custo_total'] == 425.0
+    c.delete(f"/api/orcamentos/{o['id']}")
+    d = c.post(f'/api/proprias/composicoes/{k}/duplicar').json()
+    assert d['tipo_preco'] == 'informado' and d['custo_total'] == 42.5
+    # volta a composto
+    assert c.patch(f'/api/proprias/composicoes/{k}', json={'tipo_preco': 'composto'}).json()['custo_total'] == 20.0
