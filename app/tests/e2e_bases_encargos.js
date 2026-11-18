@@ -13,6 +13,9 @@ const perto = (a, b) => Math.abs(a - b) < 0.011;
   await p.waitForFunction(() => /^#\/encargos\/\d+$/.test(location.hash)); await p.waitForSelector('#enc-nome');
   const id = Number(p.url().split('/').pop());
   let base = await api('get', `/api/bases-encargos/${id}`);
+  const cabecalhoOk = () => p.evaluate(() => [...document.querySelectorAll('.enc-editavel')].every((q) => q.querySelector('thead th').getBoundingClientRect().bottom <= q.querySelector('tbody tr').getBoundingClientRect().top + 1));
+  v(await cabecalhoOk(), 'O cabeçalho da tabela fica acima da primeira linha (sem sobrepor)');
+  await p.mouse.wheel(0, 700); await p.waitForTimeout(400); v(await cabecalhoOk(), 'Também com a página rolada'); await p.mouse.wheel(0, -700);
   v(base.nome === 'Encargos Roteiro' && perto(base.total_horista, cehop.horista.total) && perto(base.total_mensalista, cehop.mensalista.total),
     `Nova base a partir da CEHOP: ${base.total_horista}% horistas e ${base.total_mensalista}% mensalistas`);
   // editar um item (A09 SECONCI: 0 → 1,20)
