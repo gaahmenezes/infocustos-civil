@@ -231,7 +231,7 @@ async function abrirOrcamento(id, dados) {
     <div class="orc-cab">
       <div class="orc-ident">
         <input class="orc-nome" id="orc-nome" value="${esc(o.nome)}" aria-label="Nome do orçamento" maxlength="200">
-        <p class="orc-dados">${[o.cliente, o.local].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('')}<span>BDI de <b>${num2.format(o.bdi)}%</b></span><span>data-base <b>${esc(nomeRef(o.referencia))}</b></span>
+        <p class="orc-dados">${[o.cliente, o.local].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('')}<span>BDI de <b>${num2.format(o.bdi)}%</b></span><span>data-base <b>${esc(nomeRef(o.referencia))}</b></span>${basesVigentes(o).restrito ? `<span>bases <b>${esc(basesVigentes(o).sel.map((b) => b.nome).join(' · ') || 'nenhuma')}</b></span>` : ''}
           <button type="button" class="link-acao" id="orc-editar" aria-expanded="${!!ORC.editando}" aria-controls="orc-campos">${ORC.editando ? 'Fechar' : 'Editar dados'}</button></p>
         <div class="orc-campos" id="orc-campos"${ORC.editando ? '' : ' hidden'}>
           <label>Cliente<input id="orc-cliente" value="${esc(o.cliente)}" placeholder="—"></label>
@@ -239,6 +239,9 @@ async function abrirOrcamento(id, dados) {
           <label class="curto">BDI (%)<input id="orc-bdi" inputmode="decimal" value="${num2.format(o.bdi)}"></label>
           <label class="curto">Data-base<select id="orc-mes">${((estado.ref && estado.ref.referencias) || []).map((r) =>
             `<option value="${esc(r.id)}"${r.id === o.referencia ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}</option>`).join('')}</select></label>
+          <fieldset class="orc-bases"><legend>Bases vigentes neste orçamento <span>a busca de itens procura só nelas; os itens já lançados não mudam</span></legend>
+            ${basesVigentes(o).todas.map((b) => `<label class="orc-base-op${b.k.startsWith('P') ? ' propria' : ''}"><input type="checkbox" data-orc-base="${esc(b.k)}"${basesVigentes(o).sel.some((x) => x.k === b.k) ? ' checked' : ''}>${esc(b.nome)}</label>`).join('')}
+          </fieldset>
         </div>
       </div>
       <div class="orc-totais" id="orc-totais"></div>
@@ -306,6 +309,13 @@ function ligarCabecalho(o) {
   // cliente e local aparecem no resumo acima dos campos: redesenha para o resumo acompanhar
   const salvarTexto = async (campo, valor) => { const n = await salvar(campo, valor); if (n) abrirOrcamento(n.id, n); };
   $('#orc-cliente').addEventListener('change', (e) => salvarTexto('cliente', e.target.value));
+  document.querySelectorAll('[data-orc-base]').forEach((cb) => cb.addEventListener('change', async () => {
+    const marcadas = [...document.querySelectorAll('[data-orc-base]:checked')].map((x) => x.dataset.orcBase);
+    if (!marcadas.length) { cb.checked = true; avisar('Deixe ao menos uma base vigente no orçamento.'); return; }
+    const todas = document.querySelectorAll('[data-orc-base]').length;
+    const n = await salvar('bases', marcadas.length === todas ? '' : marcadas.join(','));  // todas marcadas = sem restrição
+    if (n) { await abrirOrcamento(n.id, n); const b = document.querySelector(`[data-orc-base="${cb.dataset.orcBase}"]`); if (b) b.focus(); avisar(`${VISTO}Bases vigentes: ${esc(basesVigentes(n).sel.map((x) => x.nome).join(', '))}.`); }
+  }));
   $('#orc-local').addEventListener('change', (e) => salvarTexto('local', e.target.value));
   $('#orc-bdi').addEventListener('change', async (e) => {
     const v = lerNum(e.target.value);
@@ -328,6 +338,21 @@ function ligarCabecalho(o) {
     await abrirOrcamento(n.id, n); $('#orc-compl-bt').focus();
     avisar(ligar ? `${VISTO}Encargos complementares desconsiderados: ${brl.format(n.complementares)} a menos no custo direto.` : 'Encargos complementares de volta ao custo das composições.', 6000);
   });
+}
+
+// ---------- bases vigentes do orçamento: só elas aparecem na busca de itens ("" = todas) ----------
+function todasAsBases() {
+  return [...basesCarregadas().map((b) => ({ k: b, nome: b })), ...basesProprias().map((b) => ({ k: `P${b.id}`, nome: b.nome }))];
+}
+function basesVigentes(o) {
+  const todas = todasAsBases(), marcadas = (o.bases || '').split(',').map((x) => x.trim()).filter(Boolean);
+  const sel = marcadas.length ? todas.filter((b) => marcadas.includes(b.k)) : todas;
+  return { todas, sel, restrito: marcadas.length > 0 && sel.length < todas.length };
+}
+function paramsBusca(o) {
+  const { sel, restrito } = basesVigentes(o); if (!restrito) return {};
+  const ofi = sel.filter((b) => !b.k.startsWith('P')).map((b) => b.k), pro = sel.filter((b) => b.k.startsWith('P')).map((b) => b.k.slice(1));
+  return { ...(ofi.length ? { bases: ofi.join(',') } : { base: 'PROPRIA' }), proprias_ids: pro.length ? pro.join(',') : 'nenhuma' };
 }
 
 // ---------- barra de baixo: adicionar serviço, célula, etapa ou subetapa, escolhendo onde ----------
@@ -365,7 +390,7 @@ function barraAdicionar(o) {
       <button type="button" data-pa-modo="etapa" aria-pressed="${modo === 'etapa'}" aria-label="Adicionar célula, etapa ou subetapa">+ <span class="pa-longo">Célula, etapa ou subetapa</span><span class="pa-curto">Etapa</span></button></div>
     <div class="pa-campos pa-item"${modo === 'item' ? '' : ' hidden'}>
       <label class="pa-onde"><span class="pa-rot">Em</span> <select id="pa-destino" aria-label="Etapa ou subetapa onde o serviço entra">${opcoesDestino(o).map((x) => `<option value="${x.id}"${x.ok ? '' : ' disabled'}${String(x.id) === String(ORC.destino) ? ' selected' : ''}>${esc(x.rot)}</option>`).join('')}</select></label>
-      <div class="add-busca"><input class="add-q" id="pa-busca" placeholder="Descrição ou código de ${esc(nomeRef(o.referencia))}" data-etapa="${ORC.destino}" aria-label="Buscar serviço ou insumo para adicionar" autocomplete="off">
+      <div class="add-busca"><input class="add-q" id="pa-busca" placeholder="Descrição ou código${basesVigentes(o).restrito ? ` (${esc(basesVigentes(o).sel.map((b) => b.nome).join(', '))})` : ''} de ${esc(nomeRef(o.referencia))}" data-etapa="${ORC.destino}" aria-label="Buscar serviço ou insumo para adicionar" autocomplete="off">
         <ul class="add-res" role="listbox" aria-label="Itens encontrados" tabindex="0" hidden></ul></div>
     </div>
     <div class="pa-campos pa-etapa"${modo === 'etapa' ? '' : ' hidden'}>
@@ -731,7 +756,7 @@ function ligarBuscaInline(inp) {
     const q = inp.value.trim(); if (q.length < 2) { fechar(); return; }
     t = setTimeout(async () => {
       const meu = ++seqLocal;
-      const r = await req(`/api/busca?${new URLSearchParams({ q, limite: 8, ref: ORC.atual.referencia, refs: refsDoOrcamento(ORC.atual) })}`);
+      const r = await req(`/api/busca?${new URLSearchParams({ q, limite: 8, ref: ORC.atual.referencia, refs: refsDoOrcamento(ORC.atual), ...paramsBusca(ORC.atual) })}`);
       if (meu !== seqLocal) return;
       itens = r.itens.filter((x) => x.preco != null);
       ul.innerHTML = itens.length ? itens.map((x, k) => `<li data-k="${k}" role="option"><span class="res-cod">${codigoBase(x.codigo, x.base)}<span class="tipo tipo-${x.tipo}">${x.tipo === 'servico' ? 'Composição' : 'Insumo'}</span></span>

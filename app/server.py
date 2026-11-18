@@ -337,10 +337,12 @@ def _referencia(ref, refs, bases):
 
 @app.get('/api/busca')
 def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int = Query(60, le=500), ref: Optional[str] = None,
-              desde: int = Query(0, ge=0), ordem: str = 'usos', refs: str = '', bases: str = ''):
+              desde: int = Query(0, ge=0), ordem: str = 'usos', refs: str = '', bases: str = '', proprias_ids: str = ''):
     """Cada base é procurada no seu mês (`refs`). Sem texto lista a base inteira: `ordem=codigo` na ordem da tabela, `desde` para as páginas seguintes."""
+    # proprias_ids: só estas bases próprias ("2,5"); "nenhuma" = nenhuma; vazio = todas (bases vigentes de um orçamento)
+    so_proprias = None if not proprias_ids else set() if proprias_ids == 'nenhuma' else {int(x) for x in proprias_ids.split(',') if x.strip().isdigit()}
     if base.upper() == 'PROPRIA':
-        props = proprias.buscar(q, tipo, refs, limite=500)
+        props = proprias.buscar(q, tipo, refs, limite=500, base_id=so_proprias)
         lista = props[desde:desde + limite]
         grade = [{'tipo': t, 'base': 'PROPRIA', 'n': sum(1 for x in props if x['tipo'] == t)} for t in ('servico', 'insumo')]
         with conn() as c:
@@ -385,11 +387,11 @@ def api_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', limite: int
                              args + [limite, desde]).fetchall()
         # itens próprios da empresa: aparecem primeiro (com texto ou na lista da base inteira, só na primeira página)
         if base.upper() not in BASES and desde == 0:
-            props = proprias.buscar(q, tipo, refs, limite=20)
+            props = proprias.buscar(q, tipo, refs, limite=20, base_id=so_proprias) if so_proprias != set() else []
             if props:
                 rows = props + list(rows)[:max(0, limite - len(props))]
                 total += len(props)
-            todos_props = proprias.buscar(q, 'todos', refs, limite=500)
+            todos_props = proprias.buscar(q, 'todos', refs, limite=500, base_id=so_proprias) if so_proprias != set() else []
             grade = [dict(g) for g in grade] + [{'tipo': t, 'base': 'PROPRIA', 'n': n} for t in ('servico', 'insumo')
                                                  if (n := sum(1 for x in todos_props if x['tipo'] == t))]
         return {'total': total, 'referencia': r['id'], 'refs': escolha, 'grade': [dict(g) for g in grade],

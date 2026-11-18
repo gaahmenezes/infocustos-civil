@@ -86,6 +86,7 @@ class EdicaoOrcamento(BaseModel):
     observacoes: Optional[str] = None
     sem_complementares: Optional[bool] = None  # tira os encargos complementares do custo das composições
     bdi_no_total: Optional[bool] = None  # BDI aplicado uma vez sobre o custo direto total, e não item a item
+    bases: Optional[str] = Field(None, max_length=400)  # bases vigentes: "ORSE,SINAPI,P3"; vazio = todas
 
 
 class NovaEtapa(BaseModel):
@@ -505,9 +506,9 @@ def _maes_primeiro(etapas):
 def duplicar(oid: int):
     with orc() as c:
         o = calcular(c, oid)
-        cur = c.execute('''INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em, sem_complementares, bdi_no_total)
-            VALUES (?,?,?,?,?,?,?,?,?,?)''', (o['nome'] + ' (cópia)', o['cliente'], o['local'], o['referencia'], o['bdi'], o['observacoes'],
-                                              agora(), agora(), int(o['sem_complementares']), int(o['bdi_no_total'])))
+        cur = c.execute('''INSERT INTO orcamento (nome, cliente, local, referencia, bdi, observacoes, criado_em, atualizado_em, sem_complementares, bdi_no_total, bases)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)''', (o['nome'] + ' (cópia)', o['cliente'], o['local'], o['referencia'], o['bdi'], o['observacoes'],
+                                                agora(), agora(), int(o['sem_complementares']), int(o['bdi_no_total']), o.get('bases') or ''))
         novo = cur.lastrowid
         mapa = {}
         for e in o['etapas']:  # a etapa vem sempre antes das suas subetapas
@@ -786,7 +787,7 @@ class Desfazer(BaseModel):
 
 
 COLUNAS = {
-    'orcamento': ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'observacoes', 'criado_em', 'atualizado_em', 'sem_complementares', 'bdi_no_total'),
+    'orcamento': ('id', 'nome', 'cliente', 'local', 'referencia', 'bdi', 'observacoes', 'criado_em', 'atualizado_em', 'sem_complementares', 'bdi_no_total', 'bases'),
     'etapa': ('id', 'orcamento_id', 'ordem', 'titulo', 'pai_id'),
     'item': ('id', 'orcamento_id', 'etapa_id', 'ordem', 'tipo', 'base', 'codigo', 'descricao', 'unidade', 'quantidade', 'custo_unit', 'referencia'),
 }

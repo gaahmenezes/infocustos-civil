@@ -2220,3 +2220,11 @@ a.res.prop-res:hover { border-color: var(--tinta-3); }
 .prop-inf-nota { border-left-color: var(--acao); }
 @media (max-width: 760px) { .prop-preco-grade { grid-template-columns: 1fr; } .prop-grupos .prop-inf { width: 110px; } }
 .selo-inf { background: var(--planta-claro); color: var(--tinta); border: 1px solid var(--planta-borda); }
+/* ---------- bases vigentes do orçamento ---------- */
+.orc-bases { flex: 1 1 100%; border: 1px solid var(--linha); border-radius: var(--raio); padding: 8px 12px 10px; margin: 4px 0 0; display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.orc-bases legend { padding: 0 6px; font-size: 13px; font-weight: 650; color: var(--tinta-2); }
+.orc-bases legend span { font-weight: 400; color: var(--tinta-3); margin-left: 6px; }
+.orc-base-op { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 6px; padding: 5px 10px; border: 1px solid var(--linha-forte); border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--tinta); cursor: pointer; }
+.orc-base-op input { width: 15px !important; height: 15px; min-height: 0 !important; margin: 0; accent-color: var(--acao); }
+.orc-base-op:has(input:checked) { background: var(--planta-claro); border-color: var(--planta-borda); }
+.orc-base-op.propria { border-style: dashed; }

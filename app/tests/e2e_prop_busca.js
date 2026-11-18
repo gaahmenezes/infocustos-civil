@@ -8,6 +8,8 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await p.goto(U + '/#/'); await p.evaluate((id) => { localStorage.setItem('infocustos-base-propria', String(id)); localStorage.removeItem('prop-ordem'); }, base.id);
   await p.goto(U + '/#/proprias'); await p.waitForSelector('[data-prop-base]');
   await p.click(`[data-prop-base="${base.id}"]`); await p.waitForSelector('[data-prop-lista="composicoes"] .res');
+  // espera a lista da base escolhida (e não a da base que estava aberta antes)
+  await p.waitForFunction((n) => (document.querySelector('[data-prop-contagem="composicoes"]') || {}).textContent.replace(/\D/g, '').startsWith(String(n)), base.composicoes);
   // composições no formato da Consulta
   const c1 = await p.$('[data-prop-lista="composicoes"] .res');
   v(!!(await c1.$('.cb')) && !!(await c1.$('.res-preco .un')) && !!(await c1.$('.res-meta')) && !!(await c1.$('.res-div .mini-barra')), 'Composição no formato da Consulta: código e base, preço com unidade, grupo e divisão do custo');

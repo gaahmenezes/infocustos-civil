@@ -352,18 +352,20 @@ def divisao(tipo, codigo, ref=None):
             return {'mat': 1.0}
 
 
-def buscar(q: str, tipo: str, refs: str, limite: int = 40, base_id: Optional[int] = None):
+def buscar(q: str, tipo: str, refs: str, limite: int = 40, base_id=None):
     """Itens próprios que batem com o texto (todas as palavras, sem acento), no formato dos resultados da busca."""
     termos = [t for t in re.findall(r'[a-z0-9]+', sem_acento(q))]
     out = []
     a = acervo()
+    # base_id: uma base, ou um conjunto delas (as bases vigentes de um orçamento)
+    ids = set(base_id) if isinstance(base_id, (set, list, tuple)) else ({base_id} if base_id else None)
     if not a['comps'] and not a['insumos']:
         return out
     if True:
         calc = calculo_guardado(ler_refs(refs))
         if tipo in ('todos', 'servico'):
             for cp in sorted(a['comps'].values(), key=lambda x: x['descricao']):
-                if base_id and (cp.get('base_id') or 1) != base_id:
+                if ids is not None and (cp.get('base_id') or 1) not in ids:
                     continue
                 alvo = sem_acento(f"{cp['descricao']} {cod_comp(cp['id'])} {cp.get('codigo_origem') or ''}")
                 if all(t in alvo for t in termos):
@@ -378,7 +380,7 @@ def buscar(q: str, tipo: str, refs: str, limite: int = 40, base_id: Optional[int
                                 'referencia': None, 'trecho': None, 'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or ''})
         if tipo in ('todos', 'insumo'):
             for i in sorted(a['insumos'].values(), key=lambda x: x['descricao']):
-                if base_id and (i.get('base_id') or 1) != base_id:
+                if ids is not None and (i.get('base_id') or 1) not in ids:
                     continue
                 if all(t in sem_acento(f"{i['descricao']} {cod_ins(i['id'])} {i.get('codigo_origem') or ''}") for t in termos):
                     out.append({'tipo': 'insumo', 'base': BASE, 'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'],
