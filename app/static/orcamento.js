@@ -378,6 +378,8 @@ function barraAdicionar(o) {
 
 function desenharPlanilha(o) {
   lerRecolhidas(o.id);
+  // BDI zero é planilha de custo: o preço com BDI seria igual ao custo, então a coluna sai
+  const semPreco = o.bdi_no_total || !o.bdi;
   const noFiltro = ORC.filtro ? new Set([ORC.filtro, ...descendentesDe(o, ORC.filtro).map((x) => x.id)]) : null;
   const visiveis = o.etapas.filter((e) => !noFiltro || noFiltro.has(e.id));
   const porId = new Map(o.etapas.map((e) => [e.id, e]));
@@ -414,8 +416,8 @@ function desenharPlanilha(o) {
         <td class="desc">${esc(i.descricao)}${ORC.analitico ? divisaoItem(i) : ''}${i.referencia && i.referencia !== o.referencia ? `<span class="ref-item" title="Este item não existe em ${esc(nomeRef(o.referencia))} e ficou com o preço de ${esc(nomeRef(i.referencia))}">preço de ${esc(nomeRef(i.referencia))}</span>` : ''}${i.total > 0 ? `<span class="regua regua-${cl}" role="img" style="--p:${Math.max(0.6, (i.total / maiorItem) * 100).toFixed(2)}%" title="${pct.format(peso)} do total · classe ${cl} da curva ABC" aria-label="${pct.format(peso)} do total, classe ${cl}"></span>` : ''}</td>
         <td class="c-un">${unid(i.unidade)}</td>
         <td class="num c-qtd"><input class="qtd" inputmode="decimal" value="${qtdFmt.format(i.quantidade)}" data-item="${i.id}" aria-label="Quantidade do item ${i.numero}"></td>
-        <td class="num c-custo" data-rotulo="Custo unit."${o.bdi_no_total ? ' colspan="2"' : ''}>${money(i.custo_unit)}</td>
-        ${o.bdi_no_total ? '' : `<td class="num c-preco" data-rotulo="Preço c/ BDI">${money(i.preco_unit)}</td>`}
+        <td class="num c-custo" data-rotulo="Custo unit."${semPreco ? ' colspan="2"' : ''}>${money(i.custo_unit)}</td>
+        ${semPreco ? '' : `<td class="num c-preco" data-rotulo="Preço c/ BDI">${money(i.preco_unit)}</td>`}
         <td class="num total c-total" data-rotulo="Total">${money(i.total)}</td>
         <td class="ctrl">
           <button type="button" class="mini" data-acao="item-excluir" data-id="${i.id}" aria-label="Excluir item ${i.numero}">✕</button>
@@ -433,12 +435,12 @@ function desenharPlanilha(o) {
       ${ORC.analitico ? `<span class="anal-leg" aria-hidden="true">${ANALITICO.map(([, n, cor]) => `<span style="--cor:var(${cor})"><i></i>${n}</span>`).join('')}<em>custo direto, sem BDI</em></span>` : ''}
       <p class="plan-dica"><kbd>↑</kbd><kbd>↓</kbd> ou <kbd>Enter</kbd> andam entre as quantidades · <kbd>Esc</kbd> desfaz · ↖ ↘ mudam o nível</p></div>` : ''}
     ${filtrada ? `<p class="filtro-ativo">Mostrando só ${artigo(filtrada.nivel)} ${nomeNivel(filtrada.nivel)} <b>${filtrada.numero}. ${esc(filtrada.titulo)}</b><button type="button" class="link-acao" data-ver-todas>Ver o orçamento inteiro</button></p>` : ''}
-    <table class="planilha planilha-orc${o.bdi_no_total ? ' bdi-no-total' : ''}">
-      <thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num"${o.bdi_no_total ? ' colspan="2"' : ''}>Custo unit.</th>${o.bdi_no_total ? '' : '<th class="num c-preco">Preço c/ BDI</th>'}<th class="num">${o.bdi_no_total ? 'Total sem BDI' : 'Total'}</th><th></th></tr></thead>
+    <table class="planilha planilha-orc${semPreco ? ' bdi-no-total' : ''}">
+      <thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num"${semPreco ? ' colspan="2"' : ''}>Custo unit.</th>${semPreco ? '' : '<th class="num c-preco">Preço c/ BDI</th>'}<th class="num">${o.bdi_no_total ? 'Total sem BDI' : !o.bdi ? 'Total (custo)' : 'Total'}</th><th></th></tr></thead>
       ${etapas}
     </table>
     ${barraAdicionar(o)}
-    <p class="fonte">${o.bdi_no_total ? 'BDI aplicado uma única vez sobre o custo direto total: itens e etapas aparecem a custo, sem BDI.' : 'Preço com BDI e total por item arredondados em 2 casas.'} Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}${ORC.analitico ? ' A divisão em mão de obra, material, equipamento e terceiros é do custo direto, sem BDI.' : ''}</p>`;
+    <p class="fonte">${o.bdi_no_total ? 'BDI aplicado uma única vez sobre o custo direto total: itens e etapas aparecem a custo, sem BDI.' : !o.bdi ? 'Planilha de custo (BDI de 0%): os valores são a custo direto. Para uma planilha de venda, informe o BDI em "Editar dados".' : 'Preço com BDI e total por item arredondados em 2 casas.'} Custo unitário congelado na data-base em que o item entrou.${o.sem_complementares ? ' Custos unitários sem os encargos complementares da mão de obra.' : ''}${ORC.analitico ? ' A divisão em mão de obra, material, equipamento e terceiros é do custo direto, sem BDI.' : ''}</p>`;
   ligarPlanilha(o);
   aplicarRecolhidas(false);
 }
