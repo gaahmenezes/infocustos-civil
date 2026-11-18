@@ -2270,3 +2270,49 @@ a.res.prop-res:hover { border-color: var(--tinta-3); }
 /* preço do insumo próprio editável dentro da composição (grava na base) */
 .prop-tabela input.prop-preco-ins { width: 96px; text-align: right; border-style: dashed; }
 .prop-tabela input.prop-preco-ins:focus { border-style: solid; }
+
+/* bases de encargos da empresa */
+.enc-bases { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 18px; }
+.enc-base-op { display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border: 1px solid var(--linha-forte); border-radius: 999px; font-size: 13.5px; font-weight: 600; color: var(--tinta); text-decoration: none; background: var(--superficie); }
+.enc-base-op:hover { border-color: var(--planta-borda); }
+.enc-base-op.propria { border-style: dashed; }
+.enc-base-op.ativa { background: var(--planta-claro); border-color: var(--planta-borda); border-style: solid; }
+.enc-base-op .selo-mini { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; padding: 1px 6px; border-radius: 4px; background: var(--tinta); color: var(--superficie); }
+.enc-base-tot { font-weight: 500; color: var(--tinta-3); font-variant-numeric: tabular-nums; }
+.enc-nova { margin-left: auto; }
+.enc-nova > summary { list-style: none; }
+.enc-nova > summary::-webkit-details-marker { display: none; }
+.enc-base-cab { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 18px; margin: 0 0 18px; }
+.enc-base-cab .sub { flex: 1 1 260px; margin: 0; font-size: 13px; color: var(--tinta-3); }
+.enc-nome { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--tinta-2); flex: 0 1 340px; }
+.enc-nome input, .enc-in { min-height: 34px; padding: 5px 9px; border: 1px solid var(--linha-forte); border-radius: var(--raio-p); background: var(--superficie); color: var(--tinta); font: inherit; font-size: 13.5px; width: 100%; }
+.enc-nome input { font-size: 16px; font-weight: 650; }
+.enc-in { border-color: transparent; background: transparent; }
+.enc-in:hover { border-color: var(--linha-forte); }
+.enc-nome input:focus, .enc-in:focus { outline: none; border-color: var(--planta); background: var(--superficie); box-shadow: var(--sombra-foco); }
+.enc-in.qtd { text-align: right; width: 88px; }
+.enc-in.enc-cod { width: 64px; font-weight: 650; }
+.enc-grupo .enc-in { font-weight: 650; }
+.enc-editavel td.ctrl { white-space: nowrap; width: 1%; }
+.enc-editavel > .link-acao { margin-top: 10px; }
+.prop-enc-social { display: flex; flex-direction: column; gap: 8px; max-width: 420px; }
+.prop-enc-social label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.prop-enc-social select { min-height: 34px; padding: 5px 9px; border: 1px solid var(--linha-forte); border-radius: var(--raio-p); background: var(--superficie); color: var(--tinta); font: inherit; font-size: 13.5px; }
+.prop-enc-social input { max-width: 160px; }
+.prop-enc-da-base { margin: 0; font-size: 13px; color: var(--tinta-2); }
+@media (max-width: 900px) {
+  .enc-nova { margin-left: 0; }
+  .enc-in.qtd { width: 72px; }
+}
+
+.enc-editavel { min-width: 0; }
+.enc-editavel .tabela-rola { overflow-x: auto; }
+.enc-editavel td:nth-child(2) .enc-in { min-width: 200px; }
+.enc-editavel .tabela-rola { position: relative; }
+@media (max-width: 600px) {
+  .enc-editavel td:nth-child(2) .enc-in { min-width: 130px; }
+  .enc-in.enc-cod { width: 50px; }
+  .enc-editavel .planilha td, .enc-editavel .planilha th { padding-left: 6px; padding-right: 6px; }
+}
+.prop-enc-social, .prop-enc-campos { min-width: 0; }
+.prop-enc-social select { width: 100%; max-width: 100%; min-width: 0; }

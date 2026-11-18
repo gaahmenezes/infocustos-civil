@@ -41,6 +41,9 @@ CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, 
 CREATE TABLE IF NOT EXISTS config (id INTEGER PRIMARY KEY, chave TEXT NOT NULL UNIQUE, valor TEXT);
 -- bases próprias (a empresa pode ter várias: a sua, a importada do SIENGE, a de um cliente...)
 CREATE TABLE IF NOT EXISTS base_propria (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', criado_em TEXT);
+-- bases de encargos sociais da empresa: quadros de horistas e mensalistas (listas de itens em JSON)
+CREATE TABLE IF NOT EXISTS encargo_base (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', origem TEXT DEFAULT '',
+  horista TEXT DEFAULT '', mensalista TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
 '''
 
 # mesmas tabelas; DOUBLE PRECISION porque REAL no Postgres guarda só 6 dígitos
@@ -74,6 +77,8 @@ CREATE INDEX IF NOT EXISTS ix_cp_item ON composicao_propria_item(composicao_id, 
 -- preferências da empresa (ex.: nome da base própria)
 CREATE TABLE IF NOT EXISTS config (id SERIAL PRIMARY KEY, chave TEXT NOT NULL UNIQUE, valor TEXT);
 CREATE TABLE IF NOT EXISTS base_propria (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', criado_em TEXT);
+CREATE TABLE IF NOT EXISTS encargo_base (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', origem TEXT DEFAULT '',
+  horista TEXT DEFAULT '', mensalista TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
 '''
 
 # colunas que entraram depois: bancos já criados recebem por aqui
@@ -99,7 +104,10 @@ COLUNAS_NOVAS = (('orcamento', 'sem_complementares', 'INTEGER NOT NULL DEFAULT 0
                  # encargos da composição própria: "base" (como vêm nas bases) ou "empresa" (tira os das bases e aplica os da empresa)
                  ('composicao_propria', 'encargos_modo', "TEXT DEFAULT 'base'"),
                  ('composicao_propria', 'encargo_social_emp', 'DOUBLE PRECISION'),
-                 ('composicao_propria', 'encargos_extra', "TEXT DEFAULT ''"))
+                 ('composicao_propria', 'encargos_extra', "TEXT DEFAULT ''"),
+                 # encargo social da empresa tirado de uma base de encargos própria (no lugar do % digitado)
+                 ('composicao_propria', 'encargo_base_id', 'INTEGER'),
+                 ('composicao_propria', 'encargo_base_tipo', "TEXT DEFAULT 'horista'"))
 
 if POSTGRES:
     import psycopg

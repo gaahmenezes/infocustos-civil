@@ -641,6 +641,8 @@ app.include_router(orcamento.router)
 app.include_router(proprias.router)
 import importar  # noqa: E402
 app.include_router(importar.router)
+import encargos_proprios  # noqa: E402
+app.include_router(encargos_proprios.router)
 app.mount('/static', StaticFiles(directory=AQUI / 'static'), name='static')
 
 

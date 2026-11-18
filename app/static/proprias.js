@@ -239,7 +239,15 @@ function blocoEncargos(c) {
       <label>Encargos <select id="prop-enc-modo"><option value="base"${emp ? '' : ' selected'}>Como vêm nas bases</option><option value="empresa"${emp ? ' selected' : ''}>Da empresa (informados)</option></select></label></div>
     ${emp ? `<div class="prop-enc-grade">
       <div class="prop-enc-campos">
-        <label>Encargo social da empresa (% sobre a mão de obra)<input id="prop-enc-social" class="qtd" inputmode="decimal" value="${c.encargo_social_emp != null ? num2.format(c.encargo_social_emp) : ''}" placeholder="0,00"></label>
+        <div class="prop-enc-social">
+          <label>Encargo social da empresa <select id="prop-enc-base" aria-label="De onde vem o encargo social">
+            <option value="">Digitar o percentual</option>
+            ${e.base_encargos ? `<option value="${e.base_encargos.id}:${e.base_encargos.tipo}" selected>${esc(e.base_encargos.nome)}, ${e.base_encargos.tipo === 'horista' ? 'horistas' : 'mensalistas'} (${num2.format(e.pct_social)}%)</option>` : ''}
+          </select></label>
+          ${e.base_encargos
+            ? `<p class="prop-enc-da-base"><b>${num2.format(e.pct_social)}%</b> sobre a mão de obra · <a href="#/encargos/${e.base_encargos.id}">editar a base de encargos</a></p>`
+            : `<label>Percentual (% sobre a mão de obra)<input id="prop-enc-social" class="qtd" inputmode="decimal" value="${c.encargo_social_emp != null ? num2.format(c.encargo_social_emp) : ''}" placeholder="0,00"></label>`}
+        </div>
         <div class="prop-enc-extras"><span class="rot">Outros encargos <span class="sub">alimentação, transporte, EPI, ferramentas…</span></span>
           ${extras.map((x, k) => `<div class="prop-enc-extra" data-extra="${k}">
             <input data-ex="descricao" value="${esc(x.descricao)}" maxlength="120" placeholder="Descrição" aria-label="Descrição do encargo ${k + 1}">
@@ -254,7 +262,7 @@ function blocoEncargos(c) {
         ${linha('− Encargos complementares das bases', brl.format(e.tirado_compl), 'menos')}
         ${linha('<b>Custo sem encargos</b>', `<b>${brl.format(e.sem_encargos)}</b>`, 'sub-total')}
         ${linha(`Mão de obra sem encargos`, brl.format(e.mo_sem_encargos), 'info')}
-        ${linha(`+ Encargo social da empresa (${num2.format(e.pct_social)}%)`, brl.format(e.social), 'mais')}
+        ${linha(`+ Encargo social ${e.base_encargos ? `de ${esc(e.base_encargos.nome)}` : 'da empresa'} (${num2.format(e.pct_social)}%)`, brl.format(e.social), 'mais')}
         ${e.extras.map((x) => linha(`+ ${esc(x.descricao || 'Encargo')} (${x.tipo === 'pct' ? `${num2.format(x.valor)}% da mão de obra` : `R$ por ${esc(c.unidade)}`})`, brl.format(x.custo), 'mais')).join('')}
       </tbody><tfoot><tr><td><b>Custo da composição</b></td><td class="num"><b>${brl.format(c.custo_total)}</b></td></tr></tfoot></table>
     </div>
@@ -266,6 +274,19 @@ function blocoEncargos(c) {
 function ligarEncargos(c, refazer) {
   const sel = $('#prop-enc-modo'); if (!sel) return;
   sel.addEventListener('change', () => refazer({ encargos_modo: sel.value }));
+  const eb = $('#prop-enc-base');
+  if (eb) {
+    basesEncargos(true).then((bases) => {  // as opções vêm das bases de encargos da empresa
+      const atual = eb.value;
+      eb.innerHTML = `<option value="">Digitar o percentual</option>${bases.map((b) => ['horista', 'mensalista'].map((t) =>
+        `<option value="${b.id}:${t}"${atual === `${b.id}:${t}` ? ' selected' : ''}>${esc(b.nome)}, ${t === 'horista' ? 'horistas' : 'mensalistas'} (${num2.format(b[`total_${t}`])}%)</option>`).join('')).join('')}`;
+      if (!bases.length) eb.insertAdjacentHTML('beforeend', '<option value="" disabled>Nenhuma base de encargos: crie uma na aba Encargos sociais</option>');
+    });
+    eb.addEventListener('change', () => {
+      const [id, tipo] = eb.value.split(':');
+      refazer(id ? { encargo_base_id: Number(id), encargo_base_tipo: tipo } : { encargo_base_id: 0 });
+    });
+  }
   const soc = $('#prop-enc-social');
   if (soc) {
     soc.addEventListener('change', () => { const v = soc.value.trim() ? lerNum(soc.value) : 0; if (!(v >= 0)) { avisar('Digite um percentual válido, como 85,50.'); return; } refazer({ encargo_social_emp: v }); });

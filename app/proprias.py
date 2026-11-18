@@ -78,9 +78,11 @@ def acervo():
                         itens.setdefault(r['composicao_id'], []).append(dict(r))
                     insumos = {r['id']: dict(r) for r in c.execute('SELECT * FROM insumo_proprio').fetchall()}
                     bases = {r['id']: dict(r) for r in c.execute('SELECT * FROM base_propria ORDER BY id').fetchall()}
+                import encargos_proprios
+                enc = encargos_proprios.totais()
                 if not bases:
                     bases = {1: {'id': 1, 'nome': NOME_PADRAO, 'descricao': ''}}
-                _ACERVO = {'comps': comps, 'itens': itens, 'insumos': insumos, 'calcs': {}, 'bases': bases,
+                _ACERVO = {'comps': comps, 'itens': itens, 'insumos': insumos, 'calcs': {}, 'bases': bases, 'encargos': enc,
                            'nome': bases[min(bases)]['nome']}
             a = _ACERVO
     return a
@@ -258,7 +260,8 @@ class Calculo:
              'tipo_preco': tipo_preco, 'preco_composto': composto, 'proposta': cp.get('proposta') or '', 'data_proposta': cp.get('data_proposta') or '',
              'preco_informado': {k: float(cp.get(f'preco_inf_{k}') or 0.0) for k in ('mo', 'mat', 'equip', 'terc')},
              'es': round(es, 4), 'encargos_modo': 'empresa' if enc else 'base', 'encargos': enc,
-             'encargo_social_emp': cp.get('encargo_social_emp'), 'encargos_extra': ler_extras(cp.get('encargos_extra'))}
+             'encargo_social_emp': cp.get('encargo_social_emp'), 'encargos_extra': ler_extras(cp.get('encargos_extra')),
+             'encargo_base_id': cp.get('encargo_base_id'), 'encargo_base_tipo': cp.get('encargo_base_tipo') or 'horista'}
         self.memo[cid] = r
         return r
 
@@ -319,6 +322,12 @@ def encargos_da_empresa(cp, div, es_bases, compl_bases):
     tirar_compl += resto
     mo = d['mo']  # mão de obra sem encargos
     pct = float(cp.get('encargo_social_emp') or 0)
+    base_enc = None
+    if cp.get('encargo_base_id'):  # o % vem de uma base de encargos da empresa (acompanha as mudanças nela)
+        b = acervo()['encargos'].get(cp['encargo_base_id'])
+        if b:
+            tipo = 'mensalista' if cp.get('encargo_base_tipo') == 'mensalista' else 'horista'
+            pct, base_enc = b[tipo], {'id': cp['encargo_base_id'], 'nome': b['nome'], 'tipo': tipo}
     social = mo * pct / 100
     extras = [dict(x, custo=round(mo * x['valor'] / 100 if x['tipo'] == 'pct' else x['valor'], 4)) for x in ler_extras(cp.get('encargos_extra'))]
     aplicado = social + sum(x['custo'] for x in extras)
@@ -326,7 +335,7 @@ def encargos_da_empresa(cp, div, es_bases, compl_bases):
     soma = sum(div.values())
     return {'div': d, 'custo': round(sum(d.values()), 4), 'soma_itens': round(soma, 4), 'tirado_social': round(tirar_es, 4),
             'tirado_compl': round(tirar_compl, 4), 'sem_encargos': round(soma - tirar_es - tirar_compl, 4), 'mo_sem_encargos': round(mo, 4),
-            'pct_social': pct, 'social': round(social, 4), 'extras': extras, 'aplicado': round(aplicado, 4)}
+            'pct_social': pct, 'social': round(social, 4), 'extras': extras, 'aplicado': round(aplicado, 4), 'base_encargos': base_enc}
 
 
 def datas_usadas(calc, comp):
@@ -517,6 +526,8 @@ class EdicaoComposicao(BaseModel):
     encargos_modo: Optional[Literal['base', 'empresa']] = None
     encargo_social_emp: Optional[float] = Field(None, ge=0, le=500)
     encargos_extra: Optional[list[EncargoExtra]] = Field(None, max_length=30)
+    encargo_base_id: Optional[int] = Field(None, ge=0)  # 0 = sem base (vale o % digitado)
+    encargo_base_tipo: Optional[Literal['horista', 'mensalista']] = None
 
 
 class NovoItem(BaseModel):
@@ -719,7 +730,11 @@ def editar_composicao(codigo: str, d: EdicaoComposicao, refs: str = ''):
     campos = {k: (v.strip() if isinstance(v, str) else v) for k, v in d.model_dump(exclude_unset=True).items() if v is not None}
     if 'encargos_extra' in campos:
         campos['encargos_extra'] = json.dumps([x for x in campos['encargos_extra'] if x['descricao'].strip() or x['valor']], ensure_ascii=False)
+    if campos.get('encargo_base_id') == 0:
+        campos['encargo_base_id'] = None
     with gravando() as c:
+        if campos.get('encargo_base_id') and not c.execute('SELECT 1 FROM encargo_base WHERE id = ?', (campos['encargo_base_id'],)).fetchone():
+            raise HTTPException(404, 'Base de encargos não encontrada.')
         if not c.execute('SELECT 1 FROM composicao_propria WHERE id = ?', (cid,)).fetchone():
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
         if campos:
@@ -875,8 +890,9 @@ def duplicar(codigo: str, refs: str = ''):
         c.execute('''UPDATE composicao_propria SET tipo_preco = ?, preco_inf_mo = ?, preco_inf_mat = ?, preco_inf_equip = ?, preco_inf_terc = ?,
             proposta = ?, data_proposta = ? WHERE id = ?''', (cp.get('tipo_preco') or 'composto', cp.get('preco_inf_mo'), cp.get('preco_inf_mat'),
                                                              cp.get('preco_inf_equip'), cp.get('preco_inf_terc'), cp.get('proposta') or '', cp.get('data_proposta') or '', novo))
-        c.execute('UPDATE composicao_propria SET encargos_modo = ?, encargo_social_emp = ?, encargos_extra = ? WHERE id = ?',
-                  (cp.get('encargos_modo') or 'base', cp.get('encargo_social_emp'), cp.get('encargos_extra') or '', novo))
+        c.execute('''UPDATE composicao_propria SET encargos_modo = ?, encargo_social_emp = ?, encargos_extra = ?, encargo_base_id = ?, encargo_base_tipo = ?
+            WHERE id = ?''', (cp.get('encargos_modo') or 'base', cp.get('encargo_social_emp'), cp.get('encargos_extra') or '',
+                              cp.get('encargo_base_id'), cp.get('encargo_base_tipo') or 'horista', novo))
         for it in c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall():
             c.execute('INSERT INTO composicao_propria_item (composicao_id, ordem, tipo, base, codigo, qtd, descricao, unidade) VALUES (?,?,?,?,?,?,?,?)',
                       (novo, it['ordem'], it['tipo'], it['base'], it['codigo'], it['qtd'], it['descricao'], it['unidade']))

@@ -1081,10 +1081,14 @@ async function historicoDoItem(tipo, base, codigo) {
 // ---------- encargos sociais do mês ----------
 async function desenharEncargos() {
   const d = $('#detalhe');
+  const propria = location.hash.match(/^#\/encargos\/(\d+)/);
+  if (propria) { desenharBaseEncargos(Number(propria[1])); return; }  // base de encargos da empresa (encargos.js)
   let r;
   const semEsq = d.querySelector('.encargos') ? () => {} : comEsqueleto(d, `<div class="pagina"><section class="ficha">${esqueletoTabela(12)}</section></div>`);
+  const pBases = basesEncargos(true);
   try { r = await api(`/api/encargos?${qsMesDe('ORSE')}`); } catch (e) { d.innerHTML = `<div class="pagina"><div class="erro"><b>Não foi possível abrir os encargos.</b><br>${esc(e.message)}</div></div>`; return; } finally { semEsq(); }
-  if (!/^#\/encargos/.test(location.hash)) return;
+  const bases = await pBases;
+  if (!/^#\/encargos\/?$/.test(location.hash)) return;
   const mesNome = nomeRef(r.referencia.id);
   const quadro = (tipo, titulo, nota) => {
     const e = r[tipo];
@@ -1101,9 +1105,11 @@ async function desenharEncargos() {
   d.innerHTML = `<div class="pagina encargos">
     <header class="pag-cab"><div><h1>Encargos sociais</h1>
       <p class="sub">Percentuais sobre o salário da mão de obra em <b>${esc(mesNome)}</b>, conforme o modelo da CEHOP.</p></div>${seletorDensidade()}</header>
+    ${barraBasesEnc(bases, null)}
     <div class="enc-grade">${quadro('horista', 'Horistas', 'Quem recebe por hora trabalhada')}${quadro('mensalista', 'Mensalistas', 'Quem recebe salário mensal')}</div>
-    <p class="fonte">Fonte: ORSE (CEHOP/SE), Modelo de Encargo Social Horista e Mensalista, referência ${esc(r.referencia.descricao)}.</p>
+    <p class="fonte">Fonte: ORSE (CEHOP/SE), Modelo de Encargo Social Horista e Mensalista, referência ${esc(r.referencia.descricao)}. Para montar os encargos da empresa, use <b>+ Nova base de encargos</b>: ela começa com estes itens e você edita.</p>
   </div>`;
+  ligarBarraEnc();
 }
 
 // "Pular para o conteúdo": leva o foco direto à área principal, sem mexer no endereço da tela
