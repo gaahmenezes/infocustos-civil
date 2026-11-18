@@ -231,7 +231,7 @@ async function abrirOrcamento(id, dados) {
     <div class="orc-cab">
       <div class="orc-ident">
         <input class="orc-nome" id="orc-nome" value="${esc(o.nome)}" aria-label="Nome do orçamento" maxlength="200">
-        <p class="orc-dados">${[o.cliente, o.local].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('')}<span>BDI de <b>${num2.format(o.bdi)}%</b></span><span>data-base <b>${esc(nomeRef(o.referencia))}</b></span>${basesVigentes(o).restrito ? `<span>bases <b>${esc(basesVigentes(o).sel.map((b) => b.nome).join(' · ') || 'nenhuma')}</b></span>` : ''}
+        <p class="orc-dados">${[o.cliente, o.local].filter(Boolean).map((x) => `<span>${esc(x)}</span>`).join('')}<span>BDI de <b>${num2.format(o.bdi)}%</b>${o.bdi_no_total ? ' só no total' : ''}</span><span>data-base <b>${esc(nomeRef(o.referencia))}</b></span>${basesVigentes(o).restrito ? `<span>bases <b>${esc(basesVigentes(o).sel.map((b) => b.nome).join(' · ') || 'nenhuma')}</b></span>` : ''}
           <button type="button" class="link-acao" id="orc-editar" aria-expanded="${!!ORC.editando}" aria-controls="orc-campos">${ORC.editando ? 'Fechar' : 'Editar dados'}</button></p>
         <div class="orc-campos" id="orc-campos"${ORC.editando ? '' : ' hidden'}>
           <label>Cliente<input id="orc-cliente" value="${esc(o.cliente)}" placeholder="—"></label>
@@ -242,6 +242,12 @@ async function abrirOrcamento(id, dados) {
           <fieldset class="orc-bases"><legend>Bases vigentes neste orçamento <span>a busca de itens procura só nelas; os itens já lançados não mudam</span></legend>
             ${basesVigentes(o).todas.map((b) => `<label class="orc-base-op${b.k.startsWith('P') ? ' propria' : ''}"><input type="checkbox" data-orc-base="${esc(b.k)}"${basesVigentes(o).sel.some((x) => x.k === b.k) ? ' checked' : ''}>${esc(b.nome)}</label>`).join('')}
           </fieldset>
+          <div class="orc-compl orc-bdi-op${o.bdi_no_total ? ' ligado' : ''}" id="orc-bdi-total">
+            <button type="button" class="chave" id="orc-bdi-total-bt" role="switch" aria-checked="${!!o.bdi_no_total}"><span class="chave-trilho" aria-hidden="true"><i></i></span>BDI só no total do orçamento</button>
+            <p>${o.bdi_no_total
+              ? `O BDI de ${num2.format(o.bdi)}% entra uma única vez, sobre o custo direto total: <b>${brl.format(o.custo_total)}</b> + <b>${brl.format(o.valor_bdi)}</b>. Itens e etapas aparecem a custo, sem BDI.`
+              : 'O BDI está no preço unitário de cada item. Ligue para deixar os itens a custo e aplicar o BDI uma única vez, sobre o total.'}</p>
+          </div>
         </div>
       </div>
       <div class="orc-totais" id="orc-totais"></div>
@@ -255,12 +261,6 @@ async function abrirOrcamento(id, dados) {
       <p>${o.sem_complementares
         ? `<b>${brl.format(o.complementares)}</b> de alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação saíram do custo das composições. Lance esse valor nos seus custos indiretos, sem duplicidade.`
         : `As composições trazem <b>${brl.format(o.complementares)}</b> embutidos na mão de obra (alimentação, transporte, EPI, ferramentas, exames, seguro e capacitação). Se você lança isso nos indiretos, ligue para não contar duas vezes.`}</p>
-    </div>
-    <div class="orc-compl${o.bdi_no_total ? ' ligado' : ''}" id="orc-bdi-total">
-      <button type="button" class="chave" id="orc-bdi-total-bt" role="switch" aria-checked="${!!o.bdi_no_total}"><span class="chave-trilho" aria-hidden="true"><i></i></span>BDI só no total do orçamento</button>
-      <p>${o.bdi_no_total
-        ? `O BDI de ${num2.format(o.bdi)}% entra uma única vez, sobre o custo direto total: <b>${brl.format(o.custo_total)}</b> + <b>${brl.format(o.valor_bdi)}</b>. Itens e etapas aparecem a custo, sem BDI.`
-        : 'O BDI está no preço unitário de cada item. Ligue para deixar os itens a custo e aplicar o BDI uma única vez, sobre o total.'}</p>
     </div>
     </div>
     <div id="orc-painel"></div>

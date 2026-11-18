@@ -51,7 +51,7 @@
     <div class="cab-direita">
       <div class="referencia" id="referencia"></div>
       <button type="button" class="atalho-paleta" data-paleta aria-label="Abrir a busca rápida e os comandos (Ctrl+K)" title="Busca rápida e comandos">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg><kbd>Ctrl K</kbd>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" /><path d="M15.5 15.5 21 21" /></svg><span class="ap-rot">Buscar ou ir para…</span><kbd>Ctrl K</kbd>
       </button>
       <button type="button" class="tema" id="tema" aria-label="Usar tema escuro">
         <svg class="tema-sol" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2" /><path d="M12 2.5v2.4M12 19.1v2.4M2.5 12h2.4M19.1 12h2.4M5.3 5.3 7 7M17 17l1.7 1.7M18.7 5.3 17 7M7 17l-1.7 1.7" /></svg>
@@ -92,6 +92,8 @@
       </div>
     </div>
     <button type="button" class="ver-base" data-ver-base>Ver toda a base de preços do mês<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3" /></svg></button>
+    <div class="pi-numeros" id="pi-numeros" aria-label="Resumo"></div>
+    <div class="pi-mudou" id="pi-mudou" aria-label="O que mudou nos preços"></div>
     <div class="inicio-painel" id="inicio-painel" aria-label="Continuar de onde parou">
       <section class="cartao" aria-labelledby="c-pesq-t">
         <h2 id="c-pesq-t"><span class="faixa" aria-hidden="true"></span>Pesquisas recentes</h2>
@@ -108,6 +110,7 @@
         <ul id="c-orcamentos"></ul>
       </section>
     </div>
+    <p class="dica-paleta"><kbd>Ctrl</kbd><kbd>K</kbd> em qualquer tela: busca rápida de itens, orçamentos e comandos</p>
     <a class="conheca" href="#/apresentacao">Conheça o InfoCustos Civil<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 3 7.5 6l-3 3" /></svg></a>
   </section>
 

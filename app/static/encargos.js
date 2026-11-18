@@ -35,7 +35,9 @@ const ENC_TIPOS = [['horista', 'Horistas', 'Quem recebe por hora trabalhada'], [
 async function desenharBaseEncargos(id, dados) {
   const d = $('#detalhe');
   let b;
-  try { b = dados || await req(`/api/bases-encargos/${id}`); } catch (e) { d.innerHTML = `<div class="pagina"><div class="erro"><b>Não foi possível abrir a base de encargos.</b><br>${esc(e.message)}</div></div>`; return; }
+  const semEsq = dados || d.querySelector('.encargos') ? () => {} : comEsqueleto(d, `<div class="pagina"><section class="ficha">${esqueletoTabela(12)}</section></div>`);
+  try { b = dados || await req(`/api/bases-encargos/${id}`); } catch (e) { semEsq(); d.innerHTML = `<div class="pagina"><div class="erro"><b>Não foi possível abrir a base de encargos.</b><br>${esc(e.message)}</div></div>`; return; }
+  semEsq();
   const bases = await basesEncargos(!dados);
   if (!new RegExp(`^#/encargos/${id}\\b`).test(location.hash)) return;
   const foco = document.activeElement && document.activeElement.dataset ? { k: document.activeElement.dataset.encK, c: document.activeElement.dataset.encC } : {};

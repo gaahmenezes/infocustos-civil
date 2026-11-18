@@ -378,6 +378,47 @@ function definirFiltro(grupo, v) {
   document.querySelectorAll(`.chips[data-filtro="${grupo}"] .chip`).forEach((c) => c.setAttribute('aria-checked', String(c.dataset.v === v)));
 }
 const nomeFiltro = (p) => [p.tipo === 'servico' ? 'composições' : p.tipo === 'insumo' ? 'insumos' : '', p.base !== 'todas' ? p.base : ''].filter(Boolean).join(' · ');
+// ---------- painel da página inicial: números da empresa e o que mudou nos preços ----------
+const int = new Intl.NumberFormat('pt-BR');
+const ESQ_PI = '<i class="pi-esq" aria-hidden="true"></i>';
+function piNumero(rot, valor, sub, href, cls = '') {
+  const tag = href ? 'a' : 'div';
+  return `<${tag} class="pi-num${cls ? ` ${cls}` : ''}"${href ? ` href="${href}"` : ''}><span class="pi-rot">${rot}</span><b class="pi-valor">${valor}</b><span class="pi-sub">${sub}</span></${tag}>`;
+}
+async function desenharPainelInicio(orcsP) {
+  const num = $('#pi-numeros'), mud = $('#pi-mudou'); if (!num || !mud) return;
+  if (!num.innerHTML) num.innerHTML = Array.from({ length: 4 }, () => `<div class="pi-num">${ESQ_PI}${ESQ_PI}</div>`).join('');
+  if (!mud.innerHTML) mud.innerHTML = Array.from({ length: 2 }, () => `<section class="cartao pi-var">${ESQ_PI}${ESQ_PI}${ESQ_PI}</section>`).join('');
+  const [orcs, bases, enc] = await Promise.all([orcsP.catch(() => null), api('/api/proprias/bases').catch(() => null), api(`/api/encargos?${qsMesDe('ORSE')}`).catch(() => null)]);
+  const ref = estado.ref || {}, bs = basesCarregadas();
+  const comps = bases ? bases.reduce((s, b) => s + (b.composicoes || 0), 0) : null, ins = bases ? bases.reduce((s, b) => s + (b.insumos || 0), 0) : null;
+  num.innerHTML = [
+    piNumero('Orçamentos', orcs ? int.format(orcs.length) : '—', orcs ? `${brl.format(orcs.reduce((s, o) => s + (o.total || 0), 0))} no total, com BDI` : 'não carregados', '#/orcamentos'),
+    piNumero('Bases de preço', bs.length, bs.map((b) => `<span class="pi-mes"><i class="cb-base cb-${b}">${b}</i>${esc(curto(estado.meses[b] || (ref.bases && ref.bases[b] && ref.bases[b].atual) || ''))}</span>`).join(''), '', 'pi-bases'),
+    piNumero('Bases próprias', comps == null ? '—' : int.format(comps), comps == null ? '' : `composições e ${int.format(ins)} insumos em ${bases.length} ${bases.length === 1 ? 'base' : 'bases'}`, '#/proprias'),
+    piNumero('Encargo social', enc && enc.horista && enc.horista.total != null ? `${num2.format(enc.horista.total)}%` : '—', enc ? `horistas · ${enc.mensalista && enc.mensalista.total != null ? `${num2.format(enc.mensalista.total)}% mensalistas · ` : ''}CEHOP ${esc(curto(enc.referencia.id))}` : '', '#/encargos'),
+  ].join('');
+  const bloco = async (base) => {
+    const [alta, baixa] = await Promise.all(['alta', 'baixa'].map((s) => api(`/api/comparativo?base=${base}&tipo=servico&sentido=${s}&limite=3`).catch(() => null)));
+    if (!alta || !alta.de || !alta.resumo || !alta.resumo.comparados) return '';
+    const r = alta.resumo, tot = r.subiram + r.desceram + r.iguais || 1;
+    const lin = (x) => `<li><a href="${rotaItem('servico', esc(x.base), esc(x.codigo))}"><span class="linha-1">${esc(x.descricao)}</span>
+      <span class="var ${x.variacao > 0 ? 'var-alta' : 'var-baixa'}">${x.variacao > 0 ? '+' : '−'}${pct.format(Math.abs(x.variacao))}</span>
+      <span class="linha-2"><b>${esc(x.codigo)}</b> · ${brl.format(x.preco_de)} → ${brl.format(x.preco_para)}</span></a></li>`;
+    return `<section class="cartao pi-var" aria-label="${base}: ${esc(nomeRef(alta.de.id))} para ${esc(nomeRef(alta.para.id))}">
+      <h2><span class="cb-base cb-${base}">${base}</span>${esc(curto(alta.de.id))} → ${esc(curto(alta.para.id))}<a class="lado link-acao" href="#/comparativo">Comparativo</a></h2>
+      <div class="pi-barra" role="img" aria-label="${int.format(r.subiram)} subiram, ${int.format(r.iguais)} iguais, ${int.format(r.desceram)} caíram">
+        <i class="alta" style="flex-grow:${r.subiram / tot}"></i><i class="igual" style="flex-grow:${r.iguais / tot}"></i><i class="baixa" style="flex-grow:${r.desceram / tot}"></i></div>
+      <p class="pi-leg"><span><i class="alta"></i><b>${pct.format(r.subiram / tot)}</b> subiram</span><span><i class="igual"></i>${pct.format(r.iguais / tot)} iguais</span><span><i class="baixa"></i><b>${pct.format(r.desceram / tot)}</b> caíram</span><span class="n">${int.format(r.comparados)} composições</span></p>
+      <div class="pi-cols"><div><h3>Maiores altas</h3><ul>${alta.itens.map(lin).join('')}</ul></div>
+        <div><h3>Maiores quedas</h3><ul>${(baixa ? baixa.itens.filter((x) => x.variacao < 0) : []).map(lin).join('') || '<li class="vazio-cartao">Nenhuma queda.</li>'}</ul></div></div>
+    </section>`;
+  };
+  const blocos = await Promise.all(bs.filter((b) => b !== 'SICRO').map(bloco));
+  mud.innerHTML = blocos.join('');
+  mud.hidden = !blocos.some(Boolean);
+}
+
 async function desenharInicio() {
   $('#c-pesquisas').innerHTML = HIST.pesquisas.length
     ? HIST.pesquisas.map((p, k) => `<li><button type="button" data-repetir="${k}"><span class="linha-1">${esc(p.q)}</span>
@@ -389,11 +430,13 @@ async function desenharInicio() {
         <span class="linha-1">${esc(x.descricao)}</span><span class="linha-2"><b>${esc(x.codigo)}</b> ${esc(x.base)} · ${x.tipo === 'servico' ? 'composição' : 'insumo'}${x.unidade ? `<span class="un">${unid(x.unidade)}</span>` : ''}</span></a></li>`).join('')
     : `<li class="vazio-cartao"><svg viewBox="0 0 48 48" aria-hidden="true">${ICONES.relogio}</svg>O que você abrir fica aqui, para voltar com um clique.</li>`;
   $('#c-abertos-rod').innerHTML = HIST.abertos.length ? '<button type="button" data-limpar-hist="abertos">Limpar lista</button>' : '';
+  const orcsP = api('/api/orcamentos');
+  desenharPainelInicio(orcsP);
   try {
-    const orcs = (await api('/api/orcamentos')).slice(0, 4);
+    const orcs = (await orcsP).slice(0, 4);
     $('#c-orcamentos').innerHTML = orcs.length
       ? orcs.map((o) => `<li><a href="${rotaOrc(o.id)}"><span class="linha-1">${esc(o.nome)}</span><span class="valor-dir">${brl.format(o.total)}</span>
-          <span class="linha-2">${esc(nomeRef(o.referencia))} · ${o.qtd_itens} ${o.qtd_itens === 1 ? 'item' : 'itens'}</span></a></li>`).join('')
+          <span class="linha-2">${esc(nomeRef(o.referencia))} · ${o.qtd_itens} ${o.qtd_itens === 1 ? 'item' : 'itens'}${o.divisao && o.qtd_itens ? `<span class="pi-div">${barraDivisao(o.divisao)}</span>` : ''}</span></a></li>`).join('')
       : `<li class="vazio-cartao"><svg viewBox="0 0 48 48" aria-hidden="true">${ICONES.planilha}</svg><span>Nenhum orçamento ainda. <a class="link-acao" href="#/orcamentos">Criar o primeiro</a></span></li>`;
   } catch (_) { $('#c-orcamentos').innerHTML = '<li class="vazio-cartao">Não foi possível carregar os orçamentos.</li>'; }
 }
@@ -939,6 +982,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === '/' && !/^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName)) { e.preventDefault(); $('#q').focus(); $('#q').select(); }
 });
 window.addEventListener('hashchange', rota);
+// troca de tela: o conteúdo novo entra com um leve deslizar (re-pinturas da mesma tela não animam)
+window.addEventListener('hashchange', (e) => {
+  const tela = (u) => (u.split('#')[1] || '/').split('?')[0].replace(/\/(planilha|mapa|abc-servicos|abc-insumos)$/, '');
+  if (tela(e.oldURL || '') === tela(e.newURL || '')) return;
+  const d = $('#detalhe'); d.dataset.entrada = '1'; clearTimeout(d._entrada); d._entrada = setTimeout(() => { delete d.dataset.entrada; }, 700);
+});
 
 // Versão nova publicada: a página se recarrega sozinha ao trocar de tela ou ao voltar para a aba do navegador,
 // para nunca rodar arquivos antigos misturados com o servidor novo.

@@ -2316,3 +2316,69 @@ a.res.prop-res:hover { border-color: var(--tinta-3); }
 }
 .prop-enc-social, .prop-enc-campos { min-width: 0; }
 .prop-enc-social select { width: 100%; max-width: 100%; min-width: 0; }
+
+/* "BDI só no total" dentro de Editar dados: linha própria, como as bases vigentes */
+.orc-campos > .orc-bdi-op { flex: 0 0 100%; grid-column: 1 / -1; margin: 2px 0 0; background: var(--superficie); }
+.orc-campos > .orc-bdi-op .chave { font-size: 13.5px; }
+
+/* ===================== painel da página inicial ===================== */
+.pi-numeros, .pi-mudou { display: none; }
+body.ocioso .pi-numeros { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; width: 100%; max-width: 1080px; margin-top: 30px; text-align: left; }
+body.ocioso .pi-mudou:not([hidden]) { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; width: 100%; max-width: 1080px; margin-top: 16px; text-align: left; }
+body.ocioso .pi-numeros + .pi-mudou + .inicio-painel, body.ocioso .pi-mudou + .inicio-painel { margin-top: 16px; }
+.pi-num { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 16px 18px; border-radius: var(--raio-g); background: var(--superficie); border: 1px solid var(--linha); box-shadow: var(--sombra-1);
+  color: var(--tinta); text-decoration: none; transition: border-color var(--t-rapido), transform var(--t-rapido), box-shadow var(--t-rapido); }
+a.pi-num:hover { border-color: var(--planta-borda); transform: translateY(-1px); box-shadow: var(--sombra-2, var(--sombra-1)); }
+.pi-rot { font-size: 12.5px; font-weight: 650; color: var(--tinta-3); text-transform: uppercase; letter-spacing: .05em; }
+.pi-valor { font-size: 34px; line-height: 1.05; font-weight: 700; font-stretch: 80%; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; }
+.pi-sub { font-size: 13px; color: var(--tinta-2); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.pi-mes { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.pi-mes .cb-base { display: inline-flex; font-size: 9.5px; padding: 2px 5px 1px; border-radius: 4px; font-style: normal; }
+.pi-esq { display: block; height: 12px; width: 70%; margin: 6px 0; border-radius: 4px; background: linear-gradient(90deg, var(--superficie-2), var(--linha), var(--superficie-2)); background-size: 200% 100%; animation: brilho 1.1s linear infinite; }
+.pi-esq + .pi-esq { width: 45%; height: 22px; }
+.pi-var h2 .cb-base { display: inline-flex; font-size: 10.5px; padding: 3px 6px 2px; border-radius: 4px; }
+.pi-var h2 { font-variant-numeric: tabular-nums; }
+.pi-barra { display: flex; height: 8px; border-radius: 999px; overflow: hidden; gap: 2px; background: var(--linha); margin: 2px 0 8px; }
+.pi-barra i, .pi-leg i { display: block; background: var(--tinta-3); }
+.pi-barra .alta, .pi-leg i.alta { background: var(--alta); }
+.pi-barra .baixa, .pi-leg i.baixa { background: var(--baixa); }
+.pi-barra .igual, .pi-leg i.igual { background: var(--linha-forte); }
+.pi-leg { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0 0 12px; font-size: 12.5px; color: var(--tinta-2); font-variant-numeric: tabular-nums; }
+.pi-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.pi-leg i { width: 8px; height: 8px; border-radius: 2px; }
+.pi-leg .n { margin-left: auto; color: var(--tinta-3); }
+.pi-cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 18px; }
+.pi-cols h3 { margin: 0 0 4px; font-size: 12px; font-weight: 650; color: var(--tinta-3); text-transform: uppercase; letter-spacing: .05em; }
+.pi-var .var { font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pi-var .linha-1 { font-size: 13.5px; }
+.cartao .linha-2 .pi-div { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; vertical-align: middle; }
+.cartao .linha-2 .pi-div .mini-barra { flex-basis: 56px; width: 56px; height: 5px; }
+.cartao .linha-2 .pi-div .dom { display: none; }
+body.ocioso .pesquisa { padding-top: clamp(24px, 5vh, 56px); }
+@media (max-width: 1000px) {
+  body.ocioso .pi-numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 640px; }
+  body.ocioso .pi-mudou:not([hidden]) { grid-template-columns: 1fr; max-width: 640px; }
+}
+@media (max-width: 520px) {
+  body.ocioso .pi-numeros { gap: 10px; }
+  .pi-num { padding: 12px 14px; }
+  .pi-valor { font-size: 26px; }
+  .pi-cols { grid-template-columns: 1fr; }
+}
+
+/* ===================== acabamento ===================== */
+/* números sempre em algarismos de largura fixa: colunas alinham e valores não "pulam" ao mudar */
+.num, td.num, th.num, .valor-dir, .preco-grande, .orc-totais, .orc-c-total, .res-preco, .enc-total, .pi-valor, .cb-num, .qtd, input[inputmode="decimal"] { font-variant-numeric: tabular-nums; }
+/* entrada suave ao trocar de tela */
+#detalhe[data-entrada] > * { animation: entrar 240ms var(--suave) both; }
+@media (prefers-reduced-motion: reduce) { #detalhe[data-entrada] > * { animation: none; } }
+/* busca rápida (Ctrl K) mais à vista */
+.atalho-paleta .ap-rot { display: none; font-size: 13px; font-weight: 500; color: inherit; opacity: .85; padding-right: 18px; }
+@media (min-width: 1500px) { .atalho-paleta .ap-rot { display: inline; } }
+.atalho-paleta, .atalho-paleta kbd { white-space: nowrap; }
+.enc-editavel .planilha thead th { position: static; }
+.dica-paleta { display: none; }
+body.ocioso .dica-paleta { display: flex; align-items: center; gap: 6px; margin: 26px 0 0; font-size: 13px; color: var(--tinta-3); }
+.dica-paleta kbd { font: 600 11px/1 var(--fonte); padding: 4px 6px; border-radius: 5px; border: 1px solid var(--linha-forte); background: var(--superficie); color: var(--tinta-2); box-shadow: 0 1px 0 var(--linha-forte); }
+@media (hover: none) { body.ocioso .dica-paleta { display: none; } }
+body.ocioso .dica-paleta + .conheca { margin-top: 10px; }
