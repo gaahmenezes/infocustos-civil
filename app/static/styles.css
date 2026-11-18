@@ -2241,3 +2241,28 @@ a.res.prop-res:hover { border-color: var(--tinta-3); }
 .orc-campos .orc-bases label.orc-base-op:has(input:focus-visible) { box-shadow: var(--sombra-foco); }
 .prop-editor > .voltar-lista { margin-bottom: 8px; }
 .prop-editor > .ficha-cod { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 18px; }
+
+/* encargos da composição própria */
+.prop-enc { margin: 18px 0 6px; padding: 14px 16px; border: 1px solid var(--linha); border-radius: var(--raio); background: var(--superficie-2); }
+.prop-enc .sub { font-size: 12.5px; color: var(--tinta-3); margin: 10px 0 0; }
+.prop-enc-grade { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 18px; align-items: start; margin-top: 10px; }
+.prop-enc-campos { display: flex; flex-direction: column; gap: 14px; }
+.prop-enc-campos > label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 600; color: var(--tinta-2); max-width: 320px; }
+.prop-enc-extras { display: flex; flex-direction: column; gap: 6px; }
+.prop-enc-extras .rot { font-size: 13px; font-weight: 600; color: var(--tinta-2); }
+.prop-enc-extras .rot .sub { font-weight: 400; margin: 0 0 0 6px; }
+.prop-enc-extra { display: grid; grid-template-columns: minmax(0, 1fr) 150px 96px 28px; gap: 6px; align-items: center; }
+.prop-enc-extra input, .prop-enc-extra select, .prop-enc-campos input { min-height: 34px; padding: 5px 9px; border: 1px solid var(--linha-forte); border-radius: var(--raio-p); background: var(--superficie); color: var(--tinta); font: inherit; font-size: 13.5px; }
+.prop-enc-extra input:focus, .prop-enc-extra select:focus, .prop-enc-campos input:focus { outline: none; border-color: var(--planta); box-shadow: var(--sombra-foco); }
+.prop-enc-extra .qtd, .prop-enc-campos .qtd { text-align: right; }
+.prop-enc-conta { width: 100%; background: var(--superficie); }
+.prop-enc-conta td { padding: 6px 10px; font-size: 13px; }
+.prop-enc-conta tr.menos td { color: var(--tinta-2); }
+.prop-enc-conta tr.info td { color: var(--tinta-3); font-size: 12.5px; }
+.prop-enc-conta tr.sub-total td { border-top: 1px solid var(--linha-forte); }
+.prop-enc-conta tfoot td { border-top: 2px solid var(--tinta); }
+@media (max-width: 900px) {
+  .prop-enc-grade { grid-template-columns: 1fr; }
+  .prop-enc-extra { grid-template-columns: minmax(0, 1fr) 96px 28px; }
+  .prop-enc-extra select { grid-column: 1 / -1; grid-row: 2; }
+}

@@ -66,7 +66,11 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   v(/\d+,\d%/.test(await txt(p, '.prop-cmp')), 'Ao ajustar um coeficiente, a diferença para a original aparece: ' + (await txt(p, '.prop-cmp')).slice(-24));
   await p.screenshot({ path: OUT + '/prop_copia.png', fullPage: true });
   // lista e insumos
-  await p.goto(U + '/#/proprias'); await p.waitForSelector('.prop-cartao'); v((await p.$$('.prop-cartao')).length === ja.size + 2, 'Lista com as duas composições próprias novas');
+  // a lista mostra a base aberta (há várias bases próprias) e pagina: confere que as duas novas estão nela
+  await p.goto(U + '/#/proprias'); await p.waitForSelector('.prop-cartao');
+  const novas = (await (await p.request.get(U + '/api/proprias')).json()).composicoes.filter((x) => !ja.has(x.codigo)).map((x) => x.codigo);
+  const naLista = await p.$$eval('.prop-cartao', (l) => l.map((a) => decodeURIComponent(a.getAttribute('href').split('/').pop())));
+  v(novas.length === 2 && novas.every((c) => naLista.includes(c)), 'Lista com as duas composições próprias novas: ' + novas.join(', '));
   await p.click('[data-prop-aba] [data-v=insumos]'); v(await p.isVisible('.prop-insumos'), 'Aba de insumos próprios com o cadastrado');
   await p.screenshot({ path: OUT + '/prop_lista.png' });
   await p.click('[data-excluir-insumo]'); await p.click('[data-excluir-insumo]');

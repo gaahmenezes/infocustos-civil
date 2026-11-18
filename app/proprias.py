@@ -6,6 +6,7 @@ base. Trocar o mês da SINAPI atualiza todas as composições próprias que usam
 
 Códigos: composição própria P0001, P0002...; insumo próprio I0001, I0002... (base "PROPRIA").
 """
+import json
 import contextvars
 import re
 import threading
@@ -168,6 +169,7 @@ class Calculo:
             div = {'mo': (r['pct_mo'] or 0), 'mat': (r['pct_mat'] or 0), 'equip': (r['pct_equip'] or 0), 'terc': (r['pct_terc'] or 0)} if r and r['pct_mo'] is not None else {'mat': 1.0}
         return {'codigo': p['codigo'], 'descricao': p['descricao'], 'unidade': p['unidade'], 'preco': p['preco'], 'referencia': p['referencia'],
                 'compl': orc_mod.complementares(tipo, base, p['codigo'], p['referencia'], p['descricao'], p['preco']) if p['preco'] is not None else 0.0,
+                'es': encargo_social_embutido(tipo, base, p['codigo'], p['referencia'], p['descricao'], p['preco'], secao),
                 'secao': secao, 'div': div, 'tem_composicao': bool(r and r['tem_composicao']) if tipo == 'servico' else False}
 
     def insumo_proprio(self, codigo):
@@ -177,7 +179,7 @@ class Calculo:
             return None
         secao = i['tipo'] if i['tipo'] in TIPOS_INSUMO else 'MATERIAL'
         return {'codigo': cod_ins(i['id']), 'descricao': i['descricao'], 'unidade': i['unidade'], 'preco': i['preco'], 'referencia': i['data_preco'] or None,
-                'secao': secao, 'div': {PARTE[secao]: 1.0}, 'tem_composicao': False}
+                'secao': secao, 'div': {PARTE[secao]: 1.0}, 'tem_composicao': False, 'es': 0.0}
 
     def composicao(self, codigo):
         """Composição própria inteira: itens com preço, total e divisão do custo."""
@@ -207,12 +209,13 @@ class Calculo:
     def _montar(self, cid, cp):
         itens, total, div, faltam = [], 0.0, {'mo': 0.0, 'mat': 0.0, 'equip': 0.0, 'terc': 0.0}, 0
         compl = 0.0  # encargos complementares embutidos nos itens oficiais
+        es = 0.0  # encargos sociais embutidos na mão de obra dos itens
         for it in self._itens(cid):
             if it['base'] == BASE:
                 if it['tipo'] == 'servico':
                     sub = self.composicao(it['codigo'])
                     d = {'codigo': sub['codigo'], 'descricao': sub['descricao'], 'unidade': sub['unidade'], 'preco': sub['custo_total'],
-                         'referencia': None, 'secao': 'SERVICO_AUXILIAR', 'tem_composicao': True, 'compl': sub['compl'],
+                         'referencia': None, 'secao': 'SERVICO_AUXILIAR', 'tem_composicao': True, 'compl': sub['compl'], 'es': sub['es'],
                          'div': {k: (sub['divisao'][k] if sub['custo_total'] else 0) for k in div}}
                 else:
                     d = self.insumo_proprio(it['codigo'])
@@ -225,6 +228,7 @@ class Calculo:
             else:
                 total += custo
                 compl += it['qtd'] * (d.get('compl') or 0.0)
+                es += it['qtd'] * (d.get('es') or 0.0)
                 for k, v in (d['div'] or {}).items():
                     div[k] += custo * v
             itens.append({'id': it['id'], 'ordem': it['ordem'], 'tipo': it['tipo'], 'base': it['base'], 'codigo': d['codigo'] if d else it['codigo'],
@@ -234,11 +238,15 @@ class Calculo:
                           'referencia': d['referencia'] if d else None, 'tem_composicao': bool(d and d['tem_composicao'])})
         total = round(total, 4)  # 4 casas, como os sistemas de onde as composições são importadas (SIENGE)
         composto, tipo_preco = total, (cp.get('tipo_preco') or 'composto')
+        enc = encargos_da_empresa(cp, div, es, compl) if tipo_preco != 'informado' else None
+        if enc:  # os encargos das bases saem e entram os da empresa
+            div, total = enc.pop('div'), enc['custo']
+            es, compl = enc['aplicado'], 0.0
         if tipo_preco == 'informado':
             # preço da proposta, por grupo de insumo: vale ele, e não a soma dos itens
             div = {k: float(cp.get(f'preco_inf_{k}') or 0.0) for k in div}
             total = round(sum(div.values()), 4)
-            faltam, compl = 0, 0.0
+            faltam, compl, es = 0, 0.0, 0.0
         fr = {k: (v / total if total else 0) for k, v in div.items()}
         r = {'base': BASE, 'codigo': cod_comp(cid), 'id': cid, 'descricao': cp['descricao'], 'unidade': cp['unidade'], 'grupo': cp['grupo'] or 'Composições próprias',
              'subgrupo': '', 'observacoes': cp['observacoes'] or '', 'modelo': 'PROPRIA', 'prod_equipe': None, 'encargo_social': None, 'referencia': None,
@@ -248,9 +256,77 @@ class Calculo:
              'atualizado_em': cp['atualizado_em'], 'fonte': 'PROPRIA', 'base_id': cp.get('base_id') or 1,
              'base_nome': nome_da_base(cp.get('base_id')), 'codigo_origem': cp.get('codigo_origem') or '',
              'tipo_preco': tipo_preco, 'preco_composto': composto, 'proposta': cp.get('proposta') or '', 'data_proposta': cp.get('data_proposta') or '',
-             'preco_informado': {k: float(cp.get(f'preco_inf_{k}') or 0.0) for k in ('mo', 'mat', 'equip', 'terc')}}
+             'preco_informado': {k: float(cp.get(f'preco_inf_{k}') or 0.0) for k in ('mo', 'mat', 'equip', 'terc')},
+             'es': round(es, 4), 'encargos_modo': 'empresa' if enc else 'base', 'encargos': enc,
+             'encargo_social_emp': cp.get('encargo_social_emp'), 'encargos_extra': ler_extras(cp.get('encargos_extra'))}
         self.memo[cid] = r
         return r
+
+
+# ---------- encargos ----------
+# As bases embutem encargos no preço: a ORSE soma o encargo social à parte na composição; a SINAPI já traz a mão de obra
+# com ele (o % vem na composição e no mês); o SICRO não informa o % (fica como está). Os complementares (alimentação,
+# transporte, EPI, ferramentas) vêm como itens. Com "encargos da empresa", a composição tira os das bases e aplica os da empresa.
+_ES_MEMO = {}
+
+
+def encargo_social_embutido(tipo, base, codigo, ref, descricao, preco, secao):
+    """R$ de encargo social embutido no preço unitário de um item oficial (0 se a base não informa)."""
+    if not preco or base not in ('ORSE', 'SINAPI'):
+        return 0.0
+    k = (tipo, base, codigo, ref)
+    if k in _ES_MEMO:
+        return _ES_MEMO[k] * preco
+    f = 0.0
+    with orc_mod._base_conn() as b:
+        if tipo == 'servico':
+            r = b.execute('''SELECT encargo_social, custo_mao_de_obra, custo_encargo_social, custo_total FROM composicao
+                WHERE base = ? AND codigo = ? AND referencia = ?''', (base, codigo, ref)).fetchone()
+            if r and r['custo_total']:
+                if (r['custo_encargo_social'] or 0) > 0:  # ORSE: encargo social à parte
+                    f = r['custo_encargo_social'] / r['custo_total']
+                elif r['encargo_social'] and (r['custo_mao_de_obra'] or 0) > 0:  # SINAPI: dentro da mão de obra
+                    f = r['custo_mao_de_obra'] * r['encargo_social'] / (100 + r['encargo_social']) / r['custo_total']
+        elif base == 'SINAPI' and secao == 'MAO_DE_OBRA':  # o insumo de mão de obra da SINAPI já vem com encargo social
+            r = b.execute('SELECT encargo_social_horista, encargo_social_mensalista FROM referencia WHERE id = ?', (ref,)).fetchone()
+            pct = r and (r['encargo_social_mensalista'] if 'mensalista' in (descricao or '').lower() else r['encargo_social_horista'])
+            if pct:
+                f = pct / (100 + pct)
+    _ES_MEMO[k] = f
+    return f * preco
+
+
+def ler_extras(txt):
+    try:
+        l = json.loads(txt) if txt else []
+    except ValueError:
+        return []
+    return [{'descricao': str(x.get('descricao') or ''), 'tipo': 'valor' if x.get('tipo') == 'valor' else 'pct', 'valor': float(x.get('valor') or 0)}
+            for x in l if isinstance(x, dict)]
+
+
+def encargos_da_empresa(cp, div, es_bases, compl_bases):
+    """Com encargos da empresa: tira da composição os encargos das bases e aplica o % de encargo social e os
+    encargos que a empresa informou. Devolve None quando a composição usa os encargos como vêm nas bases."""
+    if (cp.get('encargos_modo') or 'base') != 'empresa':
+        return None
+    d = dict(div)
+    tirar_es, tirar_compl = min(es_bases, d['mo']), min(compl_bases, d['mat'])  # as bases lançam os complementares como material
+    d['mo'] -= tirar_es
+    d['mat'] -= tirar_compl
+    resto = min(max(compl_bases - tirar_compl, 0.0), d['mo'])  # o que a base não lançou como material sai da mão de obra
+    d['mo'] -= resto
+    tirar_compl += resto
+    mo = d['mo']  # mão de obra sem encargos
+    pct = float(cp.get('encargo_social_emp') or 0)
+    social = mo * pct / 100
+    extras = [dict(x, custo=round(mo * x['valor'] / 100 if x['tipo'] == 'pct' else x['valor'], 4)) for x in ler_extras(cp.get('encargos_extra'))]
+    aplicado = social + sum(x['custo'] for x in extras)
+    d['mo'] += aplicado  # os encargos da empresa entram na mão de obra
+    soma = sum(div.values())
+    return {'div': d, 'custo': round(sum(d.values()), 4), 'soma_itens': round(soma, 4), 'tirado_social': round(tirar_es, 4),
+            'tirado_compl': round(tirar_compl, 4), 'sem_encargos': round(soma - tirar_es - tirar_compl, 4), 'mo_sem_encargos': round(mo, 4),
+            'pct_social': pct, 'social': round(social, 4), 'extras': extras, 'aplicado': round(aplicado, 4)}
 
 
 def datas_usadas(calc, comp):
@@ -419,6 +495,12 @@ class NovaComposicao(BaseModel):
     base_id: int = 1
 
 
+class EncargoExtra(BaseModel):
+    descricao: str = Field('', max_length=120)
+    tipo: Literal['pct', 'valor'] = 'pct'  # % sobre a mão de obra sem encargos, ou R$ por unidade da composição
+    valor: float = Field(0, ge=0, le=100000)
+
+
 class EdicaoComposicao(BaseModel):
     descricao: Optional[str] = Field(None, min_length=1, max_length=400)
     unidade: Optional[str] = Field(None, min_length=1, max_length=20)
@@ -432,6 +514,9 @@ class EdicaoComposicao(BaseModel):
     preco_inf_terc: Optional[float] = Field(None, ge=0)
     proposta: Optional[str] = Field(None, max_length=200)
     data_proposta: Optional[str] = Field(None, max_length=10)
+    encargos_modo: Optional[Literal['base', 'empresa']] = None
+    encargo_social_emp: Optional[float] = Field(None, ge=0, le=500)
+    encargos_extra: Optional[list[EncargoExtra]] = Field(None, max_length=30)
 
 
 class NovoItem(BaseModel):
@@ -632,6 +717,8 @@ def obter_composicao(codigo: str, refs: str = ''):
 def editar_composicao(codigo: str, d: EdicaoComposicao, refs: str = ''):
     cid = id_de(codigo, 'P')
     campos = {k: (v.strip() if isinstance(v, str) else v) for k, v in d.model_dump(exclude_unset=True).items() if v is not None}
+    if 'encargos_extra' in campos:
+        campos['encargos_extra'] = json.dumps([x for x in campos['encargos_extra'] if x['descricao'].strip() or x['valor']], ensure_ascii=False)
     with gravando() as c:
         if not c.execute('SELECT 1 FROM composicao_propria WHERE id = ?', (cid,)).fetchone():
             raise HTTPException(404, f'A composição própria {codigo} não existe.')
@@ -788,6 +875,8 @@ def duplicar(codigo: str, refs: str = ''):
         c.execute('''UPDATE composicao_propria SET tipo_preco = ?, preco_inf_mo = ?, preco_inf_mat = ?, preco_inf_equip = ?, preco_inf_terc = ?,
             proposta = ?, data_proposta = ? WHERE id = ?''', (cp.get('tipo_preco') or 'composto', cp.get('preco_inf_mo'), cp.get('preco_inf_mat'),
                                                              cp.get('preco_inf_equip'), cp.get('preco_inf_terc'), cp.get('proposta') or '', cp.get('data_proposta') or '', novo))
+        c.execute('UPDATE composicao_propria SET encargos_modo = ?, encargo_social_emp = ?, encargos_extra = ? WHERE id = ?',
+                  (cp.get('encargos_modo') or 'base', cp.get('encargo_social_emp'), cp.get('encargos_extra') or '', novo))
         for it in c.execute('SELECT * FROM composicao_propria_item WHERE composicao_id = ? ORDER BY ordem, id', (cid,)).fetchall():
             c.execute('INSERT INTO composicao_propria_item (composicao_id, ordem, tipo, base, codigo, qtd, descricao, unidade) VALUES (?,?,?,?,?,?,?,?)',
                       (novo, it['ordem'], it['tipo'], it['base'], it['codigo'], it['qtd'], it['descricao'], it['unidade']))

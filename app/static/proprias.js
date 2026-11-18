@@ -175,7 +175,7 @@ async function abrirEditor(codigo, dados) {
     ${blocoPreco(c)}
     <div class="ficha-linha">
       <div class="preco-grande"><span class="valor">${grana(c.custo_total)}</span><span class="por">por <b class="un">${unid(c.unidade)}</b> · sem BDI</span></div>
-      <div class="fatos"><div>Preço<b>${c.tipo_preco === 'informado' ? 'Informado' : 'Composto'}</b></div><div>Itens<b>${c.itens.length}</b></div>${c.usada_em ? `<div>Usada em<b>${c.usada_em} ${c.usada_em === 1 ? 'composição' : 'composições'}</b></div>` : ''}
+      <div class="fatos"><div>Preço<b>${c.tipo_preco === 'informado' ? 'Informado' : 'Composto'}</b></div>${c.encargos ? `<div>Encargos<b>Da empresa</b></div>` : ''}<div>Itens<b>${c.itens.length}</b></div>${c.usada_em ? `<div>Usada em<b>${c.usada_em} ${c.usada_em === 1 ? 'composição' : 'composições'}</b></div>` : ''}
         <div>Datas-base<span class="prop-datas-l">${datas || '—'}</span></div></div>
       <div class="acoes">
         <button type="button" class="botao primario" data-adicionar="servico" data-base="PROPRIA" data-cod="${esc(c.codigo)}" data-desc="${esc(c.descricao)}" data-un="${esc(c.unidade)}"${c.itens.length || c.tipo_preco === 'informado' ? '' : ' disabled'}>Adicionar ao orçamento</button>
@@ -197,6 +197,7 @@ async function abrirEditor(codigo, dados) {
           <ul class="add-res" id="prop-add-res" role="listbox" aria-label="Itens encontrados" tabindex="0" hidden></ul></div>
           <button type="button" class="link-acao prop-novo-ins" data-novo-insumo data-para-comp="${esc(c.codigo)}">Não achou? Cadastrar insumo próprio</button></td></tr>
       </tbody></table></div>
+    ${c.tipo_preco === 'informado' ? '' : blocoEncargos(c)}
     <p class="fonte">Custo calculado agora, com ${esc(gruposDeData().map((x) => `${juntar(x.bases)} de ${nomeRef(x.mes)}`).join(' · '))}. Ao trocar o mês de uma base no topo, o custo acompanha.${c.origem_base === 'SICRO' ? ' Composições do SICRO copiadas não trazem o FIC, que o DNIT calcula sobre a execução.' : ''}</p>
   </article>`;
   if (antes != null && antes !== total) contar($('.preco-grande .num-grande'), antes, total);
@@ -226,12 +227,64 @@ function blocoPreco(c) {
   </section>`;
 }
 
+// ---------- encargos: como vêm nas bases, ou os da empresa (tira os das bases e aplica os informados) ----------
+function blocoEncargos(c) {
+  const e = c.encargos, emp = !!e, extras = (c.encargos_extra || []).concat([{ descricao: '', tipo: 'pct', valor: 0 }]);
+  const linha = (rot, v, cls = '') => `<tr class="${cls}"><td>${rot}</td><td class="num">${v}</td></tr>`;
+  return `<section class="prop-enc" aria-label="Encargos da composição">
+    <div class="prop-preco-cab"><h3>Encargos</h3>
+      <label>Encargos <select id="prop-enc-modo"><option value="base"${emp ? '' : ' selected'}>Como vêm nas bases</option><option value="empresa"${emp ? ' selected' : ''}>Da empresa (informados)</option></select></label></div>
+    ${emp ? `<div class="prop-enc-grade">
+      <div class="prop-enc-campos">
+        <label>Encargo social da empresa (% sobre a mão de obra)<input id="prop-enc-social" class="qtd" inputmode="decimal" value="${c.encargo_social_emp != null ? num2.format(c.encargo_social_emp) : ''}" placeholder="0,00"></label>
+        <div class="prop-enc-extras"><span class="rot">Outros encargos <span class="sub">alimentação, transporte, EPI, ferramentas…</span></span>
+          ${extras.map((x, k) => `<div class="prop-enc-extra" data-extra="${k}">
+            <input data-ex="descricao" value="${esc(x.descricao)}" maxlength="120" placeholder="Descrição" aria-label="Descrição do encargo ${k + 1}">
+            <select data-ex="tipo" aria-label="Como aplicar o encargo ${k + 1}"><option value="pct"${x.tipo === 'pct' ? ' selected' : ''}>% da mão de obra</option><option value="valor"${x.tipo === 'valor' ? ' selected' : ''}>R$ por ${esc(c.unidade)}</option></select>
+            <input data-ex="valor" class="qtd" inputmode="decimal" value="${x.valor ? num2.format(x.valor) : ''}" placeholder="0,00" aria-label="Valor do encargo ${k + 1}">
+            ${k < extras.length - 1 ? `<button type="button" class="mini" data-ex-tirar="${k}" aria-label="Tirar o encargo ${k + 1}">✕</button>` : '<span class="mini-vazio"></span>'}</div>`).join('')}
+        </div>
+      </div>
+      <table class="planilha prop-enc-conta"><tbody>
+        ${linha('Soma dos itens', brl.format(e.soma_itens))}
+        ${linha('− Encargo social das bases', brl.format(e.tirado_social), 'menos')}
+        ${linha('− Encargos complementares das bases', brl.format(e.tirado_compl), 'menos')}
+        ${linha('<b>Custo sem encargos</b>', `<b>${brl.format(e.sem_encargos)}</b>`, 'sub-total')}
+        ${linha(`Mão de obra sem encargos`, brl.format(e.mo_sem_encargos), 'info')}
+        ${linha(`+ Encargo social da empresa (${num2.format(e.pct_social)}%)`, brl.format(e.social), 'mais')}
+        ${e.extras.map((x) => linha(`+ ${esc(x.descricao || 'Encargo')} (${x.tipo === 'pct' ? `${num2.format(x.valor)}% da mão de obra` : `R$ por ${esc(c.unidade)}`})`, brl.format(x.custo), 'mais')).join('')}
+      </tbody><tfoot><tr><td><b>Custo da composição</b></td><td class="num"><b>${brl.format(c.custo_total)}</b></td></tr></tfoot></table>
+    </div>
+    <p class="sub">Os encargos sociais e complementares embutidos nos itens das bases saem do custo (ORSE e SINAPI informam o encargo social; o SICRO não, e fica como está). Os encargos da empresa entram como mão de obra, também no orçamento.</p>`
+    : `<p class="sub prop-preco-dica">Os itens entram com os encargos que cada base já embute${c.es || c.compl ? ` (hoje <b>${brl.format(c.es || 0)}</b> de encargo social e <b>${brl.format(c.compl || 0)}</b> de complementares por ${esc(c.unidade)})` : ''}. Para aplicar os encargos compatibilizados da empresa, escolha <b>Da empresa</b>.</p>`}
+  </section>`;
+}
+
+function ligarEncargos(c, refazer) {
+  const sel = $('#prop-enc-modo'); if (!sel) return;
+  sel.addEventListener('change', () => refazer({ encargos_modo: sel.value }));
+  const soc = $('#prop-enc-social');
+  if (soc) {
+    soc.addEventListener('change', () => { const v = soc.value.trim() ? lerNum(soc.value) : 0; if (!(v >= 0)) { avisar('Digite um percentual válido, como 85,50.'); return; } refazer({ encargo_social_emp: v }); });
+    soc.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); soc.blur(); } });
+  }
+  const ler = (sem) => [...document.querySelectorAll('.prop-enc-extra')].filter((l) => l.dataset.extra !== String(sem)).map((l) => ({
+    descricao: l.querySelector('[data-ex="descricao"]').value.trim(), tipo: l.querySelector('[data-ex="tipo"]').value,
+    valor: l.querySelector('[data-ex="valor"]').value.trim() ? lerNum(l.querySelector('[data-ex="valor"]').value) : 0 })).filter((x) => x.descricao || x.valor);
+  document.querySelectorAll('.prop-enc-extra [data-ex]').forEach((el) => {
+    el.addEventListener('change', () => { const l = ler(); if (l.some((x) => !(x.valor >= 0))) { avisar('Digite um valor válido, como 12,50.'); return; } refazer({ encargos_extra: l }); });
+    if (el.tagName === 'INPUT') el.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); el.blur(); } });
+  });
+  document.querySelectorAll('[data-ex-tirar]').forEach((b) => b.addEventListener('click', () => refazer({ encargos_extra: ler(b.dataset.exTirar) })));
+}
+
 function ligarEditor(c) {
   const salvar = async (campo, valor) => {
     try { PROP.atual = await req(`/api/proprias/composicoes/${c.codigo}?${qsRefs()}`, 'PATCH', { [campo]: valor }); avisar('Salvo.'); }
     catch (e) { avisar(esc(e.message)); }
   };
   const refazer = async (dados) => { try { abrirEditor(c.codigo, await req(`/api/proprias/composicoes/${c.codigo}?${qsRefs()}`, 'PATCH', dados)); avisar('Salvo.'); } catch (e) { avisar(esc(e.message)); } };
+  ligarEncargos(c, refazer);
   $('#prop-tipo-preco').addEventListener('change', (e) => {
     const inf = e.target.value === 'informado', v = c.preco_informado || {};
     // ao passar para "informado" sem valores ainda, começa com a divisão atual dos itens (o usuário ajusta pela proposta)

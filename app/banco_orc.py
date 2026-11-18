@@ -95,7 +95,11 @@ COLUNAS_NOVAS = (('orcamento', 'sem_complementares', 'INTEGER NOT NULL DEFAULT 0
                  ('composicao_propria', 'proposta', "TEXT DEFAULT ''"),
                  ('composicao_propria', 'data_proposta', "TEXT DEFAULT ''"),
                  # bases que valem num orçamento, para a busca de itens: "ORSE,SINAPI,P3" (P = base própria); vazio = todas
-                 ('orcamento', 'bases', "TEXT DEFAULT ''"))
+                 ('orcamento', 'bases', "TEXT DEFAULT ''"),
+                 # encargos da composição própria: "base" (como vêm nas bases) ou "empresa" (tira os das bases e aplica os da empresa)
+                 ('composicao_propria', 'encargos_modo', "TEXT DEFAULT 'base'"),
+                 ('composicao_propria', 'encargo_social_emp', 'DOUBLE PRECISION'),
+                 ('composicao_propria', 'encargos_extra', "TEXT DEFAULT ''"))
 
 if POSTGRES:
     import psycopg

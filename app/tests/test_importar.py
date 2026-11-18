@@ -341,3 +341,15 @@ def test_composicao_propria_com_preco_informado_por_proposta():
     assert d['tipo_preco'] == 'informado' and d['custo_total'] == 42.5
     # volta a composto
     assert c.patch(f'/api/proprias/composicoes/{k}', json={'tipo_preco': 'composto'}).json()['custo_total'] == 20.0
+
+
+def test_encargos_da_empresa_tiram_os_das_bases_e_aplicam_os_informados():
+    import proprias
+    div = {'mo': 20.0, 'mat': 5.0, 'equip': 1.0, 'terc': 0.0}
+    assert proprias.encargos_da_empresa({'encargos_modo': 'base'}, div, 8.0, 2.0) is None
+    e = proprias.encargos_da_empresa({'encargos_modo': 'empresa', 'encargo_social_emp': 80,
+                                      'encargos_extra': '[{"descricao": "EPI", "tipo": "valor", "valor": 1.5}, {"descricao": "Alimentação", "tipo": "pct", "valor": 10}]'},
+                                     div, 8.0, 2.0)
+    assert e['sem_encargos'] == 16.0 and e['mo_sem_encargos'] == 12.0  # 26 - 8 de encargo social - 2 de complementares
+    assert e['social'] == 9.6 and [x['custo'] for x in e['extras']] == [1.5, 1.2]
+    assert e['custo'] == round(16.0 + 9.6 + 1.5 + 1.2, 4) and e['div']['mo'] == round(12.0 + 12.3, 4) and e['div']['mat'] == 3.0
