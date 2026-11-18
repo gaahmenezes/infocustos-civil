@@ -951,6 +951,12 @@ def _casar_itens(itens, ref, obra=''):
                 cands = [(t, base, cod, p, base, 0) for t, cod, p in nomes_oficiais(base, meses[base]).get(k, []) if p is not None]
                 if cands:
                     break
+        if cands and da_obra:
+            # a obra tem a sua base: um item de mesmo nome vindo de outra obra (ou da ORSE/SINAPI) só serve se o preço
+            # bater com o do arquivo; com preço diferente é outro serviço, e ele entra na base desta obra com o preço do
+            # arquivo (antes, "Aterro" e "Limpeza de terreno" de outra obra entravam com o preço dela)
+            tol = max(0.02, it['preco'] * 0.001)
+            cands = [c for c in cands if c[5] in da_obra or (c[3] is not None and abs(c[3] - it['preco']) <= tol)]
         if cands:
             t, base, cod, p, nome, _ = min(cands, key=lambda c: (c[0] != 'servico', round(abs((c[3] or 0) - it['preco']), 2), c[5] not in da_obra, -c[5]))
             it['ref'] = (t, base, cod); it['preco_base'] = p; it['base_nome'] = nome

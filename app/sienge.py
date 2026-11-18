@@ -209,6 +209,21 @@ def ler_orcamento(paginas):
     unidade, quantidade orçada, preço unitário e preço total. Linhas só com o total são títulos (níveis)."""
     obra = data_base = bdi = ''
     linhas, total_geral = [], None
+    vistos, ultimo_topo = set(), [0]
+
+    def eh_codigo(t):
+        # um número sozinho na linha só é código se continuar a árvore: o próximo título de primeiro nível
+        # (01, 02, ...) ou um nível dentro de um código já lido. Assim o "20" de uma descrição quebrada
+        # ("... c/" + "20") não vira um título e não leva o item junto.
+        if not COD_ORC.match(t):
+            return False
+        if '.' not in t:  # primeiro nível: o seguinte ao último (o SIENGE pode pular um ou outro número)
+            return ultimo_topo[0] < int(t) <= ultimo_topo[0] + 3
+        pai = t.rsplit('.', 1)[0]
+        while pai not in vistos and pai.endswith('.000'):  # ".000": item lançado direto num nível mais alto
+            pai = pai.rsplit('.', 1)[0]
+        return pai in vistos
+
     for cel in paginas:
         cel = _juntar_numeros([t for t in cel if not RODAPE.match(t)])
         n = len(cel)
@@ -229,9 +244,12 @@ def ler_orcamento(paginas):
                 if i + 1 < n and NUM.match(cel[i + 1]):
                     total_geral = num(cel[i + 1])
                 i += 2; continue
-            if COD_ORC.match(t):
+            if eh_codigo(t):
+                vistos.add(t)
+                if '.' not in t:
+                    ultimo_topo[0] = int(t)
                 j = i + 1
-                while j < n and not COD_ORC.match(cel[j]) and not cel[j].startswith('Total da unidade'):
+                while j < n and not eh_codigo(cel[j]) and not cel[j].startswith('Total da unidade'):
                     j += 1
                 corpo = cel[i + 1:j]
                 if len(corpo) >= 5 and all(NUM.match(x) for x in corpo[-3:]):

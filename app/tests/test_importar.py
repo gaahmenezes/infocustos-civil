@@ -293,3 +293,28 @@ def test_anexar_orcamento_do_sienge_liga_os_itens_pelo_nome():
     assert abs(o['total'] - 1354.31) < 0.01 and itens['1.1.2.1']['total'] == 967.36  # preço com 4 casas, total igual ao do arquivo
     c.delete(f"/api/orcamentos/{r['orcamento_id']}")
     c.delete(f'/api/proprias/bases/{bid}')
+
+
+def test_anexar_nao_pega_preco_de_outra_obra_nem_perde_item_com_descricao_quebrada():
+    # caso real (Loteamento Reserva Marupiá): "Aterro" existia na base de outra obra com outro preço e entrou com o preço
+    # dela; e um "20" sozinho no fim de uma descrição ("... c/" + "20") virou título e levou o item junto
+    obra = '72 - LOTEAMENTO TESTE'
+    minha = c.post('/api/proprias/bases', json={'nome': 'Base teste', 'descricao': f'Importada de SIENGE, obra {obra}'}).json()['id']
+    outra = c.post('/api/proprias/bases', json={'nome': 'Outra obra'}).json()['id']
+    c.post('/api/proprias/insumos', json={'descricao': 'Servente', 'unidade': 'h', 'preco': 9.6736, 'base_id': minha})
+    c.post('/api/proprias/insumos', json={'descricao': 'Aterro', 'unidade': 'm3', 'preco': 16.50, 'base_id': outra})
+    col = ['Código', 'Descrição', 'Un.', 'Quantidade orçada', 'Preço unitário', 'Preço total']
+    topo = [['Orçamento'], ['Obra', obra], ['Data base', '16/09/2026'], ['BDI', 'não aplicado'], col]
+    pdf = _pdf_celulas([topo + [['01', 'LOTEAMENTO', '9.251,55'], ['01.001', 'Terraplenagem', '9.251,55'],
+                               ['01.001.001', 'Servente', 'h', '10,0000', '9,6736', '96,74'],
+                               ['01.001.002', 'Aterro', 'm3', '100,0000', '20,9805', '2.098,05'],
+                               ['01.001.003', 'Alvenaria bloco concreto estrutural, armada vert. 3/8" c/13, hor. 5/16" c/', '20',
+                                'm2', '39,2000', '179,5547', '7.038,54'],
+                               ['Total da unidade construtiva', '9.233,33'], ['14/11/2026 - 16:12:21'], ['SIENGE / STARIAN'], ['1 de 1']]])
+    s = c.post('/api/importar/orcamento-sienge?simular=true', content=pdf).json()
+    assert s['itens'] == 3 and abs(s['soma_arquivo'] - 9233.33) < 0.01, s  # o item da alvenaria não se perde
+    assert s['por_base'] == {'Base teste': 1} and s['n_faltam'] == 2, s  # o "Aterro" da outra obra (outro preço) não serve
+    r = c.post('/api/importar/orcamento-sienge?nome=Marupia%20teste', content=pdf).json()
+    o = c.get(f"/api/orcamentos/{r['orcamento_id']}").json()
+    assert abs(o['total'] - 9233.33) < 0.02, o['total']  # o total do aplicativo bate com o do arquivo
+    c.delete(f"/api/orcamentos/{r['orcamento_id']}")
