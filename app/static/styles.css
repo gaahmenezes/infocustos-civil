@@ -2228,3 +2228,16 @@ a.res.prop-res:hover { border-color: var(--tinta-3); }
 .orc-base-op input { width: 15px !important; height: 15px; min-height: 0 !important; margin: 0; accent-color: var(--acao); }
 .orc-base-op:has(input:checked) { background: var(--planta-claro); border-color: var(--planta-borda); }
 .orc-base-op.propria { border-style: dashed; }
+
+/* bases vigentes: linha própria embaixo dos campos, com opções em pílulas que não encolhem */
+.orc-campos { flex-wrap: wrap !important; }
+.orc-campos > .orc-bases { flex: 0 0 100%; grid-column: 1 / -1; min-width: 0; margin: 2px 0 0; padding: 10px 12px 12px; background: var(--superficie); gap: 8px; align-items: center; }
+.orc-campos > .orc-bases legend { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 0 6px; }
+.orc-campos > .orc-bases legend span { margin-left: 0; font-size: 12px; }
+.orc-campos .orc-bases label.orc-base-op { flex: 0 0 auto !important; min-width: 0; width: auto; gap: 7px; padding: 6px 12px 6px 10px; line-height: 1.2; white-space: nowrap; background: var(--superficie); transition: background-color var(--t-rapido), border-color var(--t-rapido); }
+.orc-campos .orc-bases label.orc-base-op:hover { border-color: var(--planta-borda); }
+.orc-campos .orc-bases label.orc-base-op input { width: 15px !important; flex: 0 0 15px; padding: 0; border: 0; box-shadow: none; }
+.orc-campos .orc-bases label.orc-base-op:has(input:checked) { background: var(--planta-claro); border-color: var(--planta-borda); }
+.orc-campos .orc-bases label.orc-base-op:has(input:focus-visible) { box-shadow: var(--sombra-foco); }
+.prop-editor > .voltar-lista { margin-bottom: 8px; }
+.prop-editor > .ficha-cod { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 18px; }

@@ -139,7 +139,7 @@ async function abrirEditor(codigo, dados) {
   if (!c) {
     const semEsq = comEsqueleto(d, esqueletoFicha());
     try { c = await req(`/api/proprias/composicoes/${codigo}?${qsRefs()}`); semEsq(); }
-    catch (e) { semEsq(); d.innerHTML = `<div class="pagina"><a class="botao voltar-lista" href="#/proprias">Composições próprias</a><div class="erro">${esc(e.message)}</div></div>`; return; }
+    catch (e) { semEsq(); d.innerHTML = `<div class="pagina"><a class="voltar-lista" href="#/proprias"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Bases próprias</a><div class="erro">${esc(e.message)}</div></div>`; return; }
   }
   const antes = PROP.atual && PROP.atual.codigo === c.codigo ? PROP.atual.custo_total : null;
   PROP.atual = c;
@@ -164,7 +164,7 @@ async function abrirEditor(codigo, dados) {
         <button type="button" class="mini" data-prop-tirar="${i.id}" aria-label="Tirar o item ${k + 1}">✕</button></td></tr>`).join('');
   const foco = document.activeElement && document.activeElement.dataset ? { ...document.activeElement.dataset } : {};
   d.innerHTML = `<article class="ficha prop-editor">
-    <a class="botao voltar-lista" href="#/proprias">Composições próprias</a>
+    <a class="voltar-lista" href="#/proprias"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Bases próprias</a>
     <div class="ficha-cod">${codigoBase(c.codigo, 'PROPRIA')}<span class="selo">Composição própria</span>${c.tipo_preco === 'informado' ? `<span class="selo selo-inf">Preço informado${c.proposta ? ` · ${esc(c.proposta)}` : ''}</span>` : ''}${c.origem_codigo ? `<span>a partir de ${esc(c.origem_codigo)}/${esc(c.origem_base)}</span>` : ''}</div>
     <div class="prop-campos">
       <label class="prop-desc">Descrição<textarea id="prop-descricao" rows="2" maxlength="400">${esc(c.descricao)}</textarea></label>

@@ -52,7 +52,7 @@ function desenharImportar() {
       <tbody>${dados.map((l) => `<tr>${Array.from({ length: ncol }, (_, j) => `<td class="${usados.has(j) ? 'imp-usada' : ''}">${esc(l[j] === undefined ? '' : String(l[j]).slice(0, 80))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : '';
   const r = IMP.simulado;
   d.innerHTML = `<div class="pagina importar">
-    <a class="botao voltar-lista" href="#/proprias">Bases próprias</a>
+    <a class="voltar-lista" href="#/proprias"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Bases próprias</a>
     <header class="pag-cab"><div><h1>Importar arquivo</h1>
       <p class="sub">Traga insumos, composições e orçamentos de outros sistemas, como o SIENGE. Aceita Excel (.xlsx), CSV e PDF. Os itens entram numa base própria e guardam o código de origem: importar de novo atualiza, sem duplicar.</p></div></header>
     ${IMP.concluido ? `<section class="imp-passo imp-final" aria-live="polite">${IMP.concluido}<p class="imp-contagem">Os dados do arquivo já foram limpos desta tela. Para importar outro, escolha o arquivo abaixo.</p></section>` : ''}
@@ -327,7 +327,7 @@ window.desenharAnexar = function () {
       <p class="imp-contagem">Nada foi gravado até aqui. "Cancelar" descarta o arquivo e a conferência.</p>
     </section>` : '';
   d.innerHTML = `<div class="pagina importar anexar">
-    <a class="botao voltar-lista" href="#/orcamentos">Todos os orçamentos</a>
+    <a class="voltar-lista" href="#/orcamentos"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Todos os orçamentos</a>
     <header class="pag-cab"><div><h1>Anexar orçamento</h1>
       <p class="sub">Envie o orçamento da obra emitido por outro sistema (relatório "Orçamento" do SIENGE, em PDF). As etapas e subetapas são recriadas e cada item é ligado, pelo nome, à composição que já existe nas bases: próprias, ORSE, SINAPI ou SICRO.</p></div></header>
     <section class="imp-passo"><h2><span>1</span>Arquivo</h2>
