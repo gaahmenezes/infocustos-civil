@@ -5,7 +5,7 @@ busca rápida, composição analítica em árvore, orçamento com BDI e curva AB
 
 Bases carregadas (Sergipe): **ORSE** de maio/2026 e agosto/2026 e **SINAPI** de maio/2026 (programa da CEHOP);
 **SINAPI** de julho/2026, agosto/2026, setembro/2026 e outubro/2026 (CAIXA); **SICRO** de julho/2026 (DNIT).
-A ORSE de agosto/2026 vem do relatório de composições corrigido pela CEHOP (22/11/2026), com os insumos SINAPI da CAIXA.
+A ORSE de agosto/2026 vem dos relatórios de composições, insumos e serviços corrigidos pela CEHOP (22/11/2026), com os insumos SINAPI da CAIXA.
 Cada base tem a sua data-base: a pesquisa procura todas juntas, cada uma no mês escolhido para ela.
 
 ## Rodar
@@ -120,8 +120,9 @@ python3 extratores/orse_mes_sem_sinapi.py dados/orse_sinapi_AAAA-MM.sqlite comp_
 ```
 
 Ele tira a SINAPI do arquivo (vem do banco da CAIXA do mesmo mês), põe em cada serviço ORSE o custo da composição do
-relatório, cria a linha de serviço das composições novas, tira o preço de cada insumo ORSE das composições (na mão de
-obra, sem o encargo social) e mantém do banco anterior os encargos do mês. Em agosto/2026 o primeiro relatório do
+relatório, cria a linha de serviço das composições que faltam no relatório de serviços (com a descrição e o grupo de antes),
+inclui na lista os insumos que só aparecem nas composições e mantém do banco anterior os encargos do mês. Com
+`--precos-das-composicoes`, o preço dos insumos usados sai das composições (para um relatório de insumos desatualizado). Em agosto/2026 o primeiro relatório do
 programa veio com a tabela SINAPI desatualizada (00051 a R$ 549,94); o corrigido dá R$ 413,16, como no site da CEHOP.
 
 ## SICRO (DNIT)
