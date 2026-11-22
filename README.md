@@ -3,8 +3,9 @@
 Consulta da base de preços de obras de Sergipe (ORSE/CEHOP) e da SINAPI usada pela CEHOP:
 busca rápida, composição analítica em árvore, orçamento com BDI e curva ABC, e histórico de preços entre referências.
 
-Bases carregadas (Sergipe): **ORSE** de maio/2026 e agosto/2026 e **SINAPI** de maio/2026 e agosto/2026 (programa da CEHOP);
-**SINAPI** de julho/2026, setembro/2026 e outubro/2026 (relatórios da CAIXA); **SICRO** de julho/2026 (DNIT).
+Bases carregadas (Sergipe): **ORSE** de maio/2026 e agosto/2026 e **SINAPI** de maio/2026 (programa da CEHOP);
+**SINAPI** de julho/2026, agosto/2026, setembro/2026 e outubro/2026 (CAIXA); **SICRO** de julho/2026 (DNIT).
+A ORSE de agosto/2026 usa os insumos SINAPI com os preços oficiais da CAIXA de agosto (ver "SINAPI dentro da ORSE").
 Cada base tem a sua data-base: a pesquisa procura todas juntas, cada uma no mês escolhido para ela.
 
 ## Rodar
@@ -101,6 +102,29 @@ da CAIXA não traz. O leitor confere a soma dos itens de cada composição com o
 Regras do cálculo oficial reproduzidas: insumo sem preço coletado no estado usa o preço de São Paulo (AS); composição
 auxiliar sem custo publicado tem o custo calculado pelos itens dela. Diferença em relação aos meses vindos da CEHOP:
 a composição fica como a CAIXA publica (com composições auxiliares) e a mão de obra já vem com os encargos sociais.
+
+A CAIXA também publica a planilha `SINAPI_Referência_AAAA_MM.xlsx` (dentro do zip "formato xlsx"). Ela tem os mesmos
+dados (abas ISD, CSD e Analítico) e é lida com as mesmas regras e a mesma conferência:
+
+```bash
+python3 extratores/build_sinapi_caixa_xlsx.py "SINAPI_Referência_AAAA_MM.xlsx" SE dados/sinapi_AAAA-MM.sqlite dados/orse_sinapi.sqlite
+```
+
+### SINAPI dentro da ORSE
+
+As composições da ORSE usam insumos da SINAPI. O relatório tirado do programa da CEHOP pode vir com a tabela SINAPI
+desatualizada: em agosto/2026 ele trazia a placa de obra 04813 a R$ 432,00 e o carpinteiro a R$ 11,52 sem encargo,
+quando a CAIXA publicou R$ 300,00 e R$ 10,25 (a 00051 dava R$ 549,94; no site da CEHOP, R$ 413,16). Para levar os
+preços oficiais da CAIXA para dentro da ORSE do mês (mão de obra pelo preço sem encargos da aba ISE, com o encargo
+social da ORSE por cima; demais insumos pela aba ISD):
+
+```bash
+python3 extratores/atualizar_sinapi_na_orse.py dados/orse_sinapi_AAAA-MM.sqlite "SINAPI_Referência_AAAA_MM.xlsx" SE novo.sqlite
+```
+
+O arquivo novo fica só com a ORSE; a SINAPI do mês passa a vir do banco da CAIXA. Orçamentos que já tinham itens do
+mês guardam o preço antigo: em "Editar dados", **Recalcular preços** mostra quanto muda e leva os itens para os preços
+atuais da base, sem trocar a data-base.
 
 ## SICRO (DNIT)
 

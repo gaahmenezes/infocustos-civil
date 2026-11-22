@@ -20,7 +20,7 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   const bases = await p.$$eval('.res .cb-base', (x) => [...new Set(x.map((e) => e.textContent))]);
   v(!bases.includes('ORSE') && bases.length >= 1, 'A busca deixa a ORSE de fora: ' + bases);
   v(await p.isHidden('.chips[data-filtro="base"] [data-v="ORSE"]'), 'O filtro rápido da ORSE some');
-  await p.click('.res'); await p.waitForSelector('.ficha .preco-grande'); v(/maio\/2026|julho\/2026/.test(await txt(p, '.ficha')), 'Ficha aberta no mês da sua base');
+  await p.locator('.res', { has: p.locator('.cb-SINAPI, .cb-SICRO') }).first().click(); await p.waitForSelector('.ficha .preco-grande'); v(/maio\/2026|julho\/2026/.test(await txt(p, '.ficha')), 'Ficha aberta no mês da sua base');
   await p.goBack(); await p.waitForTimeout(400);
   await p.click('#dt-campo'); await p.click('[data-dt="nenhuma"]');
   v(await p.isDisabled('[data-dt="aplicar"]') && (await txt(p, '.dt-aviso')).includes('pelo menos uma'), 'Sem nenhuma base, Aplicar fica bloqueado e avisa');

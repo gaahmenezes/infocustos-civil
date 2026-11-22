@@ -34,8 +34,8 @@ def test_criar_vem_com_uma_etapa(orc):
 def test_item_usa_preco_da_base_e_aplica_bdi(orc):
     o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100}).json()
     i = itens_de(o)[0]
-    assert i['custo_unit'] == 5.17 and i['preco_unit'] == 6.46  # 5,17 × 1,25 = 6,4625 → 6,46
-    assert i['total'] == 646.00 and o['custo_total'] == 517.00 and o['valor_bdi'] == 129.00
+    assert i['custo_unit'] == 4.90 and i['preco_unit'] == 6.13  # 4,90 × 1,25 = 6,125 → 6,13
+    assert i['total'] == 613.00 and o['custo_total'] == 490.00 and o['valor_bdi'] == 123.00
     assert i['referencia'] == '2026-08' and o['desatualizado'] is False
     # sem etapa indicada, o serviço entra numa etapa criada dentro da célula (nunca solto na célula)
     assert i['numero'] == '1.1.1' and [(e['titulo'], e['nivel']) for e in o['etapas']] == [('Obra', 1), ('Serviços preliminares', 2)]
@@ -45,9 +45,9 @@ def test_bdi_e_quantidade_recalculam(orc):
     o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 10}).json()
     iid = itens_de(o)[0]['id']
     o = c.patch(f"/api/itens/{iid}", json={'quantidade': 20}).json()
-    assert itens_de(o)[0]['total'] == 129.20
+    assert itens_de(o)[0]['total'] == 122.60
     o = c.patch(f"/api/orcamentos/{orc['id']}", json={'bdi': 0}).json()
-    assert o['total'] == 103.40
+    assert o['total'] == 98.00
 
 
 def test_codigo_inexistente_e_sem_preco(orc):
@@ -115,12 +115,12 @@ def test_atualizar_orcamento_de_maio_para_agosto(orc):
     # atualizar para o mais recente: cada item vai ao mês mais novo da sua base (ORSE agosto; SINAPI o último carregado)
     ultimo = c.get('/api/referencia').json()['referencias'][-1]['id']
     assert sim['referencia'] == ultimo and sim['total_antes'] == o['total']
-    assert [l['codigo'] for l in sim['itens']] == ['00003'] and sim['itens'][0]['custo_unit_depois'] == 5.17
+    assert [l['codigo'] for l in sim['itens']] == ['00003'] and sim['itens'][0]['custo_unit_depois'] == 4.90
     assert sim['sem_preco'][0]['codigo'] == '103335' and sim['sem_preco'][0]['motivo'] == 'saiu da base'
-    assert sim['total_depois'] == 646.00 + 1742.10
+    assert sim['total_depois'] == 613.00 + 1742.10
     n = c.post(f'/api/orcamentos/{oid}/atualizar').json()
     itens = {i['codigo']: i for i in itens_de(n)}
-    assert itens['00003']['referencia'] == '2026-08' and itens['00003']['custo_unit'] == 5.17
+    assert itens['00003']['referencia'] == '2026-08' and itens['00003']['custo_unit'] == 4.90
     assert itens['103335']['referencia'] == '2026-05' and itens['103335']['custo_unit'] == 139.37  # preço antigo preservado
     # a data-base do orçamento passa a ser a pedida (a mais recente); o item da ORSE fica com o mês dele (agosto)
     assert n['referencia'] == ultimo and n['total'] == sim['total_depois']
@@ -154,7 +154,7 @@ def test_mudar_data_base_do_orcamento():
     try:
         c.post(f"/api/orcamentos/{o['id']}/itens", json={'tipo': 'servico', 'base': 'ORSE', 'codigo': '00003', 'quantidade': 100})
         n = c.post(f"/api/orcamentos/{o['id']}/atualizar", params={'referencia': '2026-08'}).json()
-        assert n['referencia'] == '2026-08' and itens_de(n)[0]['custo_unit'] == 5.17 and n['total'] == 646.00
+        assert n['referencia'] == '2026-08' and itens_de(n)[0]['custo_unit'] == 4.90 and n['total'] == 613.00
         n = c.post(f"/api/orcamentos/{o['id']}/atualizar", params={'referencia': '2026-05'}).json()
         assert n['referencia'] == '2026-05' and n['total'] == 613.00
     finally:
@@ -167,9 +167,9 @@ def test_divisao_do_custo_do_orcamento(orc):
     o = c.post(f"/api/orcamentos/{orc['id']}/itens", json={'tipo': 'insumo', 'base': 'SINAPI', 'codigo': '04750', 'quantidade': 10}).json()
     d = o['divisao']
     assert abs(sum(d.values()) - 1) < 0.001 and set(d) == {'mo', 'mat', 'equip', 'terc'}
-    # 00003/ORSE é 80,9% mão de obra; o pedreiro (insumo de pessoal) entra inteiro em mão de obra
+    # 00003/ORSE é 79,6% mão de obra (com o encargo social); o pedreiro (insumo de pessoal) entra inteiro em mão de obra
     custo = {i['codigo']: i['custo_total'] for e in o['etapas'] for i in e['itens']}
-    esperado = (custo['00003'] * 0.809 + custo['04750']) / (custo['00003'] + custo['04750'])
+    esperado = (custo['00003'] * 0.796 + custo['04750']) / (custo['00003'] + custo['04750'])
     assert abs(d['mo'] - esperado) < 0.002
     lista = {x['id']: x for x in c.get('/api/orcamentos').json()}
     assert lista[orc['id']]['divisao'] == d

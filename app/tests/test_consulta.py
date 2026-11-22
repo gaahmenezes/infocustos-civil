@@ -38,22 +38,22 @@ def test_filtros():
 
 def test_composicao_fecha_com_preco_da_tabela():
     d = c.get('/api/composicao/ORSE/00003').json()
-    assert d['referencia'] == '2026-08' and d['custo_total'] == pytest.approx(5.17)
-    assert sum(i['custo_total'] for i in d['itens']) == pytest.approx(5.17, abs=0.02)
+    assert d['referencia'] == '2026-08' and d['custo_total'] == pytest.approx(4.90)
+    assert sum(i['custo_total'] for i in d['itens']) == pytest.approx(4.90, abs=0.02)
 
 
 def test_cada_mes_mostra_so_os_seus_precos():
     mai = c.get('/api/composicao/ORSE/00003', params={'ref': '2026-05'}).json()
     ago = c.get('/api/composicao/ORSE/00003').json()
     assert mai['referencia'] == '2026-05' and mai['custo_total'] == 4.90
-    assert ago['referencia'] == '2026-08' and ago['custo_total'] == 5.17
+    assert ago['referencia'] == '2026-08' and ago['custo_total'] == 4.90
     for d in (mai, ago):
         assert 'historico' not in d and 'preco_anterior' not in d
     b = c.get('/api/busca', params={'q': '00003', 'tipo': 'servico', 'base': 'ORSE', 'ref': '2026-05'}).json()
     assert b['referencia'] == '2026-05' and b['itens'][0]['preco'] == 4.90 and 'preco_anterior' not in b['itens'][0]
     assert c.get('/api/insumo/SINAPI/06111', params={'ref': '2026-05'}).json()['preco'] == 7.37
-    assert c.get('/api/insumo/SINAPI/06111', params={'ref': '2026-08'}).json()['preco'] == 7.90
-    # setembro vem da CAIXA, que publica a mão de obra já com os encargos sociais (15,58 = salário com 111,51%)
+    # de agosto em diante a SINAPI vem da CAIXA, que publica a mão de obra já com os encargos sociais (15,58 = 7,37 com 111,51%)
+    assert c.get('/api/insumo/SINAPI/06111', params={'ref': '2026-08'}).json()['preco'] == 15.58
     assert c.get('/api/insumo/SINAPI/06111').json()['preco'] == 15.58
 
 
@@ -85,7 +85,7 @@ def test_comparativo_entre_meses():
     assert v['resumo']['novos'] == 31 and v['resumo']['retirados'] == 33
     assert v['itens'][0]['variacao'] >= v['itens'][-1]['variacao']
     item = c.get('/api/comparativo/item/servico/ORSE/00003').json()
-    assert [(m['referencia'], m['preco']) for m in item['meses']] == [('2026-05', 4.90), ('2026-08', 5.17)]
+    assert [(m['referencia'], m['preco']) for m in item['meses']] == [('2026-05', 4.90), ('2026-08', 4.90)]
     f = c.get('/api/comparativo', params={'q': 'chapisco', 'tipo': 'servico'}).json()
     assert f['itens'] and all('hapisco' in i['descricao'] or i['codigo'] == 'chapisco' for i in f['itens'])
     assert c.get('/api/comparativo', params={'de': '2026-08', 'para': '2026-08'}).status_code == 422

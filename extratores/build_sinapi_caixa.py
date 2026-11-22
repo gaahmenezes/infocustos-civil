@@ -160,14 +160,17 @@ def main():
     # insumo sem preço coletado no estado: a CAIXA atribui o preço de São Paulo ("AS"; coluna %AS do relatório de custos)
     p_sp = achar('SINAPI_Preco_Ref_Insumos_SP_')
     sp = ler_insumos(p_sp)[0] if p_sp and uf != 'SP' else {}
+    montar(insumos, enc_h, enc_m, mes, ano, local, sp, ler_custos(p_cus), ler_analitico(p_ana), uf, destino, anterior)
+
+
+def montar(insumos, enc_h, enc_m, mes, ano, local, sp, custos, comps, uf, destino, anterior=None):
+    """Grava o banco do mês a partir dos dados já lidos (dos PDFs ou da planilha da CAIXA), com a conferência."""
     atribuidos = 0
     for c, i in insumos.items():
         if i['preco'] is None and sp.get(c, {}).get('preco') is not None:
             i['preco'] = sp[c]['preco']; i['origem'] = 'AS'; atribuidos += 1
     print(f'{atribuidos} insumos sem preço coletado no estado recebem o preço de São Paulo (AS), como a CAIXA faz' if sp else
           'aviso: relatório de insumos de SP não encontrado; insumos sem preço no estado ficam sem preço')
-    custos = ler_custos(p_cus)
-    comps = ler_analitico(p_ana)
     ref = f'{ano}-{mes:02d}'
     print(f'{local} {mes:02d}/{ano}: {len(insumos)} insumos, {len(custos)} custos de composição, {len(comps)} composições no analítico')
 
