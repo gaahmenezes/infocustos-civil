@@ -41,7 +41,7 @@ for raw in lines:
     l = raw.rstrip('\f').rstrip(); s = l.strip()
     if not s: continue
     if (s.startswith('Viva Construções') or s.startswith('Rua Ulysses') or re.match(r'^\d{2}/\d{2}/\d{4} \d', s) or s.startswith('12.997.101')
-        or s.startswith('Ref :') or 'RptRelacaoComposicoes' in s): continue
+        or s.startswith('Ref :') or 'RptRelacaoComposicoes' in s or s.startswith('RELATÓRIO DE COMPOSIÇÕES')): continue
     m = re.match(r'^CÓDIGO\s+(.*?)\s{2,}(?:PROD\. EQUIPE\s+)?UNID$', s) or re.match(r'^CÓDIGO\s+(.*?)\s+(?:PROD\. EQUIPE\s+)?UNID$', s)
     if m and not any(s[6:].lstrip().startswith(k) for k in SECTIONS):
         pending_desc = [m.group(1).strip()]; state = 'head'; continue

@@ -82,7 +82,7 @@ def test_encargos_de_agosto():
 def test_comparativo_entre_meses():
     v = c.get('/api/comparativo', params={'de': '2026-05', 'para': '2026-08', 'tipo': 'servico', 'base': 'ORSE', 'limite': 5}).json()
     assert v['de']['id'] == '2026-05' and v['para']['id'] == '2026-08'
-    assert v['resumo']['novos'] == 31 and v['resumo']['retirados'] == 33
+    assert v['resumo']['novos'] == 50 and v['resumo']['retirados'] == 33  # 31 + 19 composições novas na revisão de agosto (14234 a 14252)
     assert v['itens'][0]['variacao'] >= v['itens'][-1]['variacao']
     item = c.get('/api/comparativo/item/servico/ORSE/00003').json()
     assert [(m['referencia'], m['preco']) for m in item['meses']] == [('2026-05', 4.90), ('2026-08', 4.90)]

@@ -5,7 +5,7 @@ busca rápida, composição analítica em árvore, orçamento com BDI e curva AB
 
 Bases carregadas (Sergipe): **ORSE** de maio/2026 e agosto/2026 e **SINAPI** de maio/2026 (programa da CEHOP);
 **SINAPI** de julho/2026, agosto/2026, setembro/2026 e outubro/2026 (CAIXA); **SICRO** de julho/2026 (DNIT).
-A ORSE de agosto/2026 usa os insumos SINAPI com os preços oficiais da CAIXA de agosto (ver "SINAPI dentro da ORSE").
+A ORSE de agosto/2026 vem do relatório de composições corrigido pela CEHOP (22/11/2026), com os insumos SINAPI da CAIXA.
 Cada base tem a sua data-base: a pesquisa procura todas juntas, cada uma no mês escolhido para ela.
 
 ## Rodar
@@ -110,19 +110,19 @@ dados (abas ISD, CSD e Analítico) e é lida com as mesmas regras e a mesma conf
 python3 extratores/build_sinapi_caixa_xlsx.py "SINAPI_Referência_AAAA_MM.xlsx" SE dados/sinapi_AAAA-MM.sqlite dados/orse_sinapi.sqlite
 ```
 
-### SINAPI dentro da ORSE
+### ORSE de um mês em que a SINAPI vem da CAIXA
 
-As composições da ORSE usam insumos da SINAPI. O relatório tirado do programa da CEHOP pode vir com a tabela SINAPI
-desatualizada: em agosto/2026 ele trazia a placa de obra 04813 a R$ 432,00 e o carpinteiro a R$ 11,52 sem encargo,
-quando a CAIXA publicou R$ 300,00 e R$ 10,25 (a 00051 dava R$ 549,94; no site da CEHOP, R$ 413,16). Para levar os
-preços oficiais da CAIXA para dentro da ORSE do mês (mão de obra pelo preço sem encargos da aba ISE, com o encargo
-social da ORSE por cima; demais insumos pela aba ISD):
+O relatório de composições da ORSE (programa da CEHOP, em PDF, que pode vir em partes) é lido como antes
+(`pdftotext -layout` de cada parte, juntas num arquivo só, `parse_composicoes.py` e `build_db.py`). Depois:
 
 ```bash
-python3 extratores/atualizar_sinapi_na_orse.py dados/orse_sinapi_AAAA-MM.sqlite "SINAPI_Referência_AAAA_MM.xlsx" SE novo.sqlite
+python3 extratores/orse_mes_sem_sinapi.py dados/orse_sinapi_AAAA-MM.sqlite comp_raw.json <banco anterior do mês>
 ```
 
-O arquivo novo fica só com a ORSE; a SINAPI do mês passa a vir do banco da CAIXA.
+Ele tira a SINAPI do arquivo (vem do banco da CAIXA do mesmo mês), põe em cada serviço ORSE o custo da composição do
+relatório, cria a linha de serviço das composições novas, tira o preço de cada insumo ORSE das composições (na mão de
+obra, sem o encargo social) e mantém do banco anterior os encargos do mês. Em agosto/2026 o primeiro relatório do
+programa veio com a tabela SINAPI desatualizada (00051 a R$ 549,94); o corrigido dá R$ 413,16, como no site da CEHOP.
 
 ## SICRO (DNIT)
 
