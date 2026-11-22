@@ -238,8 +238,7 @@ async function abrirOrcamento(id, dados) {
           <label>Local<input id="orc-local" value="${esc(o.local)}" placeholder="—"></label>
           <label class="curto">BDI (%)<input id="orc-bdi" inputmode="decimal" value="${num2.format(o.bdi)}"></label>
           <label class="curto">Data-base<select id="orc-mes">${((estado.ref && estado.ref.referencias) || []).map((r) =>
-            `<option value="${esc(r.id)}"${r.id === o.referencia ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}</option>`).join('')}</select>
-            <button type="button" class="link-acao orc-recalc" id="orc-recalc" title="Leva os custos dos itens para os preços que a base tem hoje neste mesmo mês (por exemplo, depois de uma revisão da CEHOP ou da CAIXA)">Recalcular preços</button></label>
+            `<option value="${esc(r.id)}"${r.id === o.referencia ? ' selected' : ''}>${esc(r.descricao.replace(/-1$/, ''))}</option>`).join('')}</select></label>
           <fieldset class="orc-bases"><legend>Bases vigentes neste orçamento <span>a busca de itens procura só nelas; os itens já lançados não mudam</span></legend>
             ${basesVigentes(o).todas.map((b) => `<label class="orc-base-op${b.k.startsWith('P') ? ' propria' : ''}"><input type="checkbox" data-orc-base="${esc(b.k)}"${basesVigentes(o).sel.some((x) => x.k === b.k) ? ' checked' : ''}>${esc(b.nome)}</label>`).join('')}
           </fieldset>
@@ -881,37 +880,32 @@ function ligarMudarMes(o) {
   const sel = $('#orc-mes'), caixa = $('#orc-mudar-mes');
   if (!sel) return;
   const desfazer = () => { sel.value = o.referencia; caixa.hidden = true; caixa.innerHTML = ''; };
-  const mostrar = async (alvo) => {
-    const nome = nomeRef(alvo), mesmo = alvo === o.referencia;  // mesmo mês: recalcula com os preços que a base tem hoje
+  sel.addEventListener('change', async () => {
+    const alvo = sel.value; if (alvo === o.referencia) { desfazer(); return; }
+    const nome = nomeRef(alvo);
     caixa.hidden = false; caixa.innerHTML = '<p class="carregando">Calculando…</p>';
     try {
       const r = await req(`/api/orcamentos/${o.id}/atualizacao?referencia=${encodeURIComponent(alvo)}`);
       const sem = r.sem_preco.map((x) => `<li><b>${x.numero}</b> ${esc(x.codigo)}/${esc(x.base)} · ${esc(x.descricao)}</li>`).join('');
-      const mudam = r.itens.filter((x) => Math.abs((x.custo_unit_depois || 0) - (x.custo_unit_antes || 0)) > 0.0049).length;
-      caixa.innerHTML = (mesmo
-        ? `<p><b>Recalcular com os preços atuais de ${esc(nome)}?</b> ${mudam ? `${mudam} ${mudam === 1 ? 'item muda' : 'itens mudam'} de custo` : 'Nenhum item muda de custo'}.
-            Total com BDI: <b>${brl.format(r.total_antes)}</b> → <b>${brl.format(r.total_depois)}</b>.</p>`
-        : `<p><b>Mudar a data-base para ${esc(nome)}?</b> Os custos de ${r.itens.length} ${r.itens.length === 1 ? 'item serão recalculados' : 'itens serão recalculados'} com os preços de ${esc(nome)}.
-            Total com BDI em ${esc(nome)}: <b>${brl.format(r.total_depois)}</b>.</p>`)
-        + `${sem ? `<p>${r.sem_preco.length === 1 ? 'Este item não existe' : 'Estes itens não existem'} em ${esc(nome)} e ${r.sem_preco.length === 1 ? 'fica' : 'ficam'} com o preço atual. Substitua por um equivalente, se for o caso:</p><ul class="sem-preco">${sem}</ul>` : ''}
-        <div class="acoes"><button type="button" class="botao primario" id="orc-mes-ok"${mesmo && !mudam ? ' disabled' : ''}>${mesmo ? 'Recalcular' : `Mudar para ${esc(nome)}`}</button>
-          <button type="button" class="botao" id="orc-mes-copia"${mesmo && !mudam ? ' disabled' : ''}>${mesmo ? 'Criar uma cópia recalculada' : `Criar uma cópia em ${esc(nome)}`}</button>
+      caixa.innerHTML = `<p><b>Mudar a data-base para ${esc(nome)}?</b> Os custos de ${r.itens.length} ${r.itens.length === 1 ? 'item serão recalculados' : 'itens serão recalculados'} com os preços de ${esc(nome)}.
+        Total com BDI em ${esc(nome)}: <b>${brl.format(r.total_depois)}</b>.</p>
+        ${sem ? `<p>${r.sem_preco.length === 1 ? 'Este item não existe' : 'Estes itens não existem'} em ${esc(nome)} e ${r.sem_preco.length === 1 ? 'fica' : 'ficam'} com o preço atual. Substitua por um equivalente, se for o caso:</p><ul class="sem-preco">${sem}</ul>` : ''}
+        <div class="acoes"><button type="button" class="botao primario" id="orc-mes-ok">Mudar para ${esc(nome)}</button>
+          <button type="button" class="botao" id="orc-mes-copia">Criar uma cópia em ${esc(nome)}</button>
           <button type="button" class="botao" id="orc-mes-cancelar">Cancelar</button></div>`;
       $('#orc-mes-cancelar').addEventListener('click', desfazer);
       $('#orc-mes-ok').addEventListener('click', async () => {
         const n = await req(`/api/orcamentos/${o.id}/atualizar?referencia=${encodeURIComponent(alvo)}`, 'POST');
-        await abrirOrcamento(n.id, n); avisar(mesmo ? `Preços recalculados com a base atual de ${esc(nome)}. Novo total ${brl.format(n.total)}.` : `Data-base alterada para ${esc(nome)}. Novo total ${brl.format(n.total)}.`, 6000);
+        await abrirOrcamento(n.id, n); avisar(`Data-base alterada para ${esc(nome)}. Novo total ${brl.format(n.total)}.`, 6000);
       });
       $('#orc-mes-copia').addEventListener('click', async () => {
         const copia = await req(`/api/orcamentos/${o.id}/duplicar`, 'POST');
         const n = await req(`/api/orcamentos/${copia.id}/atualizar?referencia=${encodeURIComponent(alvo)}`, 'POST');
-        await req(`/api/orcamentos/${n.id}`, 'PATCH', { nome: `${o.nome} (${mesmo ? 'recalculado' : nome})` });
-        location.hash = rotaOrc(n.id); avisar(`Cópia criada${mesmo ? ' com os preços recalculados' : ` em ${esc(nome)}`}. O orçamento original não mudou.`, 6000);
+        await req(`/api/orcamentos/${n.id}`, 'PATCH', { nome: `${o.nome} (${nome})` });
+        location.hash = rotaOrc(n.id); avisar(`Cópia criada em ${esc(nome)}. O orçamento original não mudou.`, 6000);
       });
     } catch (e) { caixa.innerHTML = `<p class="erro">${esc(e.message)}</p>`; }
-  };
-  sel.addEventListener('change', () => { if (sel.value === o.referencia) { desfazer(); return; } mostrar(sel.value); });
-  const rc = $('#orc-recalc'); if (rc) rc.addEventListener('click', () => { sel.value = o.referencia; mostrar(o.referencia); });
+  });
 }
 
 // ---------- totais sempre à vista ----------

@@ -122,9 +122,7 @@ social da ORSE por cima; demais insumos pela aba ISD):
 python3 extratores/atualizar_sinapi_na_orse.py dados/orse_sinapi_AAAA-MM.sqlite "SINAPI_Referência_AAAA_MM.xlsx" SE novo.sqlite
 ```
 
-O arquivo novo fica só com a ORSE; a SINAPI do mês passa a vir do banco da CAIXA. Orçamentos que já tinham itens do
-mês guardam o preço antigo: em "Editar dados", **Recalcular preços** mostra quanto muda e leva os itens para os preços
-atuais da base, sem trocar a data-base.
+O arquivo novo fica só com a ORSE; a SINAPI do mês passa a vir do banco da CAIXA.
 
 ## SICRO (DNIT)
 
