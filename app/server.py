@@ -643,6 +643,27 @@ import importar  # noqa: E402
 app.include_router(importar.router)
 import encargos_proprios  # noqa: E402
 app.include_router(encargos_proprios.router)
+import bases_oficiais  # noqa: E402
+app.include_router(bases_oficiais.router)
+BASE_VERSAO = '0'  # muda quando a base de preços é trocada no ar: a página se recarrega para ver os meses novos
+
+
+def trocar_banco(novo):
+    """Publicação pela tela "Bases oficiais": passa a usar o banco novo e esquece tudo o que foi lembrado do antigo."""
+    global DB, BASE_VERSAO
+    DB = novo
+    _GUARDADAS.clear(); _FONTES.clear(); _MESES_BASE.clear(); _referencia.cache_clear()
+    orcamento.nova_base(); proprias.invalidar(); proprias._ES_MEMO.clear()
+    BASE_VERSAO = str(int(time.time()))
+
+
+bases_oficiais.banco_atual = lambda: DB
+bases_oficiais.trocar = trocar_banco
+
+
+@app.on_event('startup')
+def _sincronizar_bases():
+    bases_oficiais.sincronizar_no_inicio()
 app.mount('/static', StaticFiles(directory=AQUI / 'static'), name='static')
 
 
@@ -687,7 +708,7 @@ INDEX_HTML = _com_versao('index.html')
 @app.get('/api/versao')
 def api_versao():
     """A página compara com a versão que carregou: se mudou, ela se recarrega sozinha."""
-    return JSONResponse({'versao': VERSAO}, headers={'Cache-Control': 'no-store'})
+    return JSONResponse({'versao': VERSAO, 'base': BASE_VERSAO}, headers={'Cache-Control': 'no-store'})
 
 
 @app.get('/')

@@ -43,7 +43,7 @@ c.execute("DELETE FROM composicao_item WHERE composicao_base = 'SINAPI'")
 c.execute("""UPDATE servico SET preco = (SELECT custo_total FROM composicao p WHERE p.base = servico.base AND p.codigo = servico.codigo
     AND p.referencia = servico.referencia) WHERE base = 'ORSE' AND EXISTS (SELECT 1 FROM composicao p WHERE p.base = servico.base
     AND p.codigo = servico.codigo AND p.referencia = servico.referencia)""")
-comps = {x['codigo']: x for x in json.load(open(comp_json))}
+comps = None  # o JSON do relatório (pesado) só é lido se faltar a linha de serviço de alguma composição
 faltam = [r[0] for r in c.execute("""SELECT codigo FROM composicao p WHERE base = 'ORSE' AND NOT EXISTS
     (SELECT 1 FROM servico s WHERE s.base = 'ORSE' AND s.codigo = p.codigo AND s.referencia = p.referencia)""")]
 antigos = {}
@@ -51,6 +51,8 @@ if anterior:  # composição que saiu do relatório de serviços mas continua no
     a = sqlite3.connect(anterior)
     antigos = {r[0]: r[1:] for r in a.execute("SELECT codigo, descricao, unidade, tipo, grupo, subgrupo FROM servico WHERE base = 'ORSE'")}
     a.close()
+if faltam:
+    comps = {x['codigo']: {'descricao': x['descricao'], 'unidade': x['unidade']} for x in json.load(open(comp_json)) if x['codigo'] in set(faltam)}
 for cod in faltam:
     x = comps[cod]
     if cod in antigos:

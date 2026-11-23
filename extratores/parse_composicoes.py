@@ -2,7 +2,7 @@ import sys, re, json, collections
 BASE = sys.argv[3] if len(sys.argv) > 3 else 'ORSE'
 N = r'-?[\d.]*,\d+'
 def num(s): return float(s.replace('.', '').replace(',', '.'))
-RE_COMP = re.compile(r'^\s*(\d{3,7})\s+/\s+' + BASE + r'\s*(?:(' + N + r')\s+)?(\S+)?\s*$')
+RE_COMP = re.compile(r'^\s*(\d{3,7})\s*/\s*' + BASE + r'\s*(?:(' + N + r')\s+)?(\S+)?\s*$')  # com ou sem espaço na barra (pdftotext ou pdfium)
 RE_ITEM = re.compile(r'^\s*(\d{3,7})\s*/\s*([A-Z]+)(?:\s+(.*?))?\s+(\S+(?:\s+' + N + r')?)\s+(' + N + r')\s+(' + N + r')\s*$')
 RE_ITEM2 = re.compile(r'^\s*(\d{3,7})\s*/\s*([A-Z]+)(?:\s+(.*?))?\s+(' + N + r')\s+([^\d\s]\S*)\s+(' + N + r')\s+(' + N + r')\s*$')
 RE_GLUE = re.compile(r'^\s*(\d{3,7})\s*/\s*([A-Z]+)(?:\s+(.*?))?\s+([^\d\s]\S*)\s+(\d+,\d+?)(\d{1,3}(?:\.\d{3})*,\d{2})\s+(' + N + r')\s*$')
@@ -36,8 +36,9 @@ RE_DNIT = re.compile(r'^\s*(\d{3,7})\s*/\s*([A-Z]+)\s+(.*?)\s+(\S+)\s+(' + N + r
 SECTIONS = {'MÃO-DE-OBRA': 'MAO_DE_OBRA', 'MATERIAL': 'MATERIAL', 'EQUIPAMENTO': 'EQUIPAMENTO',
             'SERVIÇO DE TERCEIRO': 'SERVICO_TERCEIRO', 'SERVIÇO AUXILIAR': 'SERVICO_AUXILIAR'}
 comps = []; partial = None; cur = None; sec = None; last = None; pending_desc = []; state = None; unhandled = collections.Counter(); samples = []
-lines = open(sys.argv[1], encoding='utf-8').read().split('\n')
+lines = open(sys.argv[1], encoding='utf-8')  # linha a linha: o relatório inteiro tem dezenas de MB
 for raw in lines:
+    raw = raw.rstrip('\n')
     l = raw.rstrip('\f').rstrip(); s = l.strip()
     if not s: continue
     if (s.startswith('Viva Construções') or s.startswith('Rua Ulysses') or re.match(r'^\d{2}/\d{2}/\d{4} \d', s) or s.startswith('12.997.101')

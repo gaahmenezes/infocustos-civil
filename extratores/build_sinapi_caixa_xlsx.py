@@ -93,7 +93,7 @@ def main():
     anterior = sys.argv[4] if len(sys.argv) > 4 else None
     insumos, sp, classe, (enc_h, enc_m), (mes, ano), local, custos, comps = ler(xlsx, uf)
     print(f'{local} {mes:02d}/{ano}: encargo social horista {enc_h}%, mensalista {enc_m}%')
-    caixa.montar(insumos, enc_h, enc_m, mes, ano, local, sp if uf != 'SP' else {}, custos, comps, uf, destino, anterior)
+    return caixa.montar(insumos, enc_h, enc_m, mes, ano, local, sp if uf != 'SP' else {}, custos, comps, uf, destino, anterior)
 
 
 if __name__ == '__main__':

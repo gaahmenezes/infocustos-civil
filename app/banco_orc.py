@@ -44,6 +44,9 @@ CREATE TABLE IF NOT EXISTS base_propria (id INTEGER PRIMARY KEY, nome TEXT NOT N
 -- bases de encargos sociais da empresa: quadros de horistas e mensalistas (listas de itens em JSON)
 CREATE TABLE IF NOT EXISTS encargo_base (id INTEGER PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', origem TEXT DEFAULT '',
   horista TEXT DEFAULT '', mensalista TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
+-- meses das bases oficiais enviados pela tela "Bases oficiais": o banco do mês (sqlite .gz) e a conferência
+CREATE TABLE IF NOT EXISTS base_mensal (id INTEGER PRIMARY KEY, base TEXT NOT NULL, referencia TEXT NOT NULL, descricao TEXT DEFAULT '',
+  arquivo BLOB, relatorio TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'pendente', criado_em TEXT, publicado_em TEXT);
 '''
 
 # mesmas tabelas; DOUBLE PRECISION porque REAL no Postgres guarda só 6 dígitos
@@ -79,6 +82,8 @@ CREATE TABLE IF NOT EXISTS config (id SERIAL PRIMARY KEY, chave TEXT NOT NULL UN
 CREATE TABLE IF NOT EXISTS base_propria (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', criado_em TEXT);
 CREATE TABLE IF NOT EXISTS encargo_base (id SERIAL PRIMARY KEY, nome TEXT NOT NULL, descricao TEXT DEFAULT '', origem TEXT DEFAULT '',
   horista TEXT DEFAULT '', mensalista TEXT DEFAULT '', criado_em TEXT, atualizado_em TEXT);
+CREATE TABLE IF NOT EXISTS base_mensal (id SERIAL PRIMARY KEY, base TEXT NOT NULL, referencia TEXT NOT NULL, descricao TEXT DEFAULT '',
+  arquivo BYTEA, relatorio TEXT DEFAULT '', status TEXT NOT NULL DEFAULT 'pendente', criado_em TEXT, publicado_em TEXT);
 '''
 
 # colunas que entraram depois: bancos já criados recebem por aqui

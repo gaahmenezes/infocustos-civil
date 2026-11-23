@@ -31,6 +31,15 @@ _base_conn = None  # definido por server.py
 
 
 _local = threading.local()
+GERACAO = 0  # muda quando a base de preços é trocada no ar (publicação pela tela "Bases oficiais")
+
+
+def nova_base():
+    """A base de preços foi trocada: as conexões guardadas e as respostas lembradas deixam de valer."""
+    global GERACAO, _meses
+    GERACAO += 1
+    _meses = None
+    _compl_composicao.cache_clear()
 
 
 def configurar(conn_base):
@@ -40,8 +49,8 @@ def configurar(conn_base):
 
     def reaproveitada():
         c = getattr(_local, 'c', None)
-        if c is None:
-            c = _local.c = conn_base()
+        if c is None or getattr(_local, 'ger', None) != GERACAO:
+            c = _local.c = conn_base(); _local.ger = GERACAO
             c.execute('PRAGMA cache_size = -2000')  # até 2 MB de páginas por conexão
         return c
     _base_conn = reaproveitada

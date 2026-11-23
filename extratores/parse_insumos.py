@@ -26,8 +26,10 @@ def main(pdf_path, out_json):
     recs, cat, cats = [], None, collections.OrderedDict()
     cur = None; total = None; ref = None
     with pdfplumber.open(pdf_path) as pdf:
-        for pno, page in enumerate(pdf.pages, 1):
+        for pno in range(1, len(pdf.pages) + 1):
+            page = pdf.pages[pno - 1]
             lns = page_lines(page); dx = 0
+            page.close()  # libera o que o pdfplumber guardou da página (sem isso, o relatório inteiro fica na memória)
             for ln in lns:
                 for w in ln['words']:
                     if w['text'].startswith('CÓDIGO') and ln['top'] < 100: dx = w['x0'] - 50

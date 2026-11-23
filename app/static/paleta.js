@@ -16,6 +16,7 @@ function acoesDaPaleta() {
     { grupo: 'Ir para', rotulo: 'Composições próprias', dica: 'composições e insumos da empresa', acao: ir('#/proprias') },
     { grupo: 'Ir para', rotulo: 'Importar arquivo (SIENGE, Excel, PDF)', dica: 'insumos, composições e orçamento', acao: ir('#/importar') },
     { grupo: 'Ir para', rotulo: 'Encargos sociais', dica: 'horistas e mensalistas', acao: ir('#/encargos') },
+    { grupo: 'Ir para', rotulo: 'Bases oficiais: enviar um mês novo', dica: 'ORSE e SINAPI, com conferência', acao: ir('#/bases-oficiais') },
     { grupo: 'Ir para', rotulo: 'Comparativo entre meses', dica: 'variação de preços', acao: ir('#/comparativo') },
     { grupo: 'Ir para', rotulo: 'Apresentação do InfoCustos Civil', dica: 'o que o sistema faz', acao: ir('#/apresentacao') },
     { grupo: 'Ações', rotulo: temaAtual() === 'dark' ? 'Usar tema claro' : 'Usar tema escuro', dica: 'aparência', acao: () => $('#tema').click() },

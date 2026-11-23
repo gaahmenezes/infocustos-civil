@@ -264,6 +264,9 @@ def montar(insumos, enc_h, enc_m, mes, ano, local, sp, custos, comps, uf, destin
             divergem.append((c, round(soma, 2), oficial))
     com_falta = [x for x in divergem if x[1] == 'item sem preço']
     numericas = [x for x in divergem if x[1] != 'item sem preço']
+    resultado = {'referencia': ref, 'insumos': len(insumos), 'composicoes': len(comps), 'conferidas': conferidas,
+                 'divergem': [list(x) for x in numericas], 'sem_preco_no_estado': len(com_falta), 'atribuidos_sp': atribuidos,
+                 'encargo_horista': enc_h, 'encargo_mensalista': enc_m, 'local': local}
     print(f'conferência: {conferidas} composições com todos os itens com preço; {len(numericas)} com soma diferente do relatório; '
           f'{len(com_falta)} com custo oficial mas algum item sem preço publicado no estado')
     for x in numericas[:12]:
@@ -332,6 +335,7 @@ def montar(insumos, enc_h, enc_m, mes, ano, local, sp, custos, comps, uf, destin
     sp = con.execute('SELECT COUNT(*) FROM servico WHERE preco IS NULL').fetchone()[0]
     print(f'SINAPI {uf} {MESES[mes - 1]}/{ano} ({ref}): {n}; composições sem custo no estado: {sp}')
     con.execute('VACUUM'); con.close()
+    return resultado
 
 
 if __name__ == '__main__':

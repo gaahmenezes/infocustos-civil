@@ -33,6 +33,7 @@ for base, rows in (('ORSE', oi), ('SINAPI', si)):
     cur.executemany('INSERT INTO insumo VALUES (?,?,?,?,?,?,?,?,?,?)', [(base, r['codigo'], REF, r['descricao'], r['unidade'], r['preco'], r['marcador'], r['tipo'], r['grupo'], r['subgrupo']) for r in rows])
 for base, rows in (('ORSE', os_), ('SINAPI', ss)):
     cur.executemany('INSERT INTO servico VALUES (?,?,?,?,?,?,?,?,?)', [(base, r['codigo'], REF, r['descricao'], r['unidade'], r['preco'], r['tipo'], r['grupo'], r['subgrupo']) for r in rows])
+PLANILHA = not os.environ.get('SEM_PLANILHA')  # a tela "Bases oficiais" não precisa da planilha em Excel
 wb = Workbook(write_only=True)
 wc = wb.create_sheet('Composicoes'); wi = wb.create_sheet('Itens')
 hc = ['Base', 'Código', 'Descrição', 'Unidade', 'Modelo', 'Prod. equipe', 'Encargo social %', 'Equipamento', 'Mão de obra', 'Encargo social', 'Material', 'Serv. terceiro', 'Custo total']
@@ -46,14 +47,15 @@ for cb, C in CB:
     un = c['unidade'] or sv.get('unidade', '')
     cur.execute('INSERT INTO composicao VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)', (cb, c['codigo'], REF, c['tipo'], un, c['prod_equipe'], c['encargo_social'],
         r['equipamento'], r['mao_de_obra'], r['encargo_social'], r['material'], r['servico_terceiro'], r['total']))
-    wc.append([cb, c['codigo'], sd, un, c['tipo'], c['prod_equipe'], c['encargo_social'], r['equipamento'], r['mao_de_obra'], r['encargo_social'], r['material'], r['servico_terceiro'], r['total']])
+    if PLANILHA: wc.append([cb, c['codigo'], sd, un, c['tipo'], c['prod_equipe'], c['encargo_social'], r['equipamento'], r['mao_de_obra'], r['encargo_social'], r['material'], r['servico_terceiro'], r['total']])
     for k, i in enumerate(c['itens'], 1):
         aux = i['secao'] == 'SERVICO_AUXILIAR'
         d = (sdesc(i['base'], i['codigo']).get('descricao') if aux else desc_ins.get((i['base'], i['codigo']))) or i['descricao'].replace('\n', ' ')
         cur.execute('INSERT INTO composicao_item VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)', (cb, c['codigo'], REF, k, i['secao'], i['base'], i['codigo'], int(aux), d, i['unidade'],
             i['qtd'], i.get('custo_unit'), i.get('prod'), i.get('impr'), i.get('custo_prod'), i.get('custo_impr'), i['custo_total']))
-        wi.append([cb, c['codigo'], sd, i['secao'], i['base'], i['codigo'], d, i['unidade'], i['qtd'], i.get('custo_unit'), i.get('prod'), i.get('impr'), i.get('custo_prod'), i.get('custo_impr'), i['custo_total']])
+        if PLANILHA: wi.append([cb, c['codigo'], sd, i['secao'], i['base'], i['codigo'], d, i['unidade'], i['qtd'], i.get('custo_unit'), i.get('prod'), i.get('impr'), i.get('custo_prod'), i.get('custo_impr'), i['custo_total']])
 con.commit()
 for t in ('insumo', 'servico', 'composicao', 'composicao_item'): print(t, cur.execute(f'select count(*) from {t}').fetchone()[0])
 con.close()
-wb.save(D + f'composicoes_orse_sinapi_{REF}.xlsx')
+if PLANILHA:
+    wb.save(D + f'composicoes_orse_sinapi_{REF}.xlsx')

@@ -86,6 +86,29 @@ na ficha de uma composição oficial, copia os itens para ajustar e mostra a dif
 usa A) são bloqueados, e itens em uso não podem ser excluídos. Ficam no banco dos orçamentos (`DATABASE_URL`).
 Código: `app/proprias.py` (servidor) e `app/static/proprias.js` (tela).
 
+## Bases oficiais pela tela (#/bases-oficiais)
+
+Um mês novo (ou uma revisão) da ORSE e da SINAPI entra pela própria tela, sem passar pelo repositório:
+
+- **ORSE**: os três relatórios do programa da CEHOP em PDF (Composições, que pode vir em partes; Insumos; Serviços).
+  O servidor lê com o pdfium (`extratores/texto_pdf.py`, mesmo texto do `pdftotext -layout`; conferido nas 9.941
+  composições de agosto/2026) e com os leitores de sempre (`parse_composicoes.py`, `parse_insumos.py`, `build_db.py`,
+  `orse_mes_sem_sinapi.py`).
+- **SINAPI**: o zip "formato xlsx" da CAIXA (`build_sinapi_caixa_xlsx.py`, Sergipe, sem desoneração).
+
+A conferência roda em segundo plano e mostra, para cada envio: os relatórios são do mesmo mês, cada composição fecha com
+o total, o preço do serviço é o da composição, o preço dos insumos bate com o usado nas composições e — o caso de
+agosto/2026 — os insumos SINAPI dentro da ORSE batem com a SINAPI da CAIXA do mesmo mês (mais de 2% diferentes
+bloqueia a publicação, salvo "publicar mesmo assim"). Também compara com o mês que está no ar.
+
+O mês conferido fica no banco dos orçamentos (tabela `base_mensal`). **Publicar** remonta a base de preços
+(`extratores/montar_base.py`: repositório + meses publicados, cada um substituindo a mesma base e mês) e troca no ar,
+sem reiniciar; as páginas abertas se recarregam. **Tirar do ar** volta o que havia antes. O build da publicação
+(`build.sh`) também inclui os meses publicados, e o servidor, ao iniciar, remonta se faltar algum.
+
+No plano gratuito do Render (0,1 CPU) a leitura de um mês da ORSE leva bem mais que no computador (uns 5 minutos):
+deixe a página aberta até terminar.
+
 ## SINAPI pelos relatórios da CAIXA
 
 A CAIXA publica os PDFs de todos os estados. Para Sergipe bastam quatro: `SINAPI_Preco_Ref_Insumos_SE_AAAAMM.pdf`,

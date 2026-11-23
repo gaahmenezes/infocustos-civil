@@ -262,7 +262,8 @@ function desenharQuadroDatas() {
       <button type="button" class="botao" data-dt="todas">Marcar todas</button>
       <button type="button" class="botao" data-dt="nenhuma">Desmarcar todas</button>
       <button type="button" class="botao" data-dt="recentes">Mais recentes</button>
-      <button type="button" class="botao primario" data-dt="aplicar"${nenhuma ? ' disabled' : ''}>Aplicar</button></div>`;
+      <button type="button" class="botao primario" data-dt="aplicar"${nenhuma ? ' disabled' : ''}>Aplicar</button></div>
+    <p class="dt-rodape"><a class="link-acao" href="#/bases-oficiais">Atualizar as bases oficiais</a> · enviar um mês novo ou uma revisão</p>`;
 }
 function abrirDatas(manter) {
   const p = $('#dt-painel'); if (!p) return;
@@ -652,15 +653,16 @@ async function rota() {
   const emOrc = /^#\/orcamento/.test(location.hash);
   const emVar = /^#\/comparativo/.test(location.hash);
   const emEnc = /^#\/encargos/.test(location.hash);
+  const emBas = /^#\/bases-oficiais/.test(location.hash);
   const emCmp = lerRotaComparar() !== null;
   const emAp = /^#\/apresentacao/.test(location.hash);
   const emImp = /^#\/importar/.test(location.hash);
   const emProp = emImp || /^#\/propria/.test(location.hash);
   estado.comparando = emCmp || emAp;
   if (!emAp && window.sairDaApresentacao) window.sairDaApresentacao();
-  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp || emAp || emProp);
+  document.body.classList.toggle('modo-orc', emOrc || emVar || emEnc || emCmp || emAp || emProp || emBas);
   document.body.classList.toggle('modo-ap', emAp);
-  const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : emAp ? 'apresentacao' : emProp ? 'proprias' : 'consulta';
+  const aba = emOrc ? 'orcamentos' : emVar ? 'comparativo' : emEnc ? 'encargos' : emAp ? 'apresentacao' : emProp ? 'proprias' : emBas ? 'bases-oficiais' : 'consulta';
   document.body.dataset.aba = aba;
   document.querySelectorAll('.abas a, .nav-baixo a').forEach((a) => a.setAttribute('aria-current', String(a.dataset.aba === aba)));
   moverIndicador();
@@ -672,6 +674,7 @@ async function rota() {
   if (emOrc) { window.rotaOrcamento && window.rotaOrcamento(); return; }
   if (emVar) { desenharComparativo(); return; }
   if (emEnc) { desenharEncargos(); return; }
+  if (emBas) { window.desenharBasesOficiais(); return; }
   if (emImp) { window.rotaImportar && window.rotaImportar(); return; }
   if (emProp) { window.rotaProprias && window.rotaProprias(); return; }
   const m = location.hash.match(/^#\/(composicao|insumo)\/(ORSE|SINAPI|SICRO|PROPRIA)\/(\w+)/);
@@ -1008,17 +1011,21 @@ window.addEventListener('hashchange', (e) => {
 // para nunca rodar arquivos antigos misturados com o servidor novo.
 const VERSAO_CARREGADA = (document.querySelector('meta[name=versao]') || {}).content || '';
 let ultimaConferencia = 0;
+let BASE_CARREGADA = null;
 async function conferirVersao() {
   if (!VERSAO_CARREGADA || VERSAO_CARREGADA === '__VERSAO__' || Date.now() - ultimaConferencia < 5000) return;
   ultimaConferencia = Date.now();
   try {
     const r = await fetch('/api/versao', { cache: 'no-store' }); if (!r.ok) return;
-    const { versao } = await r.json();
-    if (versao && versao !== VERSAO_CARREGADA) location.reload();
+    const { versao, base } = await r.json();
+    if (versao && versao !== VERSAO_CARREGADA) { location.reload(); return; }
+    // a base de preços foi trocada no ar (um mês publicado pela tela "Bases oficiais"): recarrega para ver os meses novos
+    if (base) { if (BASE_CARREGADA == null) BASE_CARREGADA = base; else if (base !== BASE_CARREGADA) location.reload(); }
   } catch (_) { /* sem rede: tenta na próxima */ }
 }
 window.addEventListener('hashchange', conferirVersao);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') conferirVersao(); });
+setTimeout(conferirVersao, 1500);  // guarda a versão da base de preços com que a página abriu
 
 document.addEventListener('click', (e) => {
   const s = e.target.closest('[data-repetir]'); if (!s) return;
