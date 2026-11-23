@@ -51,11 +51,11 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   await p.waitForSelector('#aviso:not([hidden])'); await p.waitForTimeout(600);
   const orcs = await (await p.request.get(U + '/api/orcamentos')).json(); const o = orcs.find((x) => x.nome === 'Obra com composição própria');
   v(o && o.total > 0 && o.divisao && o.divisao.mat < 1, `Entra no orçamento com custo e divisão do custo (total ${o && o.total})`);
-  // busca geral
-  await p.goto(U + '/#/'); await p.fill('#q', 'porcelanato 90x90'); await p.waitForSelector('.res');
-  v((await p.$$eval('.res .cb-base', (x) => x.slice(0, 2).map((e) => e.textContent))).includes('BASE PRÓPRIA'), 'Na busca geral, o que é próprio aparece primeiro');
-  await p.click('.chips[data-filtro="base"] [data-v="PROPRIA"]'); await p.waitForTimeout(600);
-  v((await p.$$eval('.res .cb-base', (x) => [...new Set(x.map((e) => e.textContent))])).join() === 'BASE PRÓPRIA', 'Filtro "Próprias" mostra só os itens da empresa');
+  // a consulta mostra só as bases oficiais: o próprio fica nas abas dele e no orçamento
+  await p.goto(U + '/#/'); await p.fill('#q', 'porcelanato'); await p.waitForSelector('.res');  // a própria é de porcelanato 90x90
+  const bs = await p.$$eval('.res .cb-base', (x) => [...new Set(x.map((e) => e.textContent))]);
+  v(bs.length && bs.every((b) => ['ORSE', 'SINAPI', 'SICRO'].includes(b)), 'Na consulta, só bases oficiais: ' + bs.join(', '));
+  v(!(await p.$('.chips[data-filtro="base"] [data-v="PROPRIA"]')), 'A consulta não tem o filtro de bases próprias');
   // criar a partir de uma oficial
   await p.goto(U + '/#/composicao/SINAPI/103354'); await p.waitForSelector('[data-copiar-propria]');
   const nOficial = await p.$$eval('.arvore tbody tr:not(.secao)', (x) => x.length);

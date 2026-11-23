@@ -374,6 +374,7 @@ function registrarAberto(d, tipo) {
   gravarHist();
 }
 function definirFiltro(grupo, v) {
+  if (grupo === 'base' && v === 'PROPRIA') v = 'todas';  // bases próprias não entram na consulta (só nas abas delas e no orçamento)
   estado[grupo] = v;
   document.querySelectorAll(`.chips[data-filtro="${grupo}"] .chip`).forEach((c) => c.setAttribute('aria-checked', String(c.dataset.v === v)));
 }
@@ -477,13 +478,13 @@ function agendarBusca() { clearTimeout(tBusca); tBusca = setTimeout(buscar, 90);
 
 function contarFiltros(grade) {
   // números dos filtros: cada grupo conta respeitando o filtro do outro grupo
-  const g = grade || [];
+  const g = (grade || []).filter((x) => x.base !== 'PROPRIA');  // a consulta conta só as bases oficiais
   const soma = (f) => g.filter(f).reduce((s, x) => s + x.n, 0);
   const daBase = (x) => estado.base === 'todas' || x.base === estado.base;
   const doTipo = (x) => estado.tipo === 'todos' || x.tipo === estado.tipo;
   const n = {
     tipo: { todos: soma(daBase), servico: soma((x) => daBase(x) && x.tipo === 'servico'), insumo: soma((x) => daBase(x) && x.tipo === 'insumo') },
-    base: { todas: soma(doTipo), ...Object.fromEntries([...BASES, 'PROPRIA'].map((b) => [b, soma((x) => doTipo(x) && x.base === b)])) },
+    base: { todas: soma(doTipo), ...Object.fromEntries(BASES.map((b) => [b, soma((x) => doTipo(x) && x.base === b)])) },
   };
   document.querySelectorAll('.chips').forEach((grupo) => grupo.querySelectorAll('.chip').forEach((c) => {
     const v = n[grupo.dataset.filtro][c.dataset.v] || 0;
@@ -517,7 +518,7 @@ async function buscar() {
   clearTimeout(tAguardo); tAguardo = setTimeout(() => lista.classList.add('aguardando'), 160);
   try {
     // sem texto (ver toda a base): a tabela do mês em ordem de código
-    const r = await api(`/api/busca?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, limite: q ? 80 : PAGINA, refs: refsQs(), bases: basesQs(), ordem: q ? 'usos' : 'codigo' })}`);
+    const r = await api(`/api/busca?${new URLSearchParams({ q, base: estado.base, tipo: estado.tipo, limite: q ? 80 : PAGINA, refs: refsQs(), bases: basesQs(), ordem: q ? 'usos' : 'codigo', proprias_ids: 'nenhuma' })}`);
     if (meu !== seq) return;
     estado.itens = r.itens;
     // sem texto, os números dos filtros são o tamanho da base do mês
@@ -611,7 +612,7 @@ async function mostrarMais(bt) {
   const meu = seq, desde = estado.itens.length;
   bt.disabled = true; bt.textContent = 'Carregando…';
   try {
-    const r = await api(`/api/busca?${new URLSearchParams({ q: '', base: estado.base, tipo: estado.tipo, limite: PAGINA, desde, refs: refsQs(), bases: basesQs(), ordem: 'codigo' })}`);
+    const r = await api(`/api/busca?${new URLSearchParams({ q: '', base: estado.base, tipo: estado.tipo, limite: PAGINA, desde, refs: refsQs(), bases: basesQs(), ordem: 'codigo', proprias_ids: 'nenhuma' })}`);
     if (meu !== seq) return;
     estado.itens = estado.itens.concat(r.itens);
     bt.closest('li').outerHTML = linhasLista(r.itens, desde) + maisLista(r);
