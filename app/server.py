@@ -271,8 +271,8 @@ def ler_refs(c, refs: str = '', ref: Optional[str] = None, bases: str = ''):
 
 
 def filtro_meses(escolha, base='todas', alias='i'):
-    """Condição SQL: cada base no seu mês (ou só a base filtrada)."""
-    bases = [base.upper()] if base.upper() in escolha else list(escolha)
+    """Condição SQL: cada base no seu mês (ou só as bases filtradas: "ORSE" ou "ORSE,SINAPI")."""
+    bases = [b for b in base.upper().split(',') if b in escolha] or list(escolha)
     cond = ' OR '.join(f'({alias}.base = ? AND {alias}.referencia = ?)' for _ in bases)
     return f'({cond})', [v for b in bases for v in (b, escolha[b])]
 
@@ -618,7 +618,7 @@ def exportar_busca(q: str = '', base: str = 'todas', tipo: str = 'todos', ref: O
     res = api_busca(q=q, base=base, tipo=tipo, limite=500, ref=ref, refs=refs, desde=0, ordem='usos', bases=bases)
     with conn() as c:
         nomes = {x['id']: nome_mes(x) for x in referencias(c)}
-    datas = ', '.join(f'{b} {nomes.get(m, m)}' for b, m in res['refs'].items() if base.upper() in ('TODAS', b))
+    datas = ', '.join(f'{b} {nomes.get(m, m)}' for b, m in res['refs'].items() if base.upper() == 'TODAS' or b in base.upper().split(','))
     wb = Workbook(); ws = wb.active; ws.title = 'Resultado'
     ws['A1'] = f"Busca: {q or '(todos)'}  |  Base: {base}  |  Tipo: {tipo}  |  Data-base: {datas}"
     ws['A1'].font = Font(bold=True)

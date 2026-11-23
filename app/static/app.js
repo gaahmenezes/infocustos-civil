@@ -166,8 +166,10 @@ try {
   if (antigo && !estado.meses.ORSE) { estado.meses.ORSE = antigo; estado.meses.SINAPI = antigo; }
 } catch (_) { estado.meses = {}; }
 const gravarMeses = () => { try { localStorage.setItem('infocustos-meses', JSON.stringify(estado.meses)); localStorage.removeItem('infocustos-mes'); } catch (_) { /* sem armazenamento */ } };
-// base "em foco": a do filtro; com todas as bases, a ORSE (a principal)
-const baseFoco = () => (BASES.includes(estado.base) ? estado.base : 'ORSE');
+// filtro de base: "todas" ou uma ou mais bases ("ORSE" ou "ORSE,SINAPI")
+const basesFiltro = () => (estado.base === 'todas' ? [] : estado.base.split(',').filter((b) => BASES.includes(b)));
+// base "em foco": a do filtro (a primeira, com várias); com todas as bases, a ORSE (a principal)
+const baseFoco = () => basesFiltro()[0] || 'ORSE';
 const refsQs = () => Object.entries(estado.meses).filter(([, m]) => m).map(([b, m]) => `${b}:${m}`).join(',');
 const qsMesDe = (base) => (estado.meses[base] ? `ref=${encodeURIComponent(estado.meses[base])}` : '');
 const qsMes = () => qsMesDe(baseFoco());
@@ -199,7 +201,7 @@ async function carregarReferencia() {
   // filtro rápido de base: só aparecem as bases que estão na pesquisa
   // (o filtro "Bases próprias" fica sempre: itens da empresa não têm data-base)
   document.querySelectorAll('.chips[data-filtro="base"] .chip').forEach((c) => { if (BASES.includes(c.dataset.v)) c.hidden = !estado.ativas.includes(c.dataset.v); });
-  if (BASES.includes(estado.base) && !estado.ativas.includes(estado.base)) definirFiltro('base', 'todas');
+  if (basesFiltro().some((b) => !estado.ativas.includes(b))) definirFiltro('base', basesFiltro().filter((b) => estado.ativas.includes(b)).join(',') || 'todas');
   desenharDatas();
   if (!estado.q.trim()) contarFiltros(totaisDoMes());
 }
@@ -374,11 +376,16 @@ function registrarAberto(d, tipo) {
   gravarHist();
 }
 function definirFiltro(grupo, v) {
-  if (grupo === 'base' && v === 'PROPRIA') v = 'todas';  // bases próprias não entram na consulta (só nas abas delas e no orçamento)
+  if (grupo === 'base') {  // bases próprias não entram na consulta (só nas abas delas e no orçamento)
+    const sel = (v || 'todas').split(',').filter((b) => BASES.includes(b));
+    v = sel.length ? sel.join(',') : 'todas';
+  }
   estado[grupo] = v;
-  document.querySelectorAll(`.chips[data-filtro="${grupo}"] .chip`).forEach((c) => c.setAttribute('aria-checked', String(c.dataset.v === v)));
+  const sel = grupo === 'base' ? basesFiltro() : null;
+  document.querySelectorAll(`.chips[data-filtro="${grupo}"] .chip`).forEach((c) => c.setAttribute('aria-checked',
+    String(sel ? (c.dataset.v === 'todas' ? !sel.length : sel.includes(c.dataset.v)) : c.dataset.v === v)));
 }
-const nomeFiltro = (p) => [p.tipo === 'servico' ? 'composições' : p.tipo === 'insumo' ? 'insumos' : '', p.base !== 'todas' ? p.base : ''].filter(Boolean).join(' · ');
+const nomeFiltro = (p) => [p.tipo === 'servico' ? 'composições' : p.tipo === 'insumo' ? 'insumos' : '', p.base !== 'todas' ? p.base.split(',').join(' + ') : ''].filter(Boolean).join(' · ');
 // ---------- painel da página inicial: números da empresa e o que mudou nos preços ----------
 const int = new Intl.NumberFormat('pt-BR');
 const ESQ_PI = '<i class="pi-esq" aria-hidden="true"></i>';
@@ -480,7 +487,7 @@ function contarFiltros(grade) {
   // números dos filtros: cada grupo conta respeitando o filtro do outro grupo
   const g = (grade || []).filter((x) => x.base !== 'PROPRIA');  // a consulta conta só as bases oficiais
   const soma = (f) => g.filter(f).reduce((s, x) => s + x.n, 0);
-  const daBase = (x) => estado.base === 'todas' || x.base === estado.base;
+  const daBase = (x) => estado.base === 'todas' || basesFiltro().includes(x.base);
   const doTipo = (x) => estado.tipo === 'todos' || x.tipo === estado.tipo;
   const n = {
     tipo: { todos: soma(daBase), servico: soma((x) => daBase(x) && x.tipo === 'servico'), insumo: soma((x) => daBase(x) && x.tipo === 'insumo') },
@@ -577,7 +584,7 @@ function codLink(tipo, base, codigo, mes) {
 function desenharLista(r) {
   const lista = $('#lista');
   const t = r.total;
-  const filtro = [estado.tipo === 'servico' ? 'composições' : estado.tipo === 'insumo' ? 'insumos' : '', estado.base !== 'todas' ? estado.base : ''].filter(Boolean).join(' · ');
+  const filtro = nomeFiltro(estado);
   $('#contagem').innerHTML = t === 0 ? '' : `<b>${t.toLocaleString('pt-BR')}</b> ${t === 1 ? 'resultado' : 'resultados'}${filtro ? ` em ${esc(filtro)}` : ''}${t > r.itens.length ? ` · mostrando ${r.itens.length}` : ''}`;
   if (!t) {
     const outros = (r.grade || []).reduce((s, x) => s + x.n, 0);
@@ -964,8 +971,15 @@ $('#lista').addEventListener('keydown', (e) => {
 });
 document.querySelectorAll('.chips').forEach((g) => g.addEventListener('click', (e) => {
   const b = e.target.closest('.chip'); if (!b) return;
-  g.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
-  estado[g.dataset.filtro] = b.dataset.v;
+  if (g.dataset.filtro === 'base') {
+    const sel = basesFiltro(), v = b.dataset.v;
+    const nova = v === 'todas' ? [] : sel.includes(v) ? sel.filter((x) => x !== v) : [...sel, v];
+    const ativas = basesAtivas().filter((x) => BASES.includes(x));
+    definirFiltro('base', nova.length && nova.length < ativas.length ? BASES.filter((x) => nova.includes(x)).join(',') : 'todas');
+  } else {
+    g.querySelectorAll('.chip').forEach((x) => x.setAttribute('aria-checked', String(x === b)));
+    estado[g.dataset.filtro] = b.dataset.v;
+  }
   if (estado.q.trim() || estado.explorar) buscar(); else contarFiltros(totaisDoMes());
 }));
 $('#detalhe').addEventListener('click', (e) => {
