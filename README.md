@@ -179,6 +179,19 @@ python3 artefato/build_artefato.py artefato/saida
 
 Os extratores conferem os totais do próprio relatório (quantidade por grupo e "TOTAL GERAL").
 
+### SINAPI automática (tarefa agendada no GitHub)
+
+A tarefa `.github/workflows/sinapi-mensal.yml` roda todo dia às 08:13 (Brasília). Ela procura na CAIXA o zip
+"formato xlsx" do mês seguinte ao último `dados/sinapi_AAAA-MM.sqlite.gz` e roda `extratores/sinapi_do_mes.py`:
+
+- **ainda não saiu**: termina sem mudar nada;
+- **saiu e a conferência passou** (no máximo 1% das composições com soma dos itens diferente do custo publicado):
+  grava o `.gz` do mês na `main`, a Render publica sozinha, e abre um aviso (issue) "SINAPI de AAAA-MM publicada";
+- **a CAIXA barrou o download ou a conferência não passou**: não grava nada, abre um aviso e a tarefa fica vermelha.
+
+Para rodar na hora: *Actions → SINAPI mensal → Run workflow* (com um mês AAAA-MM, se quiser).
+À mão, com o zip já baixado: `python3 extratores/sinapi_do_mes.py --arquivo SINAPI-AAAA-MM-formato-xlsx.zip`.
+
 ## Regras de cálculo observadas na base
 
 - Mão de obra horista entra na composição com encargo social de 111,51% sobre o salário da tabela.
