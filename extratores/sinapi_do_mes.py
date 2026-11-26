@@ -13,7 +13,7 @@ publicado. Só grava se a conferência passar (no máximo 1% das composições c
 Saída (código de saída e a linha "resultado=..." para a tarefa agendada):
   0  mês gravado em dados/            resultado=publicado
   0  o mês ainda não saiu (404)       resultado=ainda-nao-saiu
-  0  o mês já está carregado          resultado=ja-carregado
+  0  o mês já está carregado          resultado=ja-carregado   (--mes de um mês carregado: baixa e confere, sem gravar)
   2  a CAIXA barrou o download (429, página em vez do zip...)   resultado=bloqueado
   3  a conferência não passou                                   resultado=conferencia-falhou
 """
@@ -27,6 +27,7 @@ import re
 import shutil
 import sys
 import tempfile
+import http.cookiejar
 import urllib.error
 import urllib.request
 import zipfile
@@ -64,10 +65,13 @@ def baixar(ref, destino):
     ano, mes = ref.split('-')
     url = URL.format(ano=ano, mes=mes)
     print('baixando', url)
-    pedido = urllib.request.Request(url, headers={'Accept': 'application/zip,application/octet-stream,*/*'})
+    # o site da CAIXA redireciona para gravar um cookie e só então entrega o arquivo: guardar os cookies entre os pulos
+    abrir = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+    abrir.addheaders = [('Accept', 'application/zip,application/octet-stream,*/*')]
     try:
-        with urllib.request.urlopen(pedido, timeout=300) as r:
+        with abrir.open(url, timeout=300) as r:
             dados = r.read()
+            final = r.geturl()
     except urllib.error.HTTPError as e:
         if e.code == 404:
             saida('ainda-nao-saiu', 0, mes=ref, detalhe=f'{url} ainda não existe (404)')
@@ -75,8 +79,8 @@ def baixar(ref, destino):
     except (urllib.error.URLError, TimeoutError) as e:
         saida('bloqueado', 2, mes=ref, detalhe=f'sem resposta da CAIXA: {e}')
     if not dados.startswith(b'PK'):
-        # a proteção do site devolve uma página (HTML) no lugar do arquivo
-        saida('bloqueado', 2, mes=ref, detalhe='a CAIXA devolveu uma página no lugar do zip (proteção do site)')
+        # a CAIXA devolveu uma página no lugar do arquivo (arquivo inexistente ou proteção do site)
+        saida('bloqueado', 2, mes=ref, detalhe=f'a CAIXA devolveu uma página no lugar do zip (endereço final: {final})')
     with open(destino, 'wb') as f:
         f.write(dados)
     return destino
@@ -99,7 +103,8 @@ def main():
     if not carregados:
         sys.exit('nenhum dados/sinapi_AAAA-MM.sqlite.gz para servir de base')
     ref = args.mes or seguinte(carregados[-1])
-    if ref in carregados and not args.arquivo:
+    so_conferir = ref in carregados  # mês já carregado pedido com --mes: baixa e confere, mas não grava (teste do download)
+    if so_conferir and not args.mes and not args.arquivo:
         saida('ja-carregado', 0, mes=ref)
     tmp = tempfile.mkdtemp(prefix='sinapi_')
     try:
@@ -107,7 +112,8 @@ def main():
         xlsx = origem if origem.lower().endswith('.xlsx') else planilha(origem, tmp)
         # banco do mês anterior: herda o tipo de cada insumo (a planilha não traz)
         anterior = os.path.join(tmp, 'anterior.sqlite')
-        with gzip.open(os.path.join(DADOS, f'sinapi_{carregados[-1]}.sqlite.gz'), 'rb') as a, open(anterior, 'wb') as b:
+        base_ant = max((m for m in carregados if m < ref), default=carregados[0])
+        with gzip.open(os.path.join(DADOS, f'sinapi_{base_ant}.sqlite.gz'), 'rb') as a, open(anterior, 'wb') as b:
             shutil.copyfileobj(a, b)
         sys.path.insert(0, AQUI)
         import build_sinapi_caixa_xlsx as xl
@@ -123,6 +129,8 @@ def main():
                   f"{r['insumos']} insumos; encargo social horista {r['encargo_horista']}%")
         if not r['conferidas'] or div > r['conferidas'] * LIMITE_DIVERGENCIA:
             saida('conferencia-falhou', 3, mes=ref, detalhe=resumo)
+        if so_conferir:
+            saida('ja-carregado', 0, mes=ref, detalhe='download e conferência ok; nada gravado (o mês já estava carregado). ' + resumo)
         final = os.path.join(DADOS, f'sinapi_{ref}.sqlite.gz')
         with open(destino, 'rb') as a, gzip.open(final, 'wb', compresslevel=9) as b:
             shutil.copyfileobj(a, b)
