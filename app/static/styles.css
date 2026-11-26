@@ -1722,8 +1722,6 @@ html.trocando-tema::view-transition { pointer-events: none; }
 .add-fila { display: flex; gap: 8px; align-items: flex-start; max-width: 920px; }
 .add-fila .add-busca { flex: 1 1 auto; min-width: 0; }
 .botao.botao-p { padding: 0 12px; min-height: 38px; font-size: 13px; white-space: nowrap; flex: 0 0 auto; }
-.rel-sub td:nth-child(2) { padding-left: 18px; }
-tr.rel-etapa.rel-sub td { background: transparent; font-weight: 650; border-bottom: 1px solid var(--linha); }
 
 /* ---------- encargos complementares ---------- */
 .orc-compl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 18px; align-items: center; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio); padding: 12px 16px; margin: 4px 0 16px; }
@@ -2000,7 +1998,6 @@ tbody.etapa.abrindo > tr:not(.etapa-cab) { animation: abrir-linha 300ms var(--su
 .add-fila { flex-wrap: wrap; }
 .voltar-orc { margin-bottom: 12px; }
 .voltar-orc b { font-weight: 700; margin-left: 4px; }
-tr.rel-etapa.rel-n3 td, .rel-n3 td:nth-child(2) { padding-left: 30px; font-weight: 600; }
 @media (max-width: 760px) { .nivel-rot { display: none; } .planilha-orc tbody.n3 .etapa-cab td:nth-child(2) { padding-left: 0; } .anal { gap: 4px 12px; } }
 @media print { .etapa-anal, .ctrl-nivel, .add-linha, .plan-anal { display: none !important; } }
 @media (max-width: 760px) {
@@ -2484,3 +2481,29 @@ body.ocioso .dica-paleta + .conheca { margin-top: 10px; }
 @media (max-width: 760px) {
   .gantt { --rot: 130px; padding: 4px 8px 8px; }
 }
+
+/* ===================== relatório: hierarquia dos níveis ===================== */
+/* célula construtiva: a mais forte, com fundo e linha acima (separa os blocos); etapa: negrito médio; subetapa: normal */
+.rel-niveis tr.rel-n1 td { background: #EEF0F2; font-weight: 700; border-top: 1.5px solid #17191C; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.rel-niveis tbody tr.rel-n1:first-child td { border-top: 0; }
+.rel-niveis tr.rel-n2 td { background: #F6F7F8; font-weight: 650; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.rel-niveis tr.rel-n3 td { background: transparent; font-weight: 600; font-style: italic; }
+/* no resumo não há itens entre os níveis: a subetapa fica em texto normal */
+.rel-resumo tr.rel-n2 td { background: transparent; }
+.rel-resumo tr.rel-n3 td { font-weight: 400; font-style: normal; color: var(--tinta-2); }
+.rel-resumo tr.rel-n3 td.num { color: var(--tinta); }
+.rel-niveis tr.rel-n2 .rel-tit { padding-left: 5mm; }
+.rel-niveis tr.rel-n3 .rel-tit { padding-left: 10mm; }
+.rel-niveis tr.rel-n2 td.n, .rel-niveis tr.rel-n3 td.n { font-weight: 500; }
+/* resumo: os números só com a largura que precisam; o nome da etapa fica com o resto */
+.rel-resumo td.num, .rel-resumo th.num { width: 1%; }
+.rel-resumo th { white-space: normal; vertical-align: bottom; }
+.rel-resumo .rel-peso { width: 30mm; }
+.rel-resumo .rel-peso .peso { width: 16mm; }
+.rel-resumo td.rel-peso { text-align: right; font-variant-numeric: tabular-nums; }
+.rel-resumo th.rel-peso { text-align: right; }
+.rel-resumo td { vertical-align: middle; }
+/* número do item no peso do nível: célula e etapa em negrito, subetapa e serviço em texto normal */
+.rel-niveis td.n { font-weight: 500; }
+.rel-niveis tr.rel-n1 td.n { font-weight: 700; }
+.rel-niveis tr.rel-n2 td.n { font-weight: 650; }
