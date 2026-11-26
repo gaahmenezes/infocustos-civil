@@ -21,6 +21,15 @@ const U = 'http://localhost:8000';
   await p.fill('[data-prz-eq="servente de obras"]', '3'); await p.press('[data-prz-eq="servente de obras"]', 'Tab'); await p.waitForTimeout(300);
   const depois = await p.textContent('.prz-resumo div:nth-child(2) b');
   ok(antes !== depois, `Mais serventes encurtam o prazo: ${antes} → ${depois}`);
+  // cronograma: a segunda subetapa junto com a primeira encurta a obra; histograma desenhado
+  const soma = await p.textContent('.prz-resumo div:nth-child(2) b');
+  await p.check(`[data-prz-junto="${s2}"]`); await p.waitForTimeout(300);
+  const junto = await p.textContent('.prz-resumo div:nth-child(2) b');
+  ok(junto !== soma && await p.$$eval('.gantt .gt-barra', (l) => l.length) === 3, `Etapa junto com a anterior encurta o prazo: ${soma} → ${junto}`);
+  ok(await p.$$eval('.histograma rect', (l) => l.length) > 0, 'Histograma de mão de obra desenhado');
+  await p.fill('#prz-inicio', '2027-01-04'); await p.dispatchEvent('#prz-inicio', 'change'); await p.waitForTimeout(300);
+  ok(/04\/01\/27/.test(await p.textContent('.gantt')), 'Cronograma com datas a partir do início da obra');
+  await p.uncheck(`[data-prz-junto="${s2}"]`); await p.waitForTimeout(300);
   await p.click('[data-prz-modo="prazo"]'); await p.fill('#prz-alvo', '5'); await p.press('#prz-alvo', 'Tab'); await p.waitForTimeout(300);
   const dias = Number((await p.textContent('.prz-resumo div:nth-child(2) b')).replace(/[^\d,]/g, '').replace(',', '.'));
   ok(dias > 0 && dias <= 5, `Equipe calculada cabe no prazo de 5 dias: ${dias}`);

@@ -14,6 +14,7 @@ import math
 import re
 import unicodedata
 from collections import defaultdict
+from datetime import date, timedelta
 
 from fastapi import APIRouter, Query
 from fastapi.responses import StreamingResponse
@@ -156,25 +157,48 @@ def dias(horas, equipe, jornada, produtividade):
     return pior, quem
 
 
-def prazos(dados, equipe, jornada, produtividade):
-    """Prazo de cada etapa: os itens dela, em sequência com as de dentro. Devolve {id: (dias, gargalo)} e o total."""
+def prazos(dados, equipe, jornada, produtividade, paralelas=frozenset()):
+    """Cronograma: cada etapa começa quando a anterior (no mesmo nível) termina, ou junto com ela se estiver em
+    `paralelas`; dentro da etapa, primeiro os itens diretos, depois as de dentro. Devolve {id: (dias, gargalo, início, fim)}
+    e o total, em dias úteis. É a mesma conta da tela (prazo.js)."""
     filhas = defaultdict(list)
     for e in dados['etapas']:
         filhas[e['pai_id']].append(e)
     res = {}
 
-    def prazo(e):
+    def grupo(lista, ini):
+        cursor = fim = ini
+        ini_ant = None
+        for f in lista:
+            s0 = ini_ant if f['id'] in paralelas and ini_ant is not None else cursor
+            fe = agenda(f, s0)
+            ini_ant, cursor, fim = s0, max(cursor, fe), max(fim, fe)
+        return fim
+
+    def agenda(e, ini):
         d, quem = dias(e['horas_proprias'], equipe, jornada, produtividade)
-        for f in filhas[e['id']]:
-            d += prazo(f)
+        fim = grupo(filhas[e['id']], ini + d)
         if quem is None:  # a etapa não tem itens diretos: o gargalo é o da filha mais longa
             maior = max(filhas[e['id']], key=lambda f: res[f['id']][0], default=None)
             quem = res[maior['id']][1] if maior else None
-        res[e['id']] = (d, quem)
-        return d
+        res[e['id']] = (fim - ini, quem, ini, fim)
+        return fim
 
-    total = sum(prazo(e) for e in filhas[None])
+    total = grupo(filhas[None], 0)
     return res, total
+
+
+def data_util(inicio, dias_uteis):
+    """Data do dia útil número `dias_uteis` (0 = o primeiro), contando de segunda a sexta, sem feriados."""
+    d = inicio
+    while d.weekday() >= 5:
+        d += timedelta(days=1)
+    falta = int(math.floor(dias_uteis + 1e-9))
+    while falta > 0:
+        d += timedelta(days=1)
+        if d.weekday() < 5:
+            falta -= 1
+    return d
 
 
 @router.get('/orcamentos/{oid}/mao-de-obra')
@@ -186,7 +210,7 @@ def obter(oid: int):
 
 @router.get('/orcamentos/{oid}/mao-de-obra.xlsx')
 def exportar(oid: int, jornada: float = Query(8, gt=0, le=24), produtividade: float = Query(100, gt=0, le=300),
-             equipe: str = Query('{}')):
+             equipe: str = Query('{}'), paralelas: str = Query(''), inicio: str = Query('')):
     with orc_mod.orc() as c:
         o = orc_mod.calcular(c, oid)
     dados = mao_de_obra(o)
@@ -194,13 +218,19 @@ def exportar(oid: int, jornada: float = Query(8, gt=0, le=24), produtividade: fl
         eq = {k: int(v) for k, v in json.loads(equipe).items()}
     except (ValueError, AttributeError, TypeError):
         eq = {}
-    res, total = prazos(dados, eq, jornada, produtividade)
+    par = frozenset(int(x) for x in paralelas.split(',') if x.strip().isdigit())
+    try:
+        dia0 = date.fromisoformat(inicio) if inicio else None
+    except ValueError:
+        dia0 = None
+    res, total = prazos(dados, eq, jornada, produtividade, par)
+    quando = (lambda ini, fim: (data_util(dia0, ini), data_util(dia0, max(math.ceil(fim - 1e-9) - 1, math.floor(ini + 1e-9))))) if dia0 else None
     nomes = {p['chave']: p['nome'] for p in dados['profissionais']}
     wb = Workbook()
     ws = wb.active; ws.title = 'Prazo'
     ws['A1'] = f"Mão de obra e prazo — {o['nome']}"; ws['A1'].font = Font(bold=True, size=14)
-    ws['A2'] = (f'Jornada de {jornada:g} h por dia, produtividade de {produtividade:g}% da base. Etapas em sequência, na ordem do orçamento. '
-                f'Prazo estimado: {total:.1f} dias úteis.')
+    ws['A2'] = (f'Jornada de {jornada:g} h por dia, produtividade de {produtividade:g}% da base. Etapas em sequência, na ordem do orçamento'
+                + (', a não ser as marcadas para correr junto com a anterior. ' if par else '. ') + f'Prazo estimado: {total:.1f} dias úteis' + (f', de {data_util(dia0, 0):%d/%m/%Y} a {data_util(dia0, max(math.ceil(total - 1e-9) - 1, 0)):%d/%m/%Y}' if dia0 else '') + '.')
     orc_mod._cab(ws, 4, ['Profissional', 'Horas', 'Equipe', 'Dias úteis com essa equipe'], [44, 14, 10, 16])
     cap = jornada * produtividade / 100
     for k, p in enumerate(dados['profissionais'], 5):
@@ -216,17 +246,23 @@ def exportar(oid: int, jornada: float = Query(8, gt=0, le=24), produtividade: fl
             linha += 1
             ws.cell(row=linha, column=1, value=p['nome']); ws.cell(row=linha, column=2, value=p['meses']).number_format = '#,##0.00'
         linha += 2
-    orc_mod._cab(ws, linha, ['Item', 'Etapa / serviço', 'Horas de mão de obra', 'Dias úteis', 'Quem define o prazo'], [10, 70, 18, 12, 30])
+    orc_mod._cab(ws, linha, ['Item', 'Etapa / serviço', 'Horas de mão de obra', 'Dias úteis', 'Quem define o prazo', 'Começa no dia útil', 'Termina no dia útil']
+                 + (['Início', 'Fim'] if quando else []), [10, 70, 18, 12, 30, 14, 14, 12, 12])
     ws.column_dimensions['A'].width = 44
     por_etapa = defaultdict(list)
     for i in dados['itens']:
         por_etapa[i['etapa_id']].append(i)
     for e in dados['etapas']:
         linha += 1
-        d, quem = res[e['id']]
-        vals = [e['numero'], ('   ' * (e['nivel'] - 1)) + e['titulo'], round(sum(e['horas'].values()), 1), round(d, 1), nomes.get(quem, '')]
+        d, quem, ini, fim = res[e['id']]
+        vals = [e['numero'], ('   ' * (e['nivel'] - 1)) + e['titulo'], round(sum(e['horas'].values()), 1), round(d, 1), nomes.get(quem, ''),
+                round(ini, 1) if d else None, round(fim, 1) if d else None]
+        if quando and d:
+            vals += list(quando(ini, fim))
         for j, v in enumerate(vals, 1):
             cel = ws.cell(row=linha, column=j, value=v); cel.font = Font(bold=True)
+            if j > 7:
+                cel.number_format = 'DD/MM/YYYY'
         for i in por_etapa[e['id']]:
             linha += 1
             ws.cell(row=linha, column=1, value=i['numero'])

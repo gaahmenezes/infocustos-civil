@@ -2439,3 +2439,48 @@ body.ocioso .dica-paleta + .conheca { margin-top: 10px; }
   .prz-tab .prz-barra { display: none; }
   .prz-opcoes input { width: 120px; }
 }
+
+/* ===================== cronograma e histograma ===================== */
+.gantt { --rot: 300px; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio); padding: 6px 14px 10px; }
+.gt-linha { display: grid; grid-template-columns: var(--rot) 1fr; align-items: center; min-height: 34px; border-bottom: 1px solid var(--linha); }
+.gt-linha:last-child { border-bottom: 0; }
+.gt-rot { display: flex; align-items: baseline; flex-wrap: wrap; gap: 0 8px; padding: 6px 12px 6px 0; font-size: 13.5px; min-width: 0; }
+.gt-num { font-weight: 650; color: var(--tinta-2); }
+.gt-tit { font-weight: 600; overflow-wrap: anywhere; }
+.gt-linha.n2 .gt-rot { padding-left: 14px; }
+.gt-linha.n3 .gt-rot { padding-left: 28px; font-size: 13px; }
+.gt-linha.n3 .gt-tit { font-weight: 500; }
+.gt-junto { display: inline-flex; align-items: center; gap: 5px; flex-basis: 100%; font-size: 12px; color: var(--tinta-3); font-weight: 500; cursor: pointer; }
+.gt-junto input { width: 14px; height: 14px; margin: 0; accent-color: var(--acao-forte); }
+.gt-trilho { position: relative; height: 100%; min-height: 34px; background: repeating-linear-gradient(90deg, transparent 0 calc(100% / 4 - 1px), transparent 0); }
+.gt-barra { position: absolute; top: 50%; height: 14px; transform: translateY(-50%); background: var(--c-mo); border-radius: 4px; }
+.gt-linha.n1 .gt-barra { background: var(--tinta); height: 10px; }
+.gt-linha.n2 .gt-barra { background: var(--c-mo); }
+.gt-linha.n3 .gt-barra { background: #86B6EF; }
+.gt-datas { flex-basis: 100%; font-size: 12px; color: var(--tinta-3); font-weight: 500; }
+.gt-eixo { min-height: 26px; }
+.gt-eixo .gt-rot { font-size: 12px; color: var(--tinta-3); font-weight: 600; }
+.gt-eixo .gt-trilho span { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 11px; color: var(--tinta-3); }
+.gt-eixo .gt-trilho span:first-child { transform: translate(0, -50%); }
+.gt-eixo .gt-trilho span:last-child:not(:first-child) { transform: translate(-100%, -50%); }
+.histograma { margin: 0; background: var(--superficie); border: 1px solid var(--linha); border-radius: var(--raio); padding: 12px 14px; }
+.histograma svg { display: block; width: 100%; height: auto; max-height: 280px; }
+.hg-grade { stroke: var(--linha); stroke-width: 1; }
+.hg-txt { font-size: 10px; fill: var(--tinta-3); font-family: inherit; }
+.hg-leg { display: flex; flex-wrap: wrap; gap: 4px 16px; margin: 8px 0 4px; padding: 0; list-style: none; font-size: 12.5px; color: var(--tinta-2); }
+.hg-leg i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: 0; }
+.histograma p { margin: 4px 0 0; font-size: 12.5px; color: var(--tinta-3); }
+.folha .gantt, .folha .histograma { border: 0; padding: 0; background: none; --rot: 62mm; }
+.folha .gt-linha { min-height: 6mm; }
+.folha .gt-linha .gt-rot { font-size: 8pt; padding: 1mm 3mm 1mm 0; }
+.folha .gt-linha.n2 .gt-rot { padding-left: 3mm; }
+.folha .gt-linha.n3 .gt-rot { padding-left: 6mm; font-size: 7.5pt; }
+.folha .gt-junto { font-size: 6.5pt; }
+.folha .gt-datas { font-size: 6.5pt; }
+.folha .gt-barra { height: 3mm; }
+.folha .histograma svg { max-height: 62mm; }
+.folha .hg-leg, .folha .histograma p { font-size: 7.5pt; }
+.folha .gantt, .folha .histograma { break-inside: avoid; }
+@media (max-width: 760px) {
+  .gantt { --rot: 130px; padding: 4px 8px 8px; }
+}
