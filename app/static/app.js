@@ -999,7 +999,7 @@ document.addEventListener('keydown', (e) => {
 window.addEventListener('hashchange', rota);
 // troca de tela: o conteúdo novo entra com um leve deslizar (re-pinturas da mesma tela não animam)
 window.addEventListener('hashchange', (e) => {
-  const tela = (u) => (u.split('#')[1] || '/').split('?')[0].replace(/\/(planilha|mapa|abc-servicos|abc-insumos)$/, '');
+  const tela = (u) => (u.split('#')[1] || '/').split('?')[0].replace(/\/(planilha|mapa|abc-servicos|abc-insumos|prazo)$/, '');
   if (tela(e.oldURL || '') === tela(e.newURL || '')) return;
   const d = $('#detalhe'); d.dataset.entrada = '1'; clearTimeout(d._entrada); d._entrada = setTimeout(() => { delete d.dataset.entrada; }, 700);
 });

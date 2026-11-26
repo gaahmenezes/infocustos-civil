@@ -407,8 +407,8 @@ def abc_insumos(o):
                     continue
                 if i['tipo'] == 'servico':  # serviço sem composição: entra como ele mesmo
                     k = (i['base'], i['codigo'], 'SERVICO_SEM_COMPOSICAO')
-                else:
-                    k = (i['base'], i['codigo'], 'INSUMO_DIRETO')
+                else:  # insumo lançado direto: a seção vem da categoria dele (material, mão de obra...)
+                    k = (i['base'], i['codigo'], _secao_insumo(b, i, o['referencia']))
                 a = acc[k]
                 a['descricao'], a['unidade'], a['secao'] = i['descricao'], i['unidade'], k[2]
                 a['qtd'] += i['quantidade']; a['custo'] += i['quantidade'] * i['custo_unit']
@@ -420,6 +420,20 @@ def abc_insumos(o):
         j['quantidade'] += a['qtd']; j['custo_total'] += a['custo']
     linhas = [j | {'custo_unit': (j['custo_total'] / j['quantidade']) if j['quantidade'] else 0} for j in junto.values() if j['custo_total'] > 0]
     return classificar(linhas, 'custo_total')
+
+
+SECAO_PARTE = {'mo': 'MAO_DE_OBRA', 'mat': 'MATERIAL', 'equip': 'EQUIPAMENTO', 'terc': 'SERVICO_TERCEIRO'}
+
+
+def _secao_insumo(b, i, ref_orc):
+    if i['base'] == 'PROPRIA':
+        import proprias
+        with proprias._calculo(i['referencia'] or ref_orc) as calc:
+            ins = calc.insumo_proprio(i['codigo'])
+        return ins['secao'] if ins else 'MATERIAL'
+    r = b.execute('SELECT categoria FROM item_busca WHERE tipo = ? AND base = ? AND codigo = ? AND referencia = ?',
+                  ('insumo', i['base'], i['codigo'], i['referencia'] or ref_orc)).fetchone()
+    return SECAO_PARTE[CATEGORIA_PARTE.get(r['categoria'] if r else '', 'mat')]
 
 
 def resumo_abc(linhas, chave):
@@ -906,13 +920,16 @@ def atualizar(oid: int, referencia: Optional[str] = None):
 
 
 @router.get('/orcamentos/{oid}/abc')
-def curva_abc(oid: int, tipo: Literal['servicos', 'insumos'] = 'servicos'):
+def curva_abc(oid: int, tipo: Literal['servicos', 'insumos'] = 'servicos', so_material: bool = False):
     with orc() as c:
         o = calcular(c, oid)
     if tipo == 'servicos':
         linhas = abc_servicos(o)
         return {'tipo': tipo, 'total': o['total'], 'linhas': linhas, 'resumo': resumo_abc(linhas, 'total')}
     linhas = abc_insumos(o)
+    if so_material:  # curva ABC de materiais: só os insumos de material, com as classes refeitas entre eles
+        # (os encargos complementares da mão de obra, como alimentação e EPI, vêm como material nas bases: ficam de fora)
+        linhas = classificar([l for l in linhas if l['secao'] == 'MATERIAL' and not eh_complementar(l['descricao'])], 'custo_total')
     soma = r2(sum(l['custo_total'] for l in linhas))
     return {'tipo': tipo, 'total': soma, 'custo_direto': o['custo_total'], 'linhas': linhas, 'resumo': resumo_abc(linhas, 'custo_total')}
 

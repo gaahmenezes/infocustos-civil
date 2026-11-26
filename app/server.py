@@ -643,6 +643,8 @@ import importar  # noqa: E402
 app.include_router(importar.router)
 import encargos_proprios  # noqa: E402
 app.include_router(encargos_proprios.router)
+import prazo  # noqa: E402
+app.include_router(prazo.router)
 app.mount('/static', StaticFiles(directory=AQUI / 'static'), name='static')
 
 

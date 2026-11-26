@@ -37,12 +37,12 @@ const txt = async (p, s) => (await p.textContent(s)).replace(/\s+/g, ' ').trim()
   await p.reload(); await p.waitForSelector('tbody.n3 tr.item');
   const nums = await p.$$eval('.planilha-orc tr.etapa-cab td.n, .planilha-orc tr.item td.n', (l) => l.map((t) => t.textContent.replace(/[^\d.]/g, '')));
   v(JSON.stringify(nums) === JSON.stringify(['1', '1.1', '1.1.1', '1.1.2', '1.1.3', '1.1.3.1']), 'Numeração em três níveis: ' + nums.join(' '));
-  // visão analítica em reais na célula e na etapa (não na subetapa)
+  // visão analítica em reais na célula, na etapa e na subetapa
   const anal = await p.$$eval('.etapa-cab .anal-cols', (l) => l.map((t) => t.closest('tbody').dataset.nivel));
   const tAnal = await p.getAttribute('tbody.n1 .anal-cols', 'aria-label');
   const xs = await p.$$eval('.etapa-cab .anal-cols .ac:nth-child(2)', (l) => [...new Set(l.map((x) => Math.round(x.getBoundingClientRect().left)))]);
-  v(xs.length === 1, 'As colunas da divisão ficam alinhadas entre a célula e a etapa');
-  v(anal.join(',') === '1,2' && /Mão de obra R\$\s?[\d.,]+/.test(tAnal) && /Material R\$/.test(tAnal), 'Divisão em reais no cabeçalho da célula e da etapa (a subetapa fica sem): ' + tAnal.slice(0, 120));
+  v(xs.length === 1, 'As colunas da divisão ficam alinhadas entre a célula, a etapa e a subetapa');
+  v([...new Set(anal)].sort().join(',') === '1,2,3' && /Mão de obra R\$\s?[\d.,]+/.test(tAnal) && /Material R\$/.test(tAnal), 'Divisão em reais no cabeçalho da célula, da etapa e da subetapa: ' + tAnal.slice(0, 120));
   await p.screenshot({ path: OUT + '/niveis_planilha.png' });
   await p.click('[data-analitico]'); await p.waitForTimeout(300);
   v(!(await p.$('.anal-cols')), 'O botão "Mão de obra e material" esconde a divisão');

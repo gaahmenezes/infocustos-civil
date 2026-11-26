@@ -1,11 +1,17 @@
 'use strict';
-/* Relatório do orçamento para imprimir ou salvar em PDF: capa, resumo, planilha, curva ABC e composições. */
+/* Relatórios do orçamento para imprimir ou salvar em PDF: um tipo por vez (sintético, analítico, curvas ABC de materiais
+   e de serviços, mão de obra e prazo), com capa opcional. */
 
 const EMPRESA_CHAVE = 'infocustos-empresa';
 function lerEmpresa() { try { return JSON.parse(localStorage.getItem(EMPRESA_CHAVE) || '{}') || {}; } catch (_) { return {}; } }
 function gravarEmpresa(e) { try { localStorage.setItem(EMPRESA_CHAVE, JSON.stringify(e)); return true; } catch (_) { return false; } }
-const REL = { capa: true, abc: true, comps: false, logo: null };
-try { Object.assign(REL, JSON.parse(localStorage.getItem('infocustos-relatorio') || '{}')); } catch (_) { /* padrão */ }
+const REL = { capa: true, tipo: 'sintetico', logo: null };
+const TIPOS_REL = [['sintetico', 'Orçamento sintético', 'Resumo por etapa e planilha com os itens'],
+  ['analitico', 'Orçamento analítico', 'Cada serviço com a composição dele: insumos, coeficientes e custos'],
+  ['abc-mat', 'Curva ABC de materiais', 'Materiais da obra inteira, das composições abertas até o insumo'],
+  ['abc-serv', 'Curva ABC de serviços', 'Serviços do orçamento ordenados pelo valor'],
+  ['prazo', 'Mão de obra e prazo', 'Horas por profissional, etapa e serviço, e o prazo estimado']];
+try { const g = JSON.parse(localStorage.getItem('infocustos-relatorio') || '{}') || {}; REL.capa = g.capa !== false; if (TIPOS_REL.some((t) => t[0] === g.tipo)) REL.tipo = g.tipo; } catch (_) { /* padrão */ }
 const hoje = () => new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
 
 function cabecalhoFolha(emp, o) {
@@ -35,12 +41,12 @@ function capaDivisao(o) {
     <ul>${partes.map((p) => `<li style="--cor:var(${p[2]})"><b>${pct.format(p[1])}</b>${p[0]}</li>`).join('')}</ul></div>`;
 }
 
-function folhaCapa(emp, o) {
+function folhaCapa(emp, o, rotulo = 'Orçamento de obra') {
   const contato = [emp.cnpj ? `CNPJ ${emp.cnpj}` : '', emp.endereco, emp.contato].filter(Boolean).map(esc).join(' · ');
   return `<section class="folha folha-capa">
     <div class="capa-topo">${emp.logo ? `<img src="${emp.logo}" alt="Logotipo de ${esc(emp.nome || 'empresa')}">` : ''}
       <div>${emp.nome ? `<b>${esc(emp.nome)}</b>` : ''}${contato ? `<span>${contato}</span>` : ''}</div></div>
-    <div class="capa-meio"><span class="capa-rotulo">Orçamento de obra</span><h1>${esc(o.nome)}</h1>
+    <div class="capa-meio"><span class="capa-rotulo">${esc(rotulo)}</span><h1>${esc(o.nome)}</h1>
       <dl class="capa-dados">
         ${o.cliente ? `<div><dt>Cliente</dt><dd>${esc(o.cliente)}</dd></div>` : ''}
         ${o.local ? `<div><dt>Local</dt><dd>${esc(o.local)}</dd></div>` : ''}
@@ -101,70 +107,96 @@ function folhaABC(emp, o) {
     ${rodapeFolha(o)}</section>`;
 }
 
-async function folhasComposicoes(emp, o, progresso) {
+async function folhaABCMateriais(emp, o) {
+  const r = await req(`/api/orcamentos/${o.id}/abc?tipo=insumos&so_material=true`);
+  return `<section class="folha">${cabecalhoFolha(emp, o)}
+    <h2>Curva ABC de materiais</h2>
+    <p class="rel-nota">Composições desmontadas até o insumo, com as quantidades multiplicadas pelas do orçamento; só os materiais (sem mão de obra, equipamentos e os encargos complementares). Custo direto, sem BDI. Classe A até 80% do valor acumulado, B até 95%, C o restante.</p>
+    <div class="rel-prz-resumo">${['A', 'B', 'C'].map((cl) => `<div><span>Classe ${cl} · ${r.resumo[cl].itens} ${r.resumo[cl].itens === 1 ? 'material' : 'materiais'}</span><b>${brl.format(r.resumo[cl].valor)}</b></div>`).join('')}</div>
+    <table class="rel-tabela"><thead><tr><th>Pos.</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num">Custo unit.</th><th class="num">Total (R$)</th><th class="num">%</th><th class="num">% acum.</th><th>Classe</th></tr></thead>
+      <tbody>${r.linhas.map((x) => `<tr><td class="n">${x.posicao}</td><td class="rel-cod">${esc(x.codigo)}<span>${esc(rotuloBase(x.base, x.codigo))}</span></td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td>
+        <td class="num">${qtdFmt.format(x.quantidade)}</td><td class="num">${money(x.custo_unit)}</td><td class="num">${money(x.custo_total)}</td><td class="num">${pct.format(x.percentual)}</td><td class="num">${pct.format(x.acumulado)}</td><td class="rel-classe">${x.classe}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="6">Total de materiais</td><td class="num">${money(r.total)}</td><td colspan="3"></td></tr></tfoot></table>
+    ${rodapeFolha(o)}</section>`;
+}
+
+// composições de cada serviço do orçamento (uma vez por código e mês), seis pedidos por vez
+async function buscarComposicoes(o, progresso) {
   const vistos = new Map();
-  for (const e of o.etapas) for (const i of e.itens) if (i.tipo === 'servico' && !vistos.has(`${i.base}|${i.codigo}`)) vistos.set(`${i.base}|${i.codigo}`, i);
-  const lista = [...vistos.values()]; const blocos = [];
-  // seis pedidos por vez, na ordem da planilha; para se a pessoa sair da tela (ou mudar as opções) no meio
-  const vez = REL.vez; const achadas = new Array(lista.length); let prontas = 0, prox = 0;
+  for (const e of o.etapas) for (const i of e.itens) if (i.tipo === 'servico') { const k = `${i.base}|${i.codigo}|${i.referencia || o.referencia}`; if (!vistos.has(k)) vistos.set(k, i); }
+  const chaves = [...vistos.keys()], achadas = new Map(); const vez = REL.vez; let prontas = 0, prox = 0;
   const trabalhar = async () => {
-    while (prox < lista.length && vez === REL.vez) {
-      const k = prox++; const i = lista[k];
-      try { achadas[k] = await api(`/api/composicao/${i.base}/${i.codigo}?ref=${encodeURIComponent(i.referencia || o.referencia)}&refs=${encodeURIComponent(refsDoOrcamento(o))}`); } catch (_) { achadas[k] = null; }
-      prontas += 1; if (vez === REL.vez) progresso(prontas, lista.length);
+    while (prox < chaves.length && vez === REL.vez) {
+      const k = chaves[prox++]; const i = vistos.get(k);
+      try { achadas.set(k, i.base === 'PROPRIA' ? await api(`/api/proprias/composicoes/${encodeURIComponent(i.codigo)}`) : await api(`/api/composicao/${i.base}/${i.codigo}?ref=${encodeURIComponent(i.referencia || o.referencia)}&refs=${encodeURIComponent(refsDoOrcamento(o))}`)); } catch (_) { /* fica sem */ }
+      prontas += 1; if (vez === REL.vez) progresso(prontas, chaves.length);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(6, lista.length) }, trabalhar));
-  if (vez !== REL.vez) return null;
-  for (const c of achadas) {
-    if (!c) continue;
-    const secoes = SECOES.map(([s, nome]) => [nome, c.itens.filter((x) => x.secao === s)]).filter((g) => g[1].length);
-    blocos.push(`<article class="rel-comp"><header><span class="rel-cod">${esc(c.codigo)}<span>${esc(rotuloBase(c.base, c.codigo))}</span></span><b>${esc(c.descricao)}</b>
-        <span class="rel-comp-preco">${brl.format(c.custo_total)} por ${esc(c.unidade)}</span></header>
-      <table class="rel-tabela"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Coeficiente</th><th class="num">Custo unit.</th><th class="num">Custo total</th></tr></thead>
-      ${secoes.map(([nome, itens]) => `<tbody><tr class="rel-etapa"><td colspan="5">${nome}</td><td class="num">${money(itens.reduce((s, x) => s + (x.custo_total || 0), 0))}</td></tr>
-        ${itens.map((x) => `<tr><td class="rel-cod">${esc(x.codigo)}<span>${esc(rotuloBase(x.base, x.codigo))}</span></td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td>
-          <td class="num">${coef(x.qtd)}</td><td class="num">${money(x.custo_unit)}</td><td class="num">${money(x.custo_total)}</td></tr>`).join('')}</tbody>`).join('')}
-      </table></article>`);
-  }
-  if (!blocos.length) return '';
-  return `<section class="folha">${cabecalhoFolha(emp, o)}<h2>Composições analíticas</h2>
-    <p class="rel-nota">Composição de cada serviço do orçamento, na data-base em que entrou. Valores em R$, sem BDI.</p>${blocos.join('')}${rodapeFolha(o)}</section>`;
+  await Promise.all(Array.from({ length: Math.min(6, chaves.length) }, trabalhar));
+  return vez === REL.vez ? achadas : null;
+}
+
+// orçamento analítico: a planilha com a composição de cada serviço logo abaixo dele
+async function folhaAnalitica(emp, o, progresso) {
+  const comps = await buscarComposicoes(o, progresso); if (!comps) return null;
+  const corpo = o.etapas.map((e) => `<tr class="rel-etapa${e.nivel > 1 ? ` rel-sub rel-n${e.nivel}` : ''}"><td class="n">${e.numero}</td><td colspan="5">${esc(e.titulo)}</td><td class="num">${money(e.total)}</td></tr>
+    ${e.itens.map((i) => { const c = i.tipo === 'servico' ? comps.get(`${i.base}|${i.codigo}|${i.referencia || o.referencia}`) : null;
+      return `<tr class="rel-an-item"><td class="n">${i.numero}</td><td class="rel-cod">${esc(i.codigo)}<span>${esc(rotuloBase(i.base, i.codigo))}</span></td><td>${esc(i.descricao)}</td><td>${esc(i.unidade)}</td>
+        <td class="num">${qtdFmt.format(i.quantidade)}</td><td class="num">${money(o.bdi_no_total ? i.custo_unit : i.preco_unit)}</td><td class="num">${money(i.total)}</td></tr>
+      ${c && c.itens && c.itens.length ? `<tr class="rel-an-comp"><td></td><td colspan="6"><table class="rel-tabela rel-an-tab"><thead><tr><th>Código</th><th>Insumo / serviço auxiliar</th><th>Un.</th><th class="num">Coeficiente</th><th class="num">Custo unit.</th><th class="num">Custo por ${esc(c.unidade || i.unidade)}</th></tr></thead>
+        <tbody>${SECOES.map(([s, nome]) => [nome, c.itens.filter((x) => x.secao === s)]).filter((g) => g[1].length).map(([nome, its]) => `<tr class="rel-an-sec"><td colspan="5">${nome}</td><td class="num">${money(its.reduce((t, x) => t + (x.custo_total || 0), 0))}</td></tr>
+          ${its.map((x) => `<tr><td class="rel-cod">${esc(x.codigo)}<span>${esc(rotuloBase(x.base, x.codigo))}</span></td><td>${esc(x.descricao)}</td><td>${esc(x.unidade)}</td><td class="num">${coef(x.qtd)}</td><td class="num">${money(x.custo_unit)}</td><td class="num">${money(x.custo_total)}</td></tr>`).join('')}`).join('')}</tbody></table></td></tr>` : ''}`; }).join('')}`).join('');
+  return `<section class="folha">${cabecalhoFolha(emp, o)}
+    <h2>Orçamento analítico</h2>
+    <p class="rel-nota">Cada serviço com a composição dele na data-base em que entrou no orçamento. A composição está em custo direto, por unidade do serviço; o preço unitário do item ${o.bdi_no_total ? 'está a custo (o BDI entra só no total)' : 'inclui o BDI'}.</p>
+    <table class="rel-tabela rel-planilha rel-analitico"><thead><tr><th>Item</th><th>Código</th><th>Descrição</th><th>Un.</th><th class="num">Quant.</th><th class="num">${o.bdi_no_total ? 'Custo unit.' : 'Preço c/ BDI'}</th><th class="num">${o.bdi_no_total ? 'Total sem BDI (R$)' : 'Total (R$)'}</th></tr></thead>
+      <tbody>${corpo}</tbody>
+      <tfoot><tr><td colspan="6">Custo direto</td><td class="num">${money(o.custo_total)}</td></tr>
+        <tr><td colspan="6">BDI de ${num2.format(o.bdi)}%${o.bdi_no_total ? ' sobre o custo direto total' : ''}</td><td class="num">${money(o.valor_bdi)}</td></tr>
+        <tr class="rel-geral"><td colspan="6">Valor total</td><td class="num">${money(o.total)}</td></tr></tfoot></table>
+    ${rodapeFolha(o)}</section>`;
 }
 
 window.desenharRelatorio = async function (o) {
   const d = $('#detalhe'); const emp = lerEmpresa();
-  const marca = (k, rotulo) => `<label class="rel-opcao"><input type="checkbox" data-rel="${k}"${REL[k] ? ' checked' : ''}>${rotulo}</label>`;
   if (!o.qtd_itens) {
     d.innerHTML = `<div class="pagina">${vazio('folha', 'O relatório precisa de itens', 'Adicione composições ou insumos na planilha do orçamento.', `<a class="botao primario" href="${rotaOrc(o.id)}">Voltar à planilha</a>`)}</div>`; return;
   }
+  const tipo = TIPOS_REL.find((t) => t[0] === REL.tipo) || TIPOS_REL[0];
   d.innerHTML = `<div class="pagina relatorio-pag">
     <div class="rel-barra">
       <a class="voltar-lista" href="${rotaOrc(o.id)}"><svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 3 4.5 6l3 3" /></svg>Voltar à planilha</a>
-      <div class="rel-opcoes">${marca('capa', 'Capa')}${marca('abc', 'Curva ABC')}${marca('comps', 'Composições analíticas')}</div>
-      <div class="acoes"><button type="button" class="botao" data-empresa>Dados da empresa</button>
+      <div class="acoes"><label class="rel-opcao"><input type="checkbox" data-rel-capa${REL.capa ? ' checked' : ''}>Capa</label><button type="button" class="botao" data-empresa>Dados da empresa</button>
         <button type="button" class="botao primario" data-imprimir>Imprimir ou salvar em PDF</button></div>
     </div>
+    <fieldset class="rel-tipos"><legend>Qual relatório emitir</legend>
+      ${TIPOS_REL.map(([k, nome, dica]) => `<label class="rel-tipo"><input type="radio" name="rel-tipo" value="${k}"${k === tipo[0] ? ' checked' : ''}><b>${nome}</b><span>${dica}</span></label>`).join('')}
+    </fieldset>
     ${emp.nome ? '' : '<p class="rel-aviso">O relatório sai com o nome e o logotipo da sua empresa. <button type="button" class="link-acao" data-empresa>Preencher os dados da empresa</button></p>'}
     <div class="relatorio" id="relatorio"><p class="carregando">Montando o relatório…</p></div>
   </div>`;
+  const gravar = () => { try { localStorage.setItem('infocustos-relatorio', JSON.stringify({ capa: REL.capa, tipo: REL.tipo })); } catch (_) { /* ok */ } };
+  d.querySelectorAll('[name="rel-tipo"]').forEach((r) => r.addEventListener('change', () => { REL.tipo = r.value; gravar(); window.desenharRelatorio(o); }));
+  d.querySelector('[data-rel-capa]').addEventListener('change', (e) => { REL.capa = e.target.checked; gravar(); window.desenharRelatorio(o); });
   const rel = $('#relatorio');
-  let comps = '';
   REL.vez = (REL.vez || 0) + 1; const vez = REL.vez;
-  if (REL.comps) comps = await folhasComposicoes(emp, o, (k, n) => { if (document.body.contains(rel)) rel.innerHTML = `<p class="carregando">Buscando as composições: ${k} de ${n}…</p>`; else REL.vez += 1; });
-  if (vez !== REL.vez || comps === null || !document.body.contains(rel)) return;  // a pessoa saiu da tela ou mudou as opções enquanto carregava
-  rel.innerHTML = (REL.capa ? folhaCapa(emp, o) : '') + folhaResumo(emp, o) + folhaPlanilha(emp, o) + (REL.abc ? folhaABC(emp, o) : '') + comps;
-  d.querySelectorAll('[data-rel]').forEach((c) => c.addEventListener('change', () => {
-    REL[c.dataset.rel] = c.checked;
-    try { localStorage.setItem('infocustos-relatorio', JSON.stringify({ capa: REL.capa, abc: REL.abc, comps: REL.comps })); } catch (_) { /* ok */ }
-    window.desenharRelatorio(o);
-  }));
+  const progresso = (k, n) => { if (document.body.contains(rel)) rel.innerHTML = `<p class="carregando">Buscando as composições: ${k} de ${n}…</p>`; else REL.vez += 1; };
+  let miolo;
+  try {
+    if (tipo[0] === 'sintetico') miolo = folhaResumo(emp, o) + folhaPlanilha(emp, o);
+    else if (tipo[0] === 'analitico') { const a = await folhaAnalitica(emp, o, progresso); miolo = a === null ? null : folhaResumo(emp, o) + a; }
+    else if (tipo[0] === 'abc-mat') miolo = await folhaABCMateriais(emp, o);
+    else if (tipo[0] === 'abc-serv') miolo = folhaABC(emp, o);
+    else miolo = await window.folhaPrazo(emp, o);
+  } catch (e) { miolo = `<div class="erro"><b>Não foi possível montar o relatório.</b><br>${esc(e.message)}</div>`; }
+  if (vez !== REL.vez || miolo === null || !document.body.contains(rel)) return;  // a pessoa saiu da tela ou mudou o tipo enquanto carregava
+  rel.innerHTML = (REL.capa ? folhaCapa(emp, o, tipo[0] === 'sintetico' || tipo[0] === 'analitico' ? `${tipo[1]} de obra` : tipo[1]) : '') + miolo;
 };
 
 document.addEventListener('click', (e) => {
   if (e.target.closest('[data-imprimir]')) {
     const antes = document.title; const o = ORC.atual;
-    if (o) document.title = `Orçamento - ${o.nome}`;  // vira o nome sugerido do arquivo PDF
+    if (o) document.title = `${(TIPOS_REL.find((t) => t[0] === REL.tipo) || TIPOS_REL[0])[1]} - ${o.nome}`;  // vira o nome sugerido do arquivo PDF
     window.print(); document.title = antes;
   }
   if (e.target.closest('[data-empresa]')) abrirEmpresa();
