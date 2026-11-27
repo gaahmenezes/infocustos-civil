@@ -410,7 +410,16 @@ def ler_composicao(c, base, codigo, ref):
             AND x.codigo = i.codigo AND x.referencia = i.referencia)) AS tem_composicao
         FROM composicao_item i WHERE i.composicao_base = ? AND i.composicao = ? AND i.referencia = ?
         ORDER BY i.ordem''', (comp['base'], comp['codigo'], ref)).fetchall()
-    return dict(comp) | {'itens': [dict(i) | {'tem_composicao': bool(i['tem_composicao'])} for i in itens]}
+    lista = [dict(i) | {'tem_composicao': bool(i['tem_composicao'])} for i in itens]
+    # composição auxiliar: em qual grupo ela fica na tela (mão de obra, material...), pelo que mais pesa no custo dela
+    for i in lista:
+        if i['eh_servico']:
+            r = c.execute('''SELECT pct_mo, pct_mat, pct_equip, pct_terc FROM item_busca WHERE tipo = 'servico' AND base = ? AND codigo = ?
+                AND referencia = ?''', (i['base'], i['codigo'], i['referencia'])).fetchone()
+            if r and r['pct_mo'] is not None:
+                partes = {'MAO_DE_OBRA': r['pct_mo'] or 0, 'MATERIAL': r['pct_mat'] or 0, 'EQUIPAMENTO': r['pct_equip'] or 0, 'SERVICO_TERCEIRO': r['pct_terc'] or 0}
+                i['grupo_aux'] = max(partes, key=partes.get)
+    return dict(comp) | {'itens': lista}
 
 
 @app.get('/api/composicao/{base}/{codigo}')
@@ -427,6 +436,28 @@ def api_composicao(base: str, codigo: str, ref: Optional[str] = None, refs: str 
         d['usada_em'] = c.execute('''SELECT COUNT(DISTINCT composicao_base || composicao) FROM composicao_item
             WHERE base = ? AND codigo = ? AND eh_servico = 1 AND referencia = ?''', (base, d['codigo'], r['id'])).fetchone()[0]
         return d
+
+
+@app.get('/api/composicao/{base}/{codigo}/insumos')
+def api_composicao_insumos(base: str, codigo: str, ref: Optional[str] = None):
+    """Relação detalhada de insumos: a composição com as auxiliares abertas até o fim, por 1 unidade do serviço."""
+    base = checar_base(base)
+    from collections import defaultdict
+    with conn() as c:
+        r = mes_da_base(c, base, ref)
+        acc = defaultdict(lambda: {'qtd': 0.0, 'custo': 0.0})
+        if not orcamento.explodir(c, base, codigo, 1.0, acc, ref=r['id']):
+            raise HTTPException(404, f'A composição {codigo}/{base} não existe em {nome_mes(r)}.')
+    junto = {}
+    for (b, cod, secao), a in acc.items():  # o mesmo insumo vindo de auxiliares diferentes entra uma vez só
+        j = junto.setdefault((b, cod, secao), {'base': b, 'codigo': cod, 'secao': secao, 'descricao': a['descricao'], 'unidade': a['unidade'],
+                                                'qtd': 0.0, 'custo_total': 0.0, 'eh_servico': 0, 'tem_composicao': False})
+        j['qtd'] += a['qtd']; j['custo_total'] += a['custo']
+    itens = sorted(junto.values(), key=lambda j: (j['secao'], (j['descricao'] or '').lower()))
+    for j in itens:
+        j['custo_unit'] = j['custo_total'] / j['qtd'] if j['qtd'] else None
+        j['qtd'] = round(j['qtd'], 8); j['custo_total'] = round(j['custo_total'], 4)
+    return {'base': base, 'codigo': codigo, 'referencia': r['id'], 'itens': itens}
 
 
 @app.get('/api/insumo/{base}/{codigo}')

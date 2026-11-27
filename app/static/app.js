@@ -786,7 +786,7 @@ function linhaItem(i, total, nivel = 0, cor = '--tinta-2') {
   const cls = nivel ? `filho" style="--nivel:${nivel}` : '';
   return `<tr class="${cls}">
     <td class="cod">${exp}${i.codigo ? codLink(i.eh_servico ? 'servico' : 'insumo', i.base, i.codigo) : '<span class="sem-cod" aria-label="sem código">—</span>'}</td>
-    <td class="desc">${esc(i.descricao)}</td>
+    <td class="desc">${esc(i.descricao)}${i.eh_servico && !nivel && i.grupo_aux ? '<span class="tag-aux" title="Composição auxiliar: abra o + para ver os itens dela">composição</span>' : ''}</td>
     <td class="col-unit">${esc(i.unidade)}</td>
     <td class="num col-coef">${coef(i.qtd)}</td>
     <td class="num">${money(i.custo_unit)}</td>
@@ -808,7 +808,10 @@ function desenharComposicao(c) {
   estado.comp = c;
   const dnit = c.modelo === 'DNIT';
   const total = c.custo_total;
-  const grupos = SECOES.map(([k, nome, cor]) => [k, nome, cor, c.itens.filter((i) => i.secao === k)]).filter((g) => g[3].length);
+  // composição auxiliar fica no grupo do que mais pesa nela (pedreiro com encargos complementares → mão de obra)
+  const grupoDe = (i) => (!dnit && i.eh_servico && i.grupo_aux ? i.grupo_aux : i.secao);
+  const grupos = SECOES.map(([k, nome, cor]) => [k, nome, cor, c.itens.filter((i) => grupoDe(i) === k)]).filter((g) => g[3].length);
+  const temAux = !dnit && c.base !== 'PROPRIA' && c.itens.some((i) => i.eh_servico && i.tem_composicao);
   const corpo = grupos.map(([k, nome, cor, itens]) => {
     const soma = itens.reduce((s, i) => s + (i.custo_total || 0), 0);
     const nota = k === 'MAO_DE_OBRA' && c.encargo_social ? `<span class="nota">com encargo social de ${num2.format(c.encargo_social)}%</span>` : '';
@@ -841,11 +844,12 @@ function desenharComposicao(c) {
       </div>
     </div>
     ${barraCusto(c)}
-    <div class="tabela-barra"><h3>Itens da composição</h3><div class="tabela-ctrl">${window.seletorVista ? window.seletorVista() : ''}${seletorDensidade()}</div></div>
+    <div class="tabela-barra"><h3>${temAux ? 'Composição de preço' : 'Itens da composição'}</h3><div class="tabela-ctrl">${window.seletorVista ? window.seletorVista() : ''}${seletorDensidade()}</div></div>
     <table class="arvore">
       <thead><tr><th>Código</th><th>Descrição</th><th class="col-unit">Un.</th><th class="num col-coef">${dnit ? 'Qtd.' : 'Coeficiente'}</th><th class="num">${dnit ? 'Custo prod.' : 'Custo unit.'}</th><th class="num">Custo total</th><th class="col-peso">% do custo</th></tr></thead>
       ${corpo}
     </table>
+    ${temAux ? '<p class="fonte">Como a base publica: insumos e composições auxiliares, cada uma no grupo do que mais pesa no custo dela. Abra o + para ver os itens de uma auxiliar; a relação detalhada abaixo traz tudo aberto até o insumo.</p><div id="comp-detalhada"><p class="carregando">Abrindo as composições auxiliares…</p></div>' : ''}
     ${dnit ? '<p class="fonte">No modelo DNIT, equipamentos e mão de obra formam o custo horário da equipe, que é dividido pela produção da equipe. Serviços auxiliares entram por unidade.</p>' : ''}
     ${c.base === 'SICRO' ? `<p class="fonte">SICRO: o FIC (fator de influência de chuvas) incide sobre o custo de execução. O momento de transporte não tem custo na tabela do DNIT: depende da distância de cada obra, definida no projeto. Preços sem desoneração.</p>` : ''}
     ${c.base === 'PROPRIA' ? `<p class="fonte">Composição própria da empresa. Custo calculado agora, cada item no mês escolhido para a sua base.${c.observacoes ? ` Observações: ${esc(c.observacoes)}` : ''}</p>` : ''}
@@ -854,7 +858,28 @@ function desenharComposicao(c) {
     ${c.fonte === 'CAIXA' ? '<p class="fonte">SINAPI da CAIXA: a composição aparece como a CAIXA publica, com composições auxiliares (abra o + para ver os itens). Insumo sem preço coletado em Sergipe usa o preço de São Paulo (AS), como no cálculo oficial.</p>' : ''}
   </article>`;
   if (dnit) ajustarDnit(c);
+  if (temAux) desenharDetalhada(c);
   contarPreco(`c|${c.base}|${c.codigo}`, total);
+}
+
+// relação detalhada de insumos: as auxiliares abertas até o insumo, por 1 unidade do serviço, separadas por tipo
+async function desenharDetalhada(c) {
+  let r;
+  try { r = await api(`/api/composicao/${c.base}/${encodeURIComponent(c.codigo)}/insumos?ref=${encodeURIComponent(c.referencia || '')}`); } catch (_) { r = null; }
+  const alvo = $('#comp-detalhada'); if (!alvo || estado.comp !== c) return;
+  if (!r || !r.itens.length) { alvo.innerHTML = ''; return; }
+  const total = r.itens.reduce((s, i) => s + (i.custo_total || 0), 0);
+  const grupos = SECOES.map(([k, nome, cor]) => [k, nome, cor, r.itens.filter((i) => i.secao === k)]).filter((g) => g[3].length);
+  alvo.innerHTML = `<div class="tabela-barra"><h3>Relação detalhada de insumos <span class="nota">${r.itens.length} insumos</span></h3></div>
+    <table class="arvore detalhada">
+      <thead><tr><th>Código</th><th>Descrição</th><th class="col-unit">Un.</th><th class="num col-coef">Quantidade</th><th class="num">Custo unit.</th><th class="num">Custo total</th><th class="col-peso">% do custo</th></tr></thead>
+      ${grupos.map(([k, nome, cor, itens]) => `<tbody data-secao="${k}">
+        <tr class="secao"><td colspan="7"><button type="button" class="secao-bt" aria-expanded="true" style="--cor:var(${cor})">
+          <span class="tri"></span><span class="ponto"></span>${nome} <span class="nota">${itens.length} ${itens.length === 1 ? 'insumo' : 'insumos'}</span>
+          <span class="soma">${brl.format(itens.reduce((s, i) => s + (i.custo_total || 0), 0))}</span></button></td></tr>
+        ${itens.sort((a, b) => b.custo_total - a.custo_total).map((i) => linhaItem(i, total, 0, cor)).join('')}</tbody>`).join('')}
+    </table>
+    <p class="fonte">Quantidade de cada insumo por ${unid(c.unidade)} do serviço, somando o que vem de todas as composições auxiliares. Soma dos insumos: ${brl.format(total)}${Math.abs(total - c.custo_total) >= 0.01 ? ` (a composição publicada é ${brl.format(c.custo_total)}; a diferença vem do arredondamento de cada auxiliar)` : ''}.</p>`;
 }
 
 // ao trocar de mês com o mesmo item aberto, o preço conta do valor antigo ao novo

@@ -2507,3 +2507,8 @@ body.ocioso .dica-paleta + .conheca { margin-top: 10px; }
 .rel-niveis td.n { font-weight: 500; }
 .rel-niveis tr.rel-n1 td.n { font-weight: 700; }
 .rel-niveis tr.rel-n2 td.n { font-weight: 650; }
+
+/* composição: auxiliar marcada no primeiro nível; relação detalhada de insumos */
+.tag-aux { display: inline-block; margin-left: 8px; padding: 1px 7px; border: 1px solid var(--linha-forte); border-radius: 999px; font-size: 11px; font-weight: 600; color: var(--tinta-3); vertical-align: 1px; white-space: nowrap; }
+#comp-detalhada { margin-top: 26px; }
+#comp-detalhada h3 .nota { font-size: 13px; font-weight: 500; color: var(--tinta-3); margin-left: 6px; }

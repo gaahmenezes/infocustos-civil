@@ -58,7 +58,7 @@ const num = (t) => Number(t.replace(/[^\d,]/g, '').replace(',', '.'));
   v(!(await p.$('.chips[data-filtro="base"] [data-v="PROPRIA"]')), 'A consulta não tem o filtro de bases próprias');
   // criar a partir de uma oficial
   await p.goto(U + '/#/composicao/SINAPI/103354'); await p.waitForSelector('[data-copiar-propria]');
-  const nOficial = await p.$$eval('.arvore tbody tr:not(.secao)', (x) => x.length);
+  const nOficial = await p.$$eval('.arvore:not(.detalhada) tbody tr:not(.secao)', (x) => x.length);
   await p.click('[data-copiar-propria]');
   await p.waitForSelector('.prop-cmp'); v((await txt(p, '.prop-cmp')).includes('103354'), 'Criar própria a partir da oficial: copia os itens e mostra a comparação com a original');
   v((await p.$$('#prop-corpo tr.item')).length === nOficial, `A cópia traz os ${nOficial} itens da 103354 no mês escolhido para a SINAPI`);
