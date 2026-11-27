@@ -123,9 +123,8 @@ const ORDENS = {
 function desenharCartoesOrc() {
   const termo = LISTA.q.trim().toLowerCase();
   const vis = LISTA.todos.filter((o) => !termo || [o.nome, o.cliente, o.local].join(' ').toLowerCase().includes(termo)).sort(ORDENS[LISTA.ordem][1]);
-  const soma = vis.reduce((t, o) => t + o.total, 0);
   $('#orc-resumo').innerHTML = LISTA.todos.length
-    ? `<b>${vis.length}</b> ${vis.length === 1 ? 'orçamento' : 'orçamentos'}${termo ? ` de ${LISTA.todos.length}` : ''} · <b>${brl.format(soma)}</b> no total, com BDI`
+    ? `<b>${vis.length}</b> ${vis.length === 1 ? 'orçamento' : 'orçamentos'}${termo ? ` de ${LISTA.todos.length}` : ''}`  // cada orçamento é uma obra: os valores não se somam
     : 'Monte a planilha da obra com os preços da ORSE, da SINAPI e do SICRO.';
   const ul = $('#orc-lista'); if (!ul) return;
   ul.innerHTML = vis.length ? vis.map((o) => `<li><a class="orc-cartao" href="${rotaOrc(o.id)}">

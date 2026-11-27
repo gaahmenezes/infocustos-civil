@@ -401,7 +401,7 @@ async function desenharPainelInicio(orcsP) {
   const ref = estado.ref || {}, bs = basesCarregadas();
   const comps = bases ? bases.reduce((s, b) => s + (b.composicoes || 0), 0) : null, ins = bases ? bases.reduce((s, b) => s + (b.insumos || 0), 0) : null;
   num.innerHTML = [
-    piNumero('Orçamentos', orcs ? int.format(orcs.length) : '—', orcs ? `${brl.format(orcs.reduce((s, o) => s + (o.total || 0), 0))} no total, com BDI` : 'não carregados', '#/orcamentos'),
+    piNumero('Orçamentos', orcs ? int.format(orcs.length) : '—', orcs ? (orcs.length ? `mais recente: ${esc([...orcs].sort((a, b) => String(b.atualizado_em || '').localeCompare(String(a.atualizado_em || '')))[0].nome)}` : 'nenhum ainda') : 'não carregados', '#/orcamentos'),
     piNumero('Bases de preço', bs.length, bs.map((b) => `<span class="pi-mes"><i class="cb-base cb-${b}">${b}</i>${esc(curto(estado.meses[b] || (ref.bases && ref.bases[b] && ref.bases[b].atual) || ''))}</span>`).join(''), '', 'pi-bases'),
     piNumero('Bases próprias', comps == null ? '—' : int.format(comps), comps == null ? '' : `composições e ${int.format(ins)} insumos em ${bases.length} ${bases.length === 1 ? 'base' : 'bases'}`, '#/proprias'),
     piNumero('Encargo social', enc && enc.horista && enc.horista.total != null ? `${num2.format(enc.horista.total)}%` : '—', enc ? `horistas · ${enc.mensalista && enc.mensalista.total != null ? `${num2.format(enc.mensalista.total)}% mensalistas · ` : ''}CEHOP ${esc(curto(enc.referencia.id))}` : '', '#/encargos'),
